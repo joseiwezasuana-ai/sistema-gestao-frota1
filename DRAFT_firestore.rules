@@ -1,0 +1,160 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // --- Global Denial ---
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Global Helpers ---
+    function isSignedIn() { return request.auth != null; }
+    function authEmail() { return request.auth.token.email; }
+    
+    // The "Master Gate" (Pillar 1/4)
+    function isMasterAdmin() {
+      return isSignedIn() && authEmail() == "joseiwezasuana@gmail.com";
+    }
+
+    function getRole() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+        : "unassigned";
+    }
+
+    function isAdmin() { return isMasterAdmin() || getRole() == "admin"; }
+    function isStaff() { return isAdmin() || getRole() in ["operator", "contabilista", "mecanico"]; }
+    function isOperator() { return isAdmin() || getRole() == "operator"; }
+    function isContabilista() { return isAdmin() || getRole() == "contabilista"; }
+    function isMecanico() { return isAdmin() || getRole() == "mecanico"; }
+    function isDriver() { return getRole() == "driver"; }
+
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+
+    // --- Validation Blueprints (Pillar 2) ---
+
+    function isValidRevenue(data) {
+      return data.keys().hasAll(['driverId', 'amount', 'date', 'status', 'timestamp']) &&
+             data.driverId == request.auth.uid &&
+             data.amount is number &&
+             data.status == 'vended_by_driver' &&
+             data.timestamp is string;
+    }
+
+    // --- Collections ---
+
+    // 1. Users & RBAC
+    match /users/{userId} {
+      allow read: if isSignedIn() && (isStaff() || request.auth.uid == userId);
+      allow create: if isSignedIn() && request.auth.uid == userId && incoming().role in ['driver', 'operator', 'contabilista', 'mecanico'];
+      allow update: if isAdmin() || (request.auth.uid == userId && !incoming().diff(existing()).affectedKeys().hasAny(['role']));
+    }
+
+    // 2. Fleet & Core
+    match /master_vehicles/{vId} {
+      allow read: if isSignedIn();
+      allow write: if isStaff();
+    }
+    match /drivers/{driverId} {
+      allow read: if isSignedIn();
+      allow write: if isOperator() || isMecanico();
+    }
+
+    // 3. Revenue Logs (Pillar 8 - Secure List Queries)
+    match /revenue_logs/{revenueId} {
+      allow read: if isStaff() || (isSignedIn() && existing().driverId == request.auth.uid);
+      allow create: if isDriver() && isValidRevenue(incoming());
+      allow update: if (isStaff() && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'validatedAt', 'validatedBy', 'validatedByName', 'rejectionReason'])) ||
+                    (isDriver() && existing().driverId == request.auth.uid && existing().status.matches('rejected.*') &&
+                     incoming().diff(existing()).affectedKeys().hasAny(['amount', 'breakdown', 'description', 'status', 'timestamp']));
+      allow delete: if isAdmin();
+    }
+
+    // 4. Messages (PII Isolation & Targeted Reads)
+    match /messages/{msgId} {
+      allow read: if isStaff() || (isSignedIn() && existing().targets.hasAny([request.auth.uid]));
+      allow list: if isStaff() || (isSignedIn() && resource.data.targets.hasAny([request.auth.uid]));
+      allow create: if isStaff();
+      allow update: if isStaff() || (isSignedIn() && existing().targets.hasAny([request.auth.uid]) && incoming().diff(existing()).affectedKeys().hasOnly(['status']));
+      allow delete: if isAdmin();
+    }
+
+    // 5. Operations
+    match /calls/{callId} {
+      allow read: if isSignedIn();
+      allow create: if isStaff();
+      allow update: if isStaff() || (isDriver() && existing().driverId == request.auth.uid);
+    }
+    match /shifts/{shiftId} {
+      allow read: if isSignedIn();
+      allow write: if isOperator();
+    }
+    match /driver_scales/{scaleId} {
+      allow read: if isSignedIn();
+      allow write: if isOperator();
+    }
+    match /panic_alerts/{alertId} {
+      allow read: if isStaff();
+      allow create: if isDriver();
+      allow update: if isStaff();
+    }
+
+    // 6. Maintenance & Warehouse
+    match /maintenance_logs/{id} {
+      allow read: if isStaff();
+      allow write: if isAdmin() || isMecanico();
+    }
+    match /warehouse_inventory/{id} {
+      allow read: if isStaff();
+      allow write: if isOperator() || isMecanico();
+    }
+    match /warehouse_logs/{id} {
+      allow read: if isStaff();
+      allow write: if isOperator() || isMecanico();
+    }
+
+    // 7. Finance
+    match /salary_sheets/{id} {
+      allow read, write: if isContabilista();
+    }
+    match /individual_reports/{id} {
+      allow read, write: if isStaff();
+    }
+    
+    // 8. Contracts
+    match /internal_contracts/{id} {
+      allow read: if isSignedIn();
+      allow create: if isStaff() || isDriver();
+      allow update: if isStaff() || (isDriver() && existing().driverId == request.auth.uid);
+    }
+    match /contract_attendance/{id} {
+      allow read: if isSignedIn();
+      allow create: if isDriver();
+      allow update: if isStaff() || (isDriver() && existing().driverId == request.auth.uid);
+    }
+
+    // 9. Public / Health
+    match /settings/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /access_codes/{id} {
+      allow read: if true;
+      allow create, delete: if isOperator();
+      allow update: if isSignedIn(); 
+    }
+    match /administrative_staff/{id} {
+      allow read: if true;
+      allow write: if isOperator();
+    }
+    match /drivers_master/{id} {
+      allow read: if true;
+      allow write: if isOperator();
+    }
+    match /_health/{docId} {
+      allow read: if true;
+    }
+  }
+}

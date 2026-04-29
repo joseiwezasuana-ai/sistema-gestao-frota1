@@ -1,0 +1,438 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "System users with role-based access control.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Unique user ID from Firebase Auth." },
+        "email": { "type": "string", "format": "email" },
+        "name": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "operator", "driver"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Vehicle": {
+      "title": "Viatura Master",
+      "description": "Permanent vehicle information in the fleet master registry.",
+      "type": "object",
+      "properties": {
+        "brand": { "type": "string", "description": "Marca e Modelo da Viatura." },
+        "prefix": { "type": "string", "description": "Número Interno / Prefixo (ex: TX-01)." },
+        "plate": { "type": "string", "description": "Matrícula do Veículo." },
+        "trackerId": { "type": "string", "description": "IMEI do Rastreador GPS." },
+        "status": { "type": "string", "enum": ["Ativo", "Inativo", "Manutenção"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["brand", "prefix", "plate", "status"]
+    },
+    "Driver": {
+      "title": "Driver / Viatura",
+      "description": "Taxi drivers and their vehicle information (Viatura).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "licensePlate": { "type": "string" },
+        "prefix": { "type": "string", "description": "Número da Viatura / Prefixo." },
+        "phoneNumber": { "type": "string" },
+        "secondaryPhone": { "type": "string", "description": "Optional secondary terminal number." },
+        "trackerId": { "type": "string", "description": "Serial number or IMEI of the GPS Tracker device." },
+        "status": { "type": "string", "enum": ["available", "busy", "offline"] },
+        "callCount": { "type": "number", "description": "Número de chamadas recebidas hoje." },
+        "batteryLevel": { "type": "number", "description": "Battery percentage of the GPS tracker." },
+        "currentLocation": {
+          "type": "object",
+          "properties": {
+            "lat": { "type": "number" },
+            "lng": { "type": "number" }
+          }
+        },
+        "rendaStatus": { "type": "string", "enum": ["paid", "pending"], "description": "Daily shift change status." },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "licensePlate", "prefix", "status"]
+    },
+    "ShiftHistory": {
+      "title": "ShiftHistory",
+      "description": "Daily record of driver-vehicle-phone associations (Nº Viatura).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "driverId": { "type": "string" },
+        "prefix": { "type": "string", "description": "Nº da Viatura." },
+        "date": { "type": "string", "format": "date" },
+        "mainPhone": { "type": "string" },
+        "secondaryPhone": { "type": "string" },
+        "rendaValue": { "type": "number" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["driverId", "date", "mainPhone"]
+    },
+    "Call": {
+      "title": "Call",
+      "description": "Taxi ride requests and history.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "customerName": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "pickupAddress": { "type": "string" },
+        "destinationAddress": { "type": "string" },
+        "driverId": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "active", "completed", "cancelled"] },
+        "type": { "type": "string", "enum": ["call", "app", "scheduled"] },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "duration": { "type": "string" },
+        "price": { "type": "number" }
+      },
+      "required": ["pickupAddress", "status", "timestamp"]
+    },
+    "DriverMaster": {
+      "title": "DriverMaster",
+      "description": "Permanent directory of human drivers.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "licenseNumber": { "type": "string" },
+        "experienceYears": { "type": "string" },
+        "phone": { "type": "string" },
+        "status": { "type": "string", "enum": ["Ativo", "Inativo"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "licenseNumber", "phone"]
+    },
+    "SMSLog": {
+      "title": "SMSLog",
+      "description": "SMS and Internal notification log entry.",
+      "type": "object",
+      "properties": {
+        "targets": { "type": "array", "items": { "type": "string" }, "description": "Array of user UIDs." },
+        "type": { "type": "string", "enum": ["sms", "alert", "success", "info"] },
+        "category": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["unread", "read", "sent"] },
+        "driverId": { "type": "string" },
+        "prefix": { "type": "string" },
+        "provider": { "type": "string" }
+      }
+    },
+    "AccessCode": {
+      "title": "AccessCode",
+      "description": "Unique codes generated by admins to allow new users to register.",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string" },
+        "role": { "type": "string", "enum": ["operator", "driver"] },
+        "used": { "type": "boolean" },
+        "usedBy": { "type": "string", "description": "UID of the user who used the code." },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["code", "role", "used"]
+    },
+    "GPSTracking": {
+      "title": "GPSTracking",
+      "description": "Historical GPS coordinates for a vehicle.",
+      "type": "object",
+      "properties": {
+        "driverId": { "type": "string" },
+        "prefix": { "type": "string" },
+        "lat": { "type": "number" },
+        "lng": { "type": "number" },
+        "speed": { "type": "number" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["driverId", "lat", "lng", "timestamp"]
+    },
+    "MaintenanceLog": {
+      "title": "MaintenanceLog",
+      "description": "Record of vehicle maintenance events.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "vehicleId": { "type": "string" },
+        "prefix": { "type": "string" },
+        "type": { "type": "string", "enum": ["Troca de Óleo", "Travões", "Pneus", "Seguro", "Inspeção", "Outro"] },
+        "mileage": { "type": "number" },
+        "date": { "type": "string", "format": "date" },
+        "cost": { "type": "number" },
+        "status": { "type": "string", "enum": ["planned", "completed", "archived"] },
+        "description": { "type": "string" },
+        "itemsUsed": { 
+          "type": "array", 
+          "items": { 
+            "type": "object",
+            "properties": {
+              "itemId": { "type": "string" },
+              "name": { "type": "string" },
+              "quantity": { "type": "number" }
+            }
+          } 
+        },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["vehicleId", "type", "date", "status"]
+    },
+    "WarehouseItem": {
+      "title": "WarehouseItem",
+      "description": "Inventory item in the warehouse.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "stock": { "type": "number" },
+        "min": { "type": "number" },
+        "unit": { "type": "string" },
+        "price": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "stock"]
+    },
+    "WarehouseLog": {
+      "title": "WarehouseLog",
+      "description": "Inventory movement log.",
+      "type": "object",
+      "properties": {
+        "itemId": { "type": "string" },
+        "itemName": { "type": "string" },
+        "quantity": { "type": "number" },
+        "type": { "type": "string", "enum": ["add", "entry", "output", "maintenance"] },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "user": { "type": "string" },
+        "vehicleId": { "type": "string" },
+        "maintenanceId": { "type": "string" }
+      }
+    },
+    "PanicAlert": {
+      "title": "PanicAlert",
+      "description": "Emergency alerts triggered by drivers.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "driverId": { "type": "string" },
+        "driverName": { "type": "string" },
+        "prefix": { "type": "string" },
+        "lat": { "type": "number" },
+        "lng": { "type": "number" },
+        "status": { "type": "string", "enum": ["active", "resolved"] },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["driverId", "prefix", "lat", "lng", "status", "timestamp"]
+    },
+    "DailyRevenue": {
+      "title": "DailyRevenue",
+      "description": "Daily billing (renda) payment records.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "driverId": { "type": "string" },
+        "driverName": { "type": "string" },
+        "prefix": { "type": "string" },
+        "amount": { "type": "number" },
+        "date": { "type": "string", "format": "date" },
+        "status": { "type": "string", "enum": ["vended_by_driver", "approved_by_operator", "approved_by_accountant", "finalized", "rejected_by_operator", "rejected_by_accountant"] },
+        "breakdown": {
+          "type": "object",
+          "properties": {
+            "tpa": { "type": "number" },
+            "cash": { "type": "number" },
+            "transfer": { "type": "number" },
+            "expenses": { "type": "number" }
+          }
+        },
+        "description": { "type": "string" },
+        "rejectionReason": { "type": "string", "description": "Motivo da reprovação." },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "validatedAt": { "type": "string", "format": "date-time" },
+        "validatedBy": { "type": "string" },
+        "validatedByName": { "type": "string" }
+      },
+      "required": ["driverId", "prefix", "amount", "date", "status"]
+    },
+    "PSMPhone": {
+      "title": "PSM Official Phone",
+      "description": "Official company phone numbers managed by PSM.",
+      "type": "object",
+      "properties": {
+        "label": { "type": "string", "description": "e.g. 'Terminal 01', 'Suporte'" },
+        "number": { "type": "string", "description": "Phone number with +244 prefix" },
+        "status": { "type": "string", "enum": ["Ativo", "Manutenção", "Perdido"] },
+        "assignedTo": { "type": "string", "description": "Name of the driver/staff assigned to this phone." },
+        "assignedToId": { "type": "string", "description": "ID of the driver/staff assigned to this phone." },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["label", "number", "status"]
+    },
+    "Contract": {
+      "title": "Internal Contract",
+      "description": "Subscription-based route contracts for fixed passengers.",
+      "type": "object",
+      "properties": {
+        "clientName": { "type": "string" },
+        "neighborhood": { "type": "string" },
+        "destination": { "type": "string" },
+        "period": { "type": "string" },
+        "phone": { "type": "string" },
+        "vehicleId": { "type": "string" },
+        "notes": { "type": "string" },
+        "location": {
+          "type": "object",
+          "properties": {
+            "lat": { "type": "number" },
+            "lng": { "type": "number" }
+          }
+        },
+        "weeklyDays": { "type": "array", "items": { "type": "string" } },
+        "monthlyValue": { "type": "number" },
+        "paymentStatus": { "type": "string", "enum": ["Pendente", "Pago"] },
+        "status": { "type": "string", "enum": ["Pendente Ativação", "Ativo"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "ContractAttendance": {
+      "title": "ContractAttendance",
+      "description": "Daily record of contract fulfillment for subsidy calculation.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "contractId": { "type": "string" },
+        "driverId": { "type": "string" },
+        "vehicleId": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "status": { "type": "string", "enum": ["attended", "absent"] },
+        "timestamp": { "type": "string", "format": "date-time" }
+      }
+    },
+    "SalarySheet": {
+      "title": "SalarySheet",
+      "description": "Monthly payroll records for staff.",
+      "type": "object",
+      "properties": {
+        "month": { "type": "string", "description": "YYYY-MM" },
+        "status": { "type": "string", "enum": ["draft", "analyzed", "approved"] },
+        "totalPayable": { "type": "number" },
+        "staff": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "incomeSummary": { "type": "object" }
+      }
+    },
+    "AdministrativeStaff": {
+      "title": "AdministrativeStaff",
+      "description": "Record of non-driver staff (Gerentes, Contabilistas, etc).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "baseSalary": { "type": "number" },
+        "subsSalary": { "type": "number" },
+        "status": { "type": "string", "enum": ["Ativo", "Inativo"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "role", "phone"]
+    },
+    "Settings": {
+      "title": "Settings",
+      "description": "Global application settings and configurations.",
+      "type": "object",
+      "properties": {
+        "whatsAppLink": { "type": "string", "description": "Official WhatsApp group link." },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "updatedBy": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Collection of system users."
+    },
+    "/settings/{docId}": {
+      "schema": "Settings",
+      "description": "Global configuration documents (e.g., 'global')."
+    },
+    "/access_codes/{codeId}": {
+      "schema": "AccessCode",
+      "description": "Secure access codes for new registrations."
+    },
+    "/drivers/{driverId}": {
+      "schema": "Driver",
+      "description": "Active fleet documents."
+    },
+    "/calls/{callId}": {
+      "schema": "Call",
+      "description": "Call records and history."
+    },
+    "/shifts/{shiftId}": {
+      "schema": "ShiftHistory",
+      "description": "Daily rental (renda) and assignment logs."
+    },
+    "/drivers_master/{driverId}": {
+      "schema": "DriverMaster",
+      "description": "Permanent directory of all human drivers."
+    },
+    "/master_vehicles/{vehicleId}": {
+      "schema": "Vehicle",
+      "description": "Permanent directory of all vehicles (Fleet Master)."
+    },
+    "/messages/{messageId}": {
+      "schema": "SMSLog",
+      "description": "Central messaging repository (SMS, System Alerts, Notifications)."
+    },
+    "/sms_logs/{logId}": {
+      "schema": "SMSLog",
+      "description": "Historical log of SMS messages sent to drivers."
+    },
+    "/gps_history/{logId}": {
+      "schema": "GPSTracking",
+      "description": "Chronological history of GPS coordinates for all vehicles."
+    },
+    "/maintenance_logs/{logId}": {
+      "schema": "MaintenanceLog",
+      "description": "Vehicle maintenance records."
+    },
+    "/panic_alerts/{alertId}": {
+      "schema": "PanicAlert",
+      "description": "Emergency panic notifications."
+    },
+    "/revenue_logs/{revenueId}": {
+      "schema": "DailyRevenue",
+      "description": "Daily revenue (renda) submission and validation."
+    },
+    "/internal_contracts/{contractId}": {
+      "schema": "Contract",
+      "description": "Fixed route contracts."
+    },
+    "/contract_attendance/{logId}": {
+      "schema": "ContractAttendance",
+      "description": "Daily logs for passenger contract check-ins."
+    },
+    "/salary_sheets/{sheetId}": {
+      "schema": "SalarySheet",
+      "description": "Monthly payroll management."
+    },
+    "/administrative_staff/{staffId}": {
+      "schema": "AdministrativeStaff",
+      "description": "Directory of administrative and support staff."
+    },
+    "/psm_phones/{phoneId}": {
+      "schema": "PSMPhone",
+      "description": "Official company phones."
+    },
+    "/warehouse_inventory/{itemId}": {
+      "schema": "WarehouseItem",
+      "description": "Inventory of vehicle parts and consumables."
+    },
+    "/warehouse_logs/{logId}": {
+      "schema": "WarehouseLog",
+      "description": "Log of inventory entries, exits and usage."
+    }
+  }
+}

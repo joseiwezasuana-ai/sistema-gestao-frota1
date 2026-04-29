@@ -1,0 +1,229 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Global Helpers (Phase 3) ---
+    function isSignedIn() { return request.auth != null; }
+    function authEmail() { return request.auth.token.email; }
+    function isEmailVerified() { return request.auth.token.email_verified == true; }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+
+    // Tiered Identity Logic (Pillar 4)
+    function getRole() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+        : "unassigned";
+    }
+
+    function isAdmin() { return (isSignedIn() && authEmail() == "joseiwezasuana@gmail.com") || getRole() == "admin"; }
+    function isOperator() { return isAdmin() || getRole() == "operator"; }
+    function isContabilista() { return isAdmin() || getRole() == "contabilista"; }
+    function isMecanico() { return isAdmin() || getRole() == "mecanico"; }
+    function isStaff() { return isAdmin() || getRole() in ["operator", "contabilista", "mecanico"]; }
+    function isDriver() { return getRole() == "driver"; }
+
+    // --- Validation Blueprints (Pillar 2) ---
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'name', 'role', 'createdAt']) &&
+             data.keys().size() == 5 && // Adjusted for createdAt
+             data.uid == request.auth.uid &&
+             data.email is string && data.email.size() <= 100 &&
+             data.name is string && data.name.size() <= 100 &&
+             data.role in ['driver', 'operator', 'contabilista', 'mecanico', 'admin'] &&
+             data.createdAt is string;
+    }
+
+    function isValidRevenue(data) {
+      return data.keys().hasAll(['driverId', 'prefix', 'amount', 'date', 'status', 'timestamp']) &&
+             data.driverId == request.auth.uid &&
+             data.amount is number && data.amount >= 0 &&
+             data.prefix is string && data.prefix.size() <= 20 &&
+             data.date is string && data.date.size() == 10 &&
+             data.status == 'vended_by_driver' &&
+             data.timestamp is string; // Trust but verify temporal in logic
+    }
+
+    function isValidPanic(data) {
+      return data.keys().hasAll(['driverId', 'prefix', 'lat', 'lng', 'status', 'timestamp']) &&
+             data.driverId == request.auth.uid &&
+             data.prefix is string && data.prefix.size() <= 20 &&
+             data.lat is number && data.lng is number &&
+             data.status == 'active' &&
+             data.timestamp is string;
+    }
+
+    function isValidContract(data) {
+      return data.keys().hasAll(['clientName', 'phone', 'destination', 'period', 'status']) &&
+             data.clientName is string && data.clientName.size() <= 100 &&
+             data.phone is string && data.phone.size() <= 20 &&
+             data.destination in ['Trabalho', 'Escola'] &&
+             data.period in ['Manhã', 'Tarde', 'Noite'] &&
+             data.status == 'Pendente Ativação';
+    }
+
+    // --- Collections ---
+
+    // users - PII Isolation (Pillar 6)
+    match /users/{userId} {
+      allow read: if isSignedIn() && (isStaff() || request.auth.uid == userId);
+      allow create: if isSignedIn() && isValidId(userId) && request.auth.uid == userId && isValidUser(incoming());
+      allow update: if isValidId(userId) && (
+        isAdmin() || 
+        (request.auth.uid == userId && !incoming().diff(existing()).affectedKeys().hasAny(['role', 'uid', 'email']))
+      );
+    }
+
+    match /master_vehicles/{vId} {
+      allow read: if isSignedIn();
+      allow write: if isStaff() && isValidId(vId);
+    }
+
+    match /drivers/{driverId} {
+      allow read: if isSignedIn() && isValidId(driverId);
+      allow list: if isSignedIn() && (resource.data.driverId == request.auth.uid || isStaff()); // Pillar 8
+      allow write: if (isOperator() || isMecanico() || isAdmin()) && isValidId(driverId);
+    }
+
+    match /revenue_logs/{revenueId} {
+      allow read: if isValidId(revenueId) && (isStaff() || (isSignedIn() && existing().driverId == request.auth.uid));
+      allow list: if isStaff() || (isSignedIn() && resource.data.driverId == request.auth.uid); // Pillar 8
+      allow create: if isDriver() && isValidId(revenueId) && isValidRevenue(incoming());
+      allow update: if isValidId(revenueId) && (
+        (isStaff() && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'validatedAt', 'validatedBy', 'validatedByName', 'rejectionReason'])) ||
+        (isDriver() && existing().driverId == request.auth.uid && existing().status.matches('^rejected_.*') && 
+         incoming().diff(existing()).affectedKeys().hasAny(['amount', 'breakdown', 'description', 'status', 'timestamp']) &&
+         incoming().status == 'vended_by_driver')
+      );
+      allow delete: if isAdmin() && isValidId(revenueId);
+    }
+
+    match /messages/{msgId} {
+      allow read: if isValidId(msgId) && (isStaff() || (isSignedIn() && existing().targets.hasAny([request.auth.uid])));
+      allow list: if isStaff() || (isSignedIn() && resource.data.targets.hasAny([request.auth.uid]));
+      allow create: if isStaff() && isValidId(msgId);
+      allow update: if isValidId(msgId) && (
+        isStaff() || 
+        (isSignedIn() && existing().targets.hasAny([request.auth.uid]) && incoming().diff(existing()).affectedKeys().hasOnly(['status']))
+      );
+      allow delete: if isAdmin() && isValidId(msgId);
+    }
+
+    match /calls/{callId} {
+      allow read: if isSignedIn() && isValidId(callId);
+      allow list: if isSignedIn();
+      allow create: if isStaff() && isValidId(callId);
+      allow update: if isValidId(callId) && (isStaff() || (isDriver() && existing().driverId == request.auth.uid));
+    }
+
+    match /shifts/{shiftId} {
+      allow read: if isSignedIn() && isValidId(shiftId);
+      allow write: if isOperator() && isValidId(shiftId);
+    }
+
+    match /driver_scales/{scaleId} {
+      allow read: if isSignedIn() && isValidId(scaleId);
+      allow write: if isOperator() && isValidId(scaleId);
+    }
+
+    match /panic_alerts/{alertId} {
+      allow get: if isSignedIn() && isValidId(alertId);
+      allow list: if isStaff();
+      allow create: if isDriver() && isValidId(alertId) && isValidPanic(incoming());
+      allow update: if isStaff() && isValidId(alertId);
+    }
+
+    match /maintenance_logs/{logId} {
+      allow get: if isSignedIn() && isValidId(logId);
+      allow list: if isSignedIn(); 
+      allow write: if (isAdmin() || isMecanico()) && isValidId(logId);
+    }
+
+    match /warehouse_inventory/{itemId} {
+      allow read: if isStaff();
+      allow write: if (isOperator() || isMecanico()) && isValidId(itemId);
+    }
+
+    match /warehouse_logs/{logId} {
+      allow read: if isStaff();
+      allow write: if (isOperator() || isMecanico()) && isValidId(logId);
+    }
+
+    match /salary_sheets/{sheetId} {
+      allow read, write: if isContabilista() && isValidId(sheetId);
+    }
+
+    match /individual_reports/{reportId} {
+      allow read, write: if isStaff() && isValidId(reportId);
+    }
+
+    match /sms_logs/{logId} {
+      allow get: if isStaff() && isValidId(logId);
+      allow list: if isStaff();
+      allow write: if isStaff() && isValidId(logId);
+    }
+
+    match /gps_history/{logId} {
+      allow get: if isStaff() && isValidId(logId);
+      allow list: if isStaff();
+      allow write: if isSignedIn() && isValidId(logId);
+    }
+
+    match /psm_phones/{phoneId} {
+      allow read: if isSignedIn();
+      allow write: if isStaff() && isValidId(phoneId);
+    }
+
+    match /speed_violations/{violationId} {
+      allow get: if isSignedIn() && isValidId(violationId);
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(violationId); 
+      allow update, delete: if isAdmin() && isValidId(violationId);
+    }
+
+    match /internal_contracts/{contractId} {
+      allow read: if isSignedIn() && isValidId(contractId);
+      allow create: if (isStaff() || isDriver()) && isValidId(contractId) && isValidContract(incoming());
+      allow update: if isValidId(contractId) && (isStaff() || (isDriver() && existing().driverId == request.auth.uid));
+      allow delete: if isAdmin() && isValidId(contractId);
+    }
+
+    match /contract_attendance/{logId} {
+      allow read: if isSignedIn() && isValidId(logId);
+      allow create: if isDriver() && isValidId(logId);
+      allow update: if isStaff() || (isDriver() && existing().driverId == request.auth.uid);
+    }
+
+    match /settings/{docId} {
+      allow read: if true; // Public settings like WhatsApp link
+      allow write: if isAdmin() && isValidId(docId);
+    }
+
+    match /access_codes/{codeId} {
+      allow read: if true;
+      allow create, delete: if isOperator() && isValidId(codeId);
+      allow update: if isSignedIn() && isValidId(codeId); 
+    }
+
+    match /administrative_staff/{staffId} {
+      allow read: if true;
+      allow write: if isOperator() && isValidId(staffId);
+    }
+
+    match /drivers_master/{masterId} {
+      allow read: if true;
+      allow write: if isOperator() && isValidId(masterId);
+    }
+
+    match /_health/{docId} {
+      allow read: if true;
+    }
+  }
+}
