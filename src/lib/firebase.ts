@@ -1,6 +1,11 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
-import { initializeFirestore, getFirestore } from 'firebase/firestore';
+import { 
+  initializeFirestore, 
+  memoryLocalCache,
+  doc, 
+  getDocFromServer
+} from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
@@ -8,15 +13,19 @@ export const auth = getAuth(app);
 
 // Use initializeFirestore to allow experimental settings like long polling
 // and force long polling to avoid connection issues in some environments
-export const db = initializeFirestore(app, {
+const dbSettings: any = {
+  // AIS environments work best with long polling to avoid connection drops
   experimentalForceLongPolling: true,
-}, firebaseConfig.firestoreDatabaseId || '(default)');
+  localCache: memoryLocalCache(), 
+};
+
+// In some AIS environments, IndexedDB persistence can cause "unavailable" errors if stuck
+export const db = initializeFirestore(app, dbSettings, firebaseConfig.firestoreDatabaseId || '(default)');
 
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
 // Validate Connection to Firestore (Instruction: CRITICAL CONSTRAINT)
-import { doc, getDocFromServer } from 'firebase/firestore';
 async function testConnection() {
   try {
     await getDocFromServer(doc(db, '_health', 'connection'));

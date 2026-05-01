@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { User, Shield, ArrowRight, Loader2, Key, AlertCircle, ChevronRight, CheckCircle2, ShieldCheck } from 'lucide-react';
+import { User, Shield, ArrowRight, Loader2, Key, AlertCircle, ChevronRight, CheckCircle2, ShieldCheck, LogOut, Mail } from 'lucide-react';
 import { motion } from 'motion/react';
 import { doc, setDoc, getDoc, updateDoc, collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
+import { signOut } from 'firebase/auth';
 
 interface ProfileSetupProps {
   user: any;
@@ -20,6 +21,10 @@ export default function ProfileSetup({ user, onComplete }: ProfileSetupProps) {
   const [collaborators, setCollaborators] = useState<{ id: string, name: string }[]>([]);
   const [collaboratorsLoading, setCollaboratorsLoading] = useState(false);
   const [validationRole, setValidationRole] = useState<string | null>(null);
+
+  const handleLogout = () => {
+    signOut(auth);
+  };
 
   // Fetch registered collaborators (Staff & Drivers)
   useEffect(() => {
@@ -236,16 +241,41 @@ export default function ProfileSetup({ user, onComplete }: ProfileSetupProps) {
                    <Shield size={10} className="text-brand-primary" />
                    <span className="text-[10px] font-mono font-bold text-white uppercase tracking-tight">SECURE</span>
                 </div>
-                <span className="text-[7px] font-black text-slate-500 uppercase tracking-widest">Protocolo V2</span>
+                <span className="text-[7px] font-black text-brand-primary uppercase tracking-widest">SISTEMA V4.5</span>
              </div>
           </div>
 
-          <div className="absolute bottom-4 left-0 right-0 px-8 opacity-20 pointer-events-none">
-             <div className="flex justify-between items-center font-mono text-[6px] text-slate-500 tracking-tighter uppercase">
-                <span>Core_System_Registry</span>
+          <div className="absolute bottom-4 left-0 right-0 px-8 flex justify-between items-center relative z-10">
+             <div className="font-mono text-[6px] text-slate-500 tracking-tighter uppercase">
+                <span>Core_System_Registry</span><br/>
                 <span>Port: 3000 // Active</span>
              </div>
+             <button 
+               onClick={handleLogout}
+               className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-full border border-white/10 transition-colors text-[9px] font-bold text-white uppercase tracking-wider"
+             >
+               <LogOut size={10} />
+               Sair
+             </button>
           </div>
+        </div>
+
+        <div className="px-8 pt-6 pb-2 border-b border-slate-100 bg-slate-50/50">
+           <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-brand-primary/10 flex items-center justify-center text-brand-primary">
+                 <Mail size={14} />
+              </div>
+              <div className="flex flex-col">
+                 <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Sessão Iniciada como</span>
+                 <span className="text-xs font-bold text-slate-700 truncate max-w-[240px]">{user.email}</span>
+              </div>
+           </div>
+           {isAdminEmail && (
+             <div className="mt-2 text-[9px] font-bold text-emerald-600 bg-emerald-50 rounded px-2 py-1 flex items-center gap-1.5">
+                <ShieldCheck size={10} />
+                ESTA É UMA CONTA DE ADMINISTRADOR MASTER
+             </div>
+           )}
         </div>
 
         <form onSubmit={handleSubmit} className="p-8 space-y-6" key={`setup-container-${isCodeValidated}`}>

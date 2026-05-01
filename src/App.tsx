@@ -68,43 +68,100 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    // Safety timeout: if auth doesn't resolve in 8s, show login anyway
+    const safetyTimeout = setTimeout(() => {
+      if (loading) {
+        console.warn("Auth initialization timed out, showing login.");
+        setLoading(false);
+      }
+    }, 8000);
+
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       try {
-        setLoading(true);
-        if (firebaseUser) {
-          setUser(firebaseUser);
-          const profileRef = doc(db, 'users', firebaseUser.uid);
-          // Standard getDoc uses cache if available, avoids hard 'offline' errors
-          const profileSnap = await getDoc(profileRef);
-          
-          if (profileSnap.exists()) {
-            const profile = profileSnap.data();
-            setUserProfile(profile);
-            // If driver, reset tab or handle specific view
-            if (profile.role === 'driver') {
-              setActiveTab('driver_dashboard');
-            } else if (profile.role === 'mecanico') {
-              setActiveTab('maintenance');
-            } else if (profile.role === 'contabilista') {
-              setActiveTab('accounting');
-            }
-          } else {
-            console.warn("User logged in but no profile found in Firestore.");
-            setUserProfile(null);
-          }
-        } else {
+        if (!firebaseUser) {
           setUser(null);
+          setUserProfile(null);
+          setLoading(false);
+          clearTimeout(safetyTimeout);
+          return;
+        }
+
+        setUser(firebaseUser);
+        const profileRef = doc(db, 'users', firebaseUser.uid);
+        
+        // Timeout for profile fetch
+        const profilePromise = getDoc(profileRef);
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('timeout')), 5000)
+        );
+
+        let profileSnap;
+        try {
+          profileSnap = await Promise.race([profilePromise, timeoutPromise]) as any;
+        } catch (e) {
+          console.error("Profile fetch failed:", e);
+          // If it's the master admin, we can fallback to a temporary profile to allow entry
+          if (firebaseUser.email?.toLowerCase() === 'joseiwezasuana@gmail.com') {
+             const fallbackProfile = {
+              uid: firebaseUser.uid,
+              email: firebaseUser.email,
+              name: 'José Iweza Suana (Admin)',
+              role: 'admin',
+              createdAt: new Date().toISOString()
+            };
+            setUserProfile(fallbackProfile);
+            setLoading(false);
+            return;
+          }
+          throw e;
+        }
+        
+        if (profileSnap.exists()) {
+          const profile = profileSnap.data();
+          setUserProfile(profile);
+          // If driver, reset tab or handle specific view
+          if (profile.role === 'driver') {
+            setActiveTab('driver_dashboard');
+          } else if (profile.role === 'mecanico') {
+            setActiveTab('maintenance');
+          } else if (profile.role === 'contabilista') {
+            setActiveTab('accounting');
+          }
+        } else if (firebaseUser.email?.toLowerCase() === 'joseiwezasuana@gmail.com') {
+          // Auto-bootstrap master admin profile
+          const adminProfile = {
+            uid: firebaseUser.uid,
+            email: firebaseUser.email,
+            name: 'José Iweza Suana (Admin)',
+            role: 'admin',
+            createdAt: new Date().toISOString()
+          };
+          setUserProfile(adminProfile);
+          clearTimeout(safetyTimeout);
+          setLoading(false);
+          setDoc(doc(db, 'users', firebaseUser.uid), adminProfile).catch(console.error);
+          return;
+        } else {
+          console.warn("User logged in but no profile found in Firestore.");
           setUserProfile(null);
         }
       } catch (err: any) {
         console.error("Auth State Error:", err);
-        setDbError(`Erro de autenticação/permissão: ${err.message}`);
+        if (err.message === 'timeout' || err.code === 'unavailable') {
+          setDbError("A ligação à base de dados está lenta. Pode haver limitações no carregamento de dados.");
+        } else {
+          setDbError(`Erro ao recuperar perfil: ${err.message}`);
+        }
       } finally {
         setLoading(false);
+        clearTimeout(safetyTimeout);
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      clearTimeout(safetyTimeout);
+    };
   }, []);
 
   if (loading) {
@@ -144,7 +201,7 @@ export default function App() {
     );
   }
 
-  const isMasterAdmin = user?.email === 'joseiwezasuana@gmail.com';
+  const isMasterAdmin = user?.email?.toLowerCase() === 'joseiwezasuana@gmail.com';
   const isAdmin = isMasterAdmin || userProfile?.role === 'admin';
   const isDriver = userProfile?.role === 'driver';
   const isMecanico = userProfile?.role === 'mecanico';

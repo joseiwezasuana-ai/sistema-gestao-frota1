@@ -622,7 +622,7 @@ export default function Login({ onGoogleLogin }: LoginProps) {
                <Shield size={10} className="text-brand-primary" />
                Acesso Seguro
             </span>
-            <span>v2.5.0 • TaxiControl AO</span>
+            <span>v4.5 • TaxiControl AO</span>
           </div>
         </div>
       </motion.div>
