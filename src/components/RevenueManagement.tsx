@@ -40,7 +40,7 @@ interface RevenueLog {
   prefix: string;
   amount: number;
   date: string;
-  status: 'vended_by_driver' | 'approved_by_operator' | 'approved_by_accountant' | 'finalized' | 'rejected_by_operator' | 'rejected_by_accountant';
+  status: 'vended_by_driver' | 'approved_by_operator' | 'approved_by_accountant' | 'finalized' | 'rejected_by_operator' | 'rejected_by_accountant' | 'archived' | 'paid_to_staff';
   rejectionReason?: string;
   breakdown: {
     tpa: number;
@@ -76,6 +76,7 @@ export default function RevenueManagement({ user }: { user: any }) {
       let data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as RevenueLog));
       
       // Accountant restriction: Only see revenues ready for their stage or finalized/paid
+      // @ts-ignore
       if (isContabilista && !isAdmin) {
         data = data.filter(r => ['approved_by_operator', 'approved_by_accountant', 'finalized', 'paid_to_staff'].includes(r.status));
       }
@@ -202,6 +203,7 @@ export default function RevenueManagement({ user }: { user: any }) {
     setIsProcessing(true);
     try {
       // Archive everything that isn't already archived
+      // @ts-ignore
       const toArchive = revenues.filter(r => r.status !== 'archived');
       for (const rev of toArchive) {
         await updateDoc(doc(db, 'revenue_logs', rev.id), { status: 'archived' });

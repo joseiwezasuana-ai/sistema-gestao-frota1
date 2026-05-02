@@ -20,6 +20,7 @@ import {
 import { auth, db, googleProvider } from './lib/firebase';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
+import ErrorBoundary from './components/ErrorBoundary';
 import FleetManagement from './components/FleetManagement';
 import RealTimeMap from './components/RealTimeMap';
 import History from './components/History';
@@ -167,28 +168,28 @@ export default function App() {
   if (loading) {
     return (
       <ThemeProvider>
-        <div className="flex h-screen w-full items-center justify-center bg-slate-50 dark:bg-slate-950">
-          <div className="flex flex-col items-center gap-4">
-            <div className="h-12 w-12 animate-spin rounded-full border-4 border-brand-primary border-t-transparent"></div>
-            <p className="text-slate-500 dark:text-slate-400 animate-pulse font-medium">TaxiControl Inicializando...</p>
+        <ErrorBoundary>
+          <div className="flex h-screen w-full items-center justify-center bg-slate-50 dark:bg-slate-950">
+            <div className="flex flex-col items-center gap-4">
+              <div className="h-12 w-12 animate-spin rounded-full border-4 border-brand-primary border-t-transparent shadow-xl shadow-brand-primary/20"></div>
+              <p className="text-slate-500 dark:text-slate-400 animate-pulse font-black text-xs uppercase tracking-[0.3em] italic">PSM TaxiControl v4.5 Inicializando...</p>
+            </div>
           </div>
-        </div>
+        </ErrorBoundary>
       </ThemeProvider>
     );
   }
 
   if (!user) {
     const handleGoogleLogin = async () => {
-      try {
-        await signInWithPopup(auth, googleProvider);
-      } catch (err: any) {
-        console.error('Google Login Error:', err);
-        throw err; // Re-throw to let the Login component handle it
-      }
+      // Direct call to avoid popup blocking
+      return signInWithPopup(auth, googleProvider);
     };
     return (
       <ThemeProvider>
-        <Login onGoogleLogin={handleGoogleLogin} />
+        <ErrorBoundary>
+          <Login onGoogleLogin={handleGoogleLogin} />
+        </ErrorBoundary>
       </ThemeProvider>
     );
   }
@@ -196,7 +197,9 @@ export default function App() {
   if (!userProfile) {
     return (
       <ThemeProvider>
-        <ProfileSetup user={user} onComplete={setUserProfile} />
+        <ErrorBoundary>
+          <ProfileSetup user={user} onComplete={setUserProfile} />
+        </ErrorBoundary>
       </ThemeProvider>
     );
   }
@@ -253,8 +256,9 @@ export default function App() {
 
   return (
     <ThemeProvider>
-      <Layout 
-        user={userProfile} 
+      <ErrorBoundary>
+        <Layout 
+          user={userProfile} 
         activeTab={activeTab} 
         onTabChange={setActiveTab}
         onLogout={() => signOut(auth)}
@@ -290,6 +294,7 @@ export default function App() {
         {activeTab === 'settings' && (isAdmin ? <Settings /> : <Dashboard user={userProfile} />)}
         {activeTab === 'messages' && (isAdmin || isOperator ? <Messages /> : <Dashboard user={userProfile} />)}
       </Layout>
+      </ErrorBoundary>
     </ThemeProvider>
   );
 }

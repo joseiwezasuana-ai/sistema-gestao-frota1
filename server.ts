@@ -514,6 +514,63 @@ async function startServer() {
     });
   });
 
+  // 4. Custom Gateway for Mobile Devices (TaxiControl Direct)
+  app.post("/api/gateway/telemetry", async (req, res) => {
+    const { viatura_numero, data_hora, numero_cliente, tipo_interacao } = req.body;
+
+    if (!viatura_numero || !numero_cliente || !tipo_interacao) {
+      return res.status(400).json({ error: "Parâmetros incompletos de telemetria." });
+    }
+
+    try {
+      // Automatic Driver/Vehicle Lookup
+      const driversSnapshot = await db.collection("drivers")
+        .where("prefix", "==", viatura_numero)
+        .limit(1)
+        .get();
+
+      let driverData = null;
+      if (!driversSnapshot.empty) {
+        driverData = {
+          id: driversSnapshot.docs[0].id,
+          name: driversSnapshot.docs[0].data().name,
+          plate: driversSnapshot.docs[0].data().licensePlate
+        };
+
+        // Increment stats for the driver
+        if (tipo_interacao.toLowerCase().includes("chamada")) {
+          await db.collection("drivers").doc(driverData.id).update({
+            callCount: admin.firestore.FieldValue.increment(1),
+            lastActivity: admin.firestore.FieldValue.serverTimestamp()
+          });
+        }
+      }
+
+      // Log the interaction
+      const logRef = await db.collection("interaction_logs").add({
+        vehicle: viatura_numero,
+        driverId: driverData?.id || "N/A",
+        driverName: driverData?.name || "Desconhecido",
+        clientPhone: numero_cliente,
+        type: tipo_interacao, // "Chamada", "SMS", etc.
+        deviceTimestamp: data_hora,
+        serverTimestamp: admin.firestore.FieldValue.serverTimestamp(),
+        status: "logged"
+      });
+
+      console.log(`[Gateway] Registered ${tipo_interacao} for ${viatura_numero} from ${numero_cliente}`);
+      
+      res.status(200).json({ 
+        success: true, 
+        logId: logRef.id,
+        identified: !!driverData
+      });
+    } catch (error: any) {
+      console.error("[Gateway Error]", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Diagnostic route
   app.get("/api/ping", (req, res) => {
     res.json({ ping: "pong", mode: process.env.NODE_ENV, time: new Date().toISOString() });

@@ -16,11 +16,13 @@ export default function ProfileSetup({ user, onComplete }: ProfileSetupProps) {
   const [id, setId] = useState('');
   const [accessCode, setAccessCode] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null); // Restored error state
-  const [isCodeValidated, setIsCodeValidated] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
+  const isAdminEmail = user.email?.toLowerCase() === 'joseiwezasuana@gmail.com';
+  const [isCodeValidated, setIsCodeValidated] = useState(isAdminEmail);
   const [collaborators, setCollaborators] = useState<{ id: string, name: string }[]>([]);
   const [collaboratorsLoading, setCollaboratorsLoading] = useState(false);
-  const [validationRole, setValidationRole] = useState<string | null>(null);
+  const [validationRole, setValidationRole] = useState<string | null>(isAdminEmail ? 'admin' : null);
 
   const handleLogout = () => {
     signOut(auth);
@@ -71,16 +73,6 @@ export default function ProfileSetup({ user, onComplete }: ProfileSetupProps) {
     fetchCollaborators();
   }, [isCodeValidated, validationRole]);
 
-  const isAdminEmail = user.email?.toLowerCase() === 'joseiwezasuana@gmail.com';
-
-  useEffect(() => {
-    if (isAdminEmail) {
-      setIsCodeValidated(true);
-      setValidationRole('admin');
-      if (!name) setName('Administrador Master');
-      if (!id) setId('ADMIN-01');
-    }
-  }, [isAdminEmail]);
 
   const handleVerifyCode = async () => {
     if (!accessCode.trim() || !id.trim()) {
@@ -356,7 +348,7 @@ export default function ProfileSetup({ user, onComplete }: ProfileSetupProps) {
                       type="text"
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      placeholder="Introduza o seu Nome Completo"
+                      placeholder="Introduza o seu Nome Completo de Administrador"
                       className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-brand-primary transition-all text-sm font-bold"
                     />
                   ) : (

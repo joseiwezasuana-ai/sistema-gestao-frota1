@@ -347,9 +347,70 @@
         "updatedAt": { "type": "string", "format": "date-time" },
         "updatedBy": { "type": "string" }
       }
+    },
+    "TaxiRequest": {
+      "title": "TaxiRequest",
+      "description": "Taxi requests from the public client interface.",
+      "type": "object",
+      "properties": {
+        "pickup": { "type": "string" },
+        "destination": { "type": "string" },
+        "phone": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "completed"] },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "clientName": { "type": "string" },
+        "driverInfo": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "phone": { "type": "string" },
+            "vehicleModel": { "type": "string" },
+            "vehiclePlate": { "type": "string" }
+          }
+        }
+      },
+      "required": ["pickup", "destination", "phone", "status"]
+    },
+    "driver_scales": {
+      "title": "Escala de Motoristas",
+      "description": "Daily or weekly scales for driver assignments.",
+      "type": "object",
+      "properties": {
+        "driverId": { "type": "string" },
+        "driverName": { "type": "string" },
+        "prefix": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "shift": { "type": "string", "enum": ["Diurno", "Nocturno"] },
+        "status": { "type": "string", "enum": ["Ativo", "Folga", "Suspenso"] },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "InteractionLog": {
+      "title": "InteractionLog",
+      "description": "Logs of calls and SMS captured by mobile gateway.",
+      "type": "object",
+      "properties": {
+        "vehicle": { "type": "string" },
+        "driverId": { "type": "string" },
+        "driverName": { "type": "string" },
+        "clientPhone": { "type": "string" },
+        "type": { "type": "string" },
+        "deviceTimestamp": { "type": "string" },
+        "serverTimestamp": { "type": "string", "format": "date-time" },
+        "status": { "type": "string" }
+      },
+      "required": ["vehicle", "clientPhone", "type"]
     }
   },
   "firestore": {
+    "/interaction_logs/{logId}": {
+      "schema": "InteractionLog",
+      "description": "Logs from the mobile telemetry gateway."
+    },
+    "/taxi_requests/{requestId}": {
+      "schema": "TaxiRequest",
+      "description": "Collection of public taxi requests."
+    },
     "/users/{userId}": {
       "schema": "User",
       "description": "Collection of system users."
@@ -393,6 +454,10 @@
     "/gps_history/{logId}": {
       "schema": "GPSTracking",
       "description": "Chronological history of GPS coordinates for all vehicles."
+    },
+    "/driver_scales/{scaleId}": {
+      "schema": "driver_scales",
+      "description": "Driver working scales and assignments."
     },
     "/maintenance_logs/{logId}": {
       "schema": "MaintenanceLog",

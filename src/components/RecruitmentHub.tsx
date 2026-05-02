@@ -49,8 +49,10 @@ const ROLES = [
   { id: 'driver', label: 'Motorista', icon: User, color: 'text-teal-500', bg: 'bg-teal-50' },
 ];
 
+type SubTab = 'access' | 'drivers_master' | 'admin_staff' | 'rent_a_car' | 'internal_clients' | 'vehicles';
+
 export default function RecruitmentHub({ user }: { user?: any }) {
-  const [activeSubTab, setActiveSubTab] = useState<'access', 'drivers_master', 'admin_staff' | 'rent_a_car' | 'internal_clients' | 'vehicles'>('access');
+  const [activeSubTab, setActiveSubTab] = useState<SubTab>('access');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successCode, setSuccessCode] = useState<string | null>(null);

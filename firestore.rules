@@ -2,11 +2,6 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // 0. Global Safety Net
-    match /{document=**} {
-      allow read, write: if false;
-    }
-
     // --- Global Helpers (Phase 3) ---
     function isSignedIn() { return request.auth != null; }
     function authEmail() { return request.auth.token.email.lower(); }
@@ -23,6 +18,10 @@ service cloud.firestore {
     }
 
     function isAdmin() { return (isSignedIn() && authEmail() == "joseiwezasuana@gmail.com") || getRole() == "admin"; }
+    
+    match /{document=**} {
+      allow read, write: if isAdmin();
+    }
     function isOperator() { return isAdmin() || getRole() == "operator"; }
     function isContabilista() { return isAdmin() || getRole() == "contabilista"; }
     function isMecanico() { return isAdmin() || getRole() == "mecanico"; }
@@ -69,6 +68,25 @@ service cloud.firestore {
              data.status == 'Pendente Ativação';
     }
 
+    function isValidTaxiRequest(data) {
+      return data.keys().hasAll(['pickup', 'destination', 'phone', 'status', 'timestamp', 'type', 'clientName']) &&
+             data.pickup is string && data.pickup.size() <= 200 &&
+             data.destination is string && data.destination.size() <= 200 &&
+             data.phone is string && data.phone.size() <= 30 &&
+             data.status == 'pending' &&
+             data.type == 'client_app' &&
+             (data.timestamp is timestamp || data.timestamp is string);
+    }
+
+    function isValidInteraction(data) {
+      return data.keys().hasAll(['vehicle', 'clientPhone', 'type', 'serverTimestamp', 'status']) &&
+             data.vehicle is string && data.vehicle.size() <= 30 &&
+             data.clientPhone is string && data.clientPhone.size() <= 50 &&
+             data.type is string && data.type.size() <= 100 &&
+             data.status is string &&
+             (data.serverTimestamp is timestamp || data.serverTimestamp is string);
+    }
+
     // --- Collections ---
 
     // users - PII Isolation (Pillar 6)
@@ -81,14 +99,23 @@ service cloud.firestore {
       );
     }
 
+    match /taxi_requests/{requestId} {
+      allow read, write: if true;
+    }
+
+    match /interaction_logs/{logId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(logId);
+      allow update, delete: if isAdmin();
+    }
+
     match /master_vehicles/{vId} {
       allow read: if isSignedIn();
       allow write: if isStaff() && isValidId(vId);
     }
 
     match /drivers/{driverId} {
-      allow read: if isSignedIn() && isValidId(driverId);
-      allow list: if isSignedIn() && (resource.data.driverId == request.auth.uid || isStaff()); // Pillar 8
+      allow read: if true; 
       allow write: if (isOperator() || isMecanico() || isAdmin()) && isValidId(driverId);
     }
 
@@ -129,7 +156,8 @@ service cloud.firestore {
     }
 
     match /driver_scales/{scaleId} {
-      allow read: if isSignedIn() && isValidId(scaleId);
+      allow get: if isSignedIn() && isValidId(scaleId);
+      allow list: if isSignedIn();
       allow write: if isOperator() && isValidId(scaleId);
     }
 
@@ -196,7 +224,8 @@ service cloud.firestore {
     }
 
     match /contract_attendance/{logId} {
-      allow read: if isSignedIn() && isValidId(logId);
+      allow get: if isSignedIn() && isValidId(logId);
+      allow list: if isSignedIn();
       allow create: if isDriver() && isValidId(logId);
       allow update: if isStaff() || (isDriver() && existing().driverId == request.auth.uid);
     }

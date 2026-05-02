@@ -60,7 +60,7 @@ export default function Layout({ children, user, activeTab, onTabChange, onLogou
 
   const filteredMenuItems = menuItems.filter(item => {
     if (!item.roles) return true;
-    const isMasterAdmin = user?.email === 'joseiwezasuana@gmail.com';
+    const isMasterAdmin = user?.email?.toLowerCase() === 'joseiwezasuana@gmail.com';
     if (isMasterAdmin) return true;
     return item.roles.includes(user?.role);
   });

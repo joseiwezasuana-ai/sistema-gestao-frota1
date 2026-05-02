@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { LogIn, Car, User, Key, ArrowRight, Shield, AlertCircle, Loader2, CheckCircle2, ShieldCheck, ChevronRight, MessageSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { db, auth } from '../lib/firebase';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, signInWithRedirect } from 'firebase/auth';
+import { db, auth, googleProvider } from '../lib/firebase';
 import { collection, query, where, getDocs, updateDoc, doc, setDoc, serverTimestamp, orderBy, getDoc } from 'firebase/firestore';
 
 interface LoginProps {
-  onGoogleLogin: () => void;
+  onGoogleLogin: () => void | Promise<any>;
 }
 
 export default function Login({ onGoogleLogin }: LoginProps) {
@@ -104,6 +104,7 @@ export default function Login({ onGoogleLogin }: LoginProps) {
     setError(null);
     setShowPopupTip(false);
     try {
+      // Direct promise call
       await onGoogleLogin();
     } catch (err: any) {
       console.error('Login error detail:', err);
@@ -121,6 +122,19 @@ export default function Login({ onGoogleLogin }: LoginProps) {
       } else {
         setError('Erro ao autenticar com Google. Tente novamente.');
       }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleRedirect = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      await signInWithRedirect(auth, googleProvider);
+    } catch (err: any) {
+      console.error('Redirect error:', err);
+      setError('Erro ao iniciar redirecionamento. Use ID Central como alternativa.');
     } finally {
       setLoading(false);
     }
@@ -338,26 +352,26 @@ export default function Login({ onGoogleLogin }: LoginProps) {
         </div>
         
         <div className="p-8">
-          <div className="flex bg-slate-100 p-1 rounded-xl mb-8">
+          <div className="flex bg-slate-100 p-1 rounded-xl mb-8 overflow-x-auto scroller-hidden">
             <button 
-              onClick={() => setLoginMethod('google')}
-              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${
+              onClick={() => handleMethodChange('google')}
+              className={`flex-1 min-w-[70px] flex items-center justify-center gap-2 py-2.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
                 loginMethod === 'google' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'
               }`}
             >
               Google
             </button>
             <button 
-              onClick={() => setLoginMethod('credentials')}
-              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
+              onClick={() => handleMethodChange('credentials')}
+              className={`flex-1 min-w-[70px] flex items-center justify-center gap-2 py-2.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
                 loginMethod === 'credentials' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'
               }`}
             >
               ID Central
             </button>
             <button 
-              onClick={() => setLoginMethod('register')}
-              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
+              onClick={() => handleMethodChange('register')}
+              className={`flex-1 min-w-[70px] flex items-center justify-center gap-2 py-2.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
                 loginMethod === 'register' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'
               }`}
             >
@@ -382,19 +396,29 @@ export default function Login({ onGoogleLogin }: LoginProps) {
                       {error}
                     </div>
                     {showPopupTip && (
-                      <div className="pl-6 space-y-2">
+                      <div className="pl-6 space-y-2 mt-2">
                         <p className="text-[10px] text-red-500 font-medium leading-tight">
-                          O seu navegador impediu a abertura da janela de login. Tente permitir pop-ups ou use o botão abaixo:
+                          O seu navegador impediu a abertura da janela de login. Escolha uma alternativa:
                         </p>
-                        <a 
-                          href={window.location.href} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-lg text-[9px] font-black uppercase tracking-wider hover:bg-red-700 transition-all shadow-sm"
-                        >
-                          Abrir num novo separador
-                          <ArrowRight size={10} />
-                        </a>
+                        <div className="flex flex-wrap gap-2">
+                          <button 
+                            type="button"
+                            onClick={handleGoogleRedirect}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-brand-primary text-white rounded-lg text-[9px] font-black uppercase tracking-wider hover:bg-brand-secondary transition-all shadow-sm"
+                          >
+                            Entrar via Redirecionamento
+                            <LogIn size={10} />
+                          </button>
+                          <a 
+                            href={window.location.href} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-700 rounded-lg text-[9px] font-black uppercase tracking-wider hover:bg-slate-200 transition-all border border-slate-200"
+                          >
+                            Abrir noutra aba
+                            <ArrowRight size={10} />
+                          </a>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -417,6 +441,7 @@ export default function Login({ onGoogleLogin }: LoginProps) {
                 </button>
               </div>
             )}
+
 
             {loginMethod === 'credentials' && (
               <form onSubmit={handleCredentialsLogin} className="space-y-4">

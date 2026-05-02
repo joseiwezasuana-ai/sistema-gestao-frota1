@@ -344,6 +344,43 @@ export default function StaffMobileView({ user, onLogout, onExitMobile }: StaffM
                       </p>
                    </div>
                 </div>
+
+                <div className="bg-slate-900 p-6 rounded-[2rem] shadow-xl space-y-4">
+                   <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                         <div className="w-10 h-10 bg-brand-primary rounded-xl flex items-center justify-center text-white">
+                            <Smartphone size={20} />
+                         </div>
+                         <h4 className="text-xs font-black text-white uppercase tracking-tight">Gateway Integrado (Alpha)</h4>
+                      </div>
+                      <div className="flex items-center gap-1.5 bg-emerald-500/10 px-2 py-1 rounded-full border border-emerald-500/20">
+                         <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+                         <span className="text-[8px] font-bold text-emerald-500 uppercase">Vínculo Ativo</span>
+                      </div>
+                   </div>
+                   <div className="space-y-4">
+                      <p className="text-[10px] text-slate-400 italic leading-relaxed">
+                        Este módulo sincroniza chamadas automaticamente. Apenas veículos registados na base de dados (PSM COMERCIAL) são monitorizados.
+                      </p>
+                      <div className="flex gap-2">
+                        <button 
+                          onClick={async () => {
+                            const { NativeGateway } = await import('../services/nativeGateway');
+                            const prefixToUse = user?.prefix || 'TX-01';
+                            const result = await NativeGateway.simulateIncomingCall(prefixToUse);
+                            if (result.success) {
+                              alert(`Simulação bem-sucedida para viatura ${prefixToUse}!`);
+                            } else {
+                              alert(`Erro: ${result.error}. Garanta que ${prefixToUse} existe no Master Viatura.`);
+                            }
+                          }}
+                          className="flex-1 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl text-[9px] font-black uppercase tracking-widest border border-white/10 transition-all"
+                        >
+                           Simular Chamada
+                        </button>
+                      </div>
+                   </div>
+                </div>
              </div>
           </div>
         )}
