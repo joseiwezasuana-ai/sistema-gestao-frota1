@@ -250,7 +250,14 @@ export const InvoiceViewerModal: React.FC<InvoiceViewerModalProps> = ({ isOpen, 
                         <div className="bg-brand-primary/5 rounded-2xl p-4 border border-brand-primary/10">
                            <p className="text-[9px] font-black text-brand-primary uppercase tracking-[0.2em] mb-1">Previsão de Total</p>
                            <p className="text-xl font-black text-brand-primary italic">
-                              {(invoiceData.dailyPrice * Math.max(1, Math.ceil((new Date(invoiceData.endDate).getTime() - new Date(invoiceData.startDate).getTime()) / (1000 * 60 * 60 * 24)))).toLocaleString()} <span className="text-xs">KZ</span>
+                              {(() => {
+                                const start = new Date(invoiceData.startDate);
+                                const end = new Date(invoiceData.endDate);
+                                const isValidRange = !isNaN(start.getTime()) && !isNaN(end.getTime());
+                                const diffTime = isValidRange ? end.getTime() - start.getTime() : 0;
+                                const days = isValidRange ? Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24))) : 1;
+                                return ((invoiceData.dailyPrice || 0) * days).toLocaleString();
+                              })()} <span className="text-xs">KZ</span>
                            </p>
                         </div>
                     </div>

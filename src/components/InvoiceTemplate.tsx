@@ -22,9 +22,21 @@ interface InvoiceTemplateProps {
 export const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ data, documentNumber }) => {
   const start = new Date(data.startDate);
   const end = new Date(data.endDate);
-  const days = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
-  const totalAmount = data.dailyPrice * days;
-  const issueDate = data.createdAt ? format(new Date(data.createdAt), 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd');
+  
+  // Calculate days safely
+  const isValidRange = !isNaN(start.getTime()) && !isNaN(end.getTime());
+  const diffTime = isValidRange ? end.getTime() - start.getTime() : 0;
+  const days = isValidRange ? Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24))) : 1;
+  
+  const totalAmount = (data.dailyPrice || 0) * days;
+  
+  // Safe date formatting
+  let issueDate = '';
+  try {
+    issueDate = data.createdAt ? format(new Date(data.createdAt), 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd');
+  } catch (e) {
+    issueDate = format(new Date(), 'yyyy-MM-dd');
+  }
 
   return (
     <div id="invoice-capture" className="w-[800px] p-8 bg-white text-slate-900 font-sans mx-auto border border-slate-100 shadow-2xl">

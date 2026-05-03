@@ -221,27 +221,30 @@ export default function StaffMobileView({ user, onLogout, onExitMobile }: StaffM
                 <button className="text-[9px] font-black text-brand-primary uppercase underline">Ver Histórico</button>
               </div>
               <div className="space-y-3">
-                {calls.slice(0, 5).map((call: any, idx: number) => (
-                  <div key={idx} className="bg-white p-4 rounded-2xl border border-slate-100 flex items-center justify-between shadow-sm">
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400">
-                        <Users size={18} />
+                {(calls || []).slice(0, 5).map((call: any, idx: number) => {
+                  if (!call) return null;
+                  return (
+                    <div key={idx} className="bg-white p-4 rounded-2xl border border-slate-100 flex items-center justify-between shadow-sm">
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400">
+                          <Users size={18} />
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-black text-slate-900 uppercase tracking-tight">{call.customerName || 'Cliente Direto'}</p>
+                          <p className="text-[9px] text-slate-400 font-black uppercase tracking-tighter">{call.customerPhone || 'N/A'}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-[11px] font-black text-slate-900 uppercase tracking-tight">{call.customerName || 'Cliente Direto'}</p>
-                        <p className="text-[9px] text-slate-400 font-black uppercase tracking-tighter">{call.customerPhone}</p>
+                      <div className="text-right">
+                         <span className={cn(
+                           "px-2.5 py-1 rounded-full text-[8px] font-black uppercase tracking-widest",
+                           call.status === 'completed' ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600 animate-pulse"
+                         )}>
+                           {call.status || 'Pendente'}
+                         </span>
                       </div>
                     </div>
-                    <div className="text-right">
-                       <span className={cn(
-                         "px-2.5 py-1 rounded-full text-[8px] font-black uppercase tracking-widest",
-                         call.status === 'completed' ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600 animate-pulse"
-                       )}>
-                         {call.status}
-                       </span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -264,41 +267,44 @@ export default function StaffMobileView({ user, onLogout, onExitMobile }: StaffM
              </div>
 
              <div className="space-y-4">
-                {vehicles.map((v, idx) => (
-                  <div key={idx} className="bg-white p-5 rounded-[1.5rem] border border-slate-100 shadow-sm relative overflow-hidden">
-                     <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center gap-3">
-                           <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center border-2 border-white shadow-sm font-black text-slate-900 italic">
-                             {v.prefix}
-                           </div>
-                           <div>
-                              <p className="text-[11px] font-black text-slate-900 uppercase tracking-tight leading-none mb-1">{v.name}</p>
-                              <div className="flex items-center gap-2">
-                                 <div className={cn("w-2 h-2 rounded-full", getStatusColor(v.status))} />
-                                 <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">{v.status || 'Inativo'}</p>
-                                 <span className="text-[8px] text-slate-300">•</span>
-                                 <span className="text-[9px] text-slate-400 font-bold uppercase">{v.fuelLevel || 0}% FUEL</span>
-                              </div>
-                           </div>
-                        </div>
-                        <div className="text-right">
-                           <p className="text-[10px] font-black text-slate-900 tracking-tight">{v.plate}</p>
-                           <p className="text-[9px] text-slate-400 font-bold uppercase">{v.phone}</p>
-                        </div>
-                     </div>
-                     
-                     <div className="grid grid-cols-2 gap-4 pt-3 border-t border-slate-50">
-                        <div className="flex items-center gap-2">
-                           <Activity size={14} className="text-slate-400" />
-                           <span className="text-[10px] font-black text-slate-600 uppercase tracking-tight">{v.speed || 0} KM/H</span>
-                        </div>
-                        <div className="flex items-center gap-2 justify-end">
-                           <Clock size={14} className="text-slate-400" />
-                           <span className="text-[10px] font-black text-slate-600 uppercase tracking-tight italic">Auditado 24h</span>
-                        </div>
-                     </div>
-                  </div>
-                ))}
+                {(vehicles || []).map((v, idx) => {
+                  if (!v) return null;
+                  return (
+                    <div key={idx} className="bg-white p-5 rounded-[1.5rem] border border-slate-100 shadow-sm relative overflow-hidden">
+                       <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-3">
+                             <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center border-2 border-white shadow-sm font-black text-slate-900 italic">
+                               {v.prefix || '---'}
+                             </div>
+                             <div>
+                                <p className="text-[11px] font-black text-slate-900 uppercase tracking-tight leading-none mb-1">{v.name || 'Motorista'}</p>
+                                <div className="flex items-center gap-2">
+                                   <div className={cn("w-2 h-2 rounded-full", getStatusColor(v.status))} />
+                                   <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">{v.status || 'Inativo'}</p>
+                                   <span className="text-[8px] text-slate-300">•</span>
+                                   <span className="text-[9px] text-slate-400 font-bold uppercase">{v.fuelLevel || 0}% FUEL</span>
+                                </div>
+                             </div>
+                          </div>
+                          <div className="text-right">
+                             <p className="text-[10px] font-black text-slate-900 tracking-tight">{v.plate || v.licensePlate || '---'}</p>
+                             <p className="text-[9px] text-slate-400 font-bold uppercase">{v.phone || '---'}</p>
+                          </div>
+                       </div>
+                       
+                       <div className="grid grid-cols-2 gap-4 pt-3 border-t border-slate-50">
+                          <div className="flex items-center gap-2">
+                             <Activity size={14} className="text-slate-400" />
+                             <span className="text-[10px] font-black text-slate-600 uppercase tracking-tight">{v.speed || 0} KM/H</span>
+                          </div>
+                          <div className="flex items-center gap-2 justify-end">
+                             <Clock size={14} className="text-slate-400" />
+                             <span className="text-[10px] font-black text-slate-600 uppercase tracking-tight italic">Auditado 24h</span>
+                          </div>
+                       </div>
+                    </div>
+                  );
+                })}
              </div>
           </div>
         )}

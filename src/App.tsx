@@ -219,14 +219,16 @@ export default function App() {
   if (shouldShowMobile && isAdminOrStaff) {
     return (
       <ThemeProvider>
-        <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
-          <AlertNotificationManager />
-          <StaffMobileView 
-            user={userProfile} 
-            onLogout={() => signOut(auth)} 
-            onExitMobile={() => setViewPreference('desktop')}
-          />
-        </div>
+        <ErrorBoundary>
+          <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
+            <AlertNotificationManager />
+            <StaffMobileView 
+              user={userProfile} 
+              onLogout={() => signOut(auth)} 
+              onExitMobile={() => setViewPreference('desktop')}
+            />
+          </div>
+        </ErrorBoundary>
       </ThemeProvider>
     );
   }
@@ -235,10 +237,12 @@ export default function App() {
   if (isMecanico) {
     return (
       <ThemeProvider>
-        <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
-          <AlertNotificationManager />
-          <MechanicView user={userProfile} />
-        </div>
+        <ErrorBoundary>
+          <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
+            <AlertNotificationManager />
+            <MechanicView user={userProfile} />
+          </div>
+        </ErrorBoundary>
       </ThemeProvider>
     );
   }
@@ -246,10 +250,12 @@ export default function App() {
   if (isDriver) {
     return (
       <ThemeProvider>
-        <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
-          <AlertNotificationManager />
-          <DriverView user={userProfile} />
-        </div>
+        <ErrorBoundary>
+          <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
+            <AlertNotificationManager />
+            <DriverView user={userProfile} />
+          </div>
+        </ErrorBoundary>
       </ThemeProvider>
     );
   }

@@ -313,7 +313,7 @@ export default function RealTimeMonitor({ user }: RealTimeMonitorProps) {
                     <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
                         <div className="flex items-center gap-3">
                             <span className="text-[9px] font-black text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded uppercase tracking-tighter">
-                            #{call.id.slice(-4).toUpperCase()}
+                            #{(call.id || "0000").slice(-4).toUpperCase()}
                             </span>
                             <span className="text-[9px] font-bold text-slate-400 uppercase flex items-center gap-1">
                                <Calendar size={10} /> {call.timestamp?.toDate ? format(call.timestamp.toDate(), 'dd/MM/yy') : '--/--/--'}

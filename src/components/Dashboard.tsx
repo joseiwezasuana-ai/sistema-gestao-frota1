@@ -446,26 +446,34 @@ export default function Dashboard({ user }: { user: any }) {
     // Group by date
     const dailyEarnings: { [key: string]: { total: number, drivers: Set<string> } } = {};
     
+    if (!Array.isArray(revenues)) return [];
+
     revenues.forEach(rev => {
-      const date = rev.date;
-      if (!date) return;
+      const date = rev?.date;
+      if (!date || typeof date !== 'string') return;
       
       if (!dailyEarnings[date]) {
         dailyEarnings[date] = { total: 0, drivers: new Set() };
       }
       
       dailyEarnings[date].total += (rev.amount || 0);
-      dailyEarnings[date].drivers.add(rev.driverId || rev.driverName);
+      const driverId = rev.driverId || rev.driverName || 'Unknown';
+      dailyEarnings[date].drivers.add(driverId);
     });
 
-    return Object.entries(dailyEarnings)
-      .map(([date, data]) => ({
-        date: date.split('-').slice(1).reverse().join('/'), // DD/MM format
-        avg: data.drivers.size > 0 ? Math.round(data.total / data.drivers.size) : 0,
-        rawDate: date
-      }))
-      .sort((a, b) => a.rawDate.localeCompare(b.rawDate))
-      .slice(-7); // Last 7 days
+    try {
+      return Object.entries(dailyEarnings)
+        .map(([date, data]) => ({
+          date: typeof date === 'string' ? (date.split('-').length > 1 ? date.split('-').slice(1).reverse().join('/') : date) : 'N/A',
+          avg: data.drivers.size > 0 ? Math.round(data.total / data.drivers.size) : 0,
+          rawDate: date
+        }))
+        .sort((a, b) => a.rawDate.localeCompare(b.rawDate))
+        .slice(-7);
+    } catch (e) {
+      console.error("Error formatting earnings data:", e);
+      return [];
+    }
   };
 
   const callsPerHourData = getCallsPerHourData();
@@ -473,10 +481,15 @@ export default function Dashboard({ user }: { user: any }) {
 
   const filteredCallsForList = calls.filter(call => {
     // 1. Search term filter
+    const customerName = String(call?.customerName || '').toLowerCase();
+    const customerPhone = String(call?.customerPhone || '');
+    const pickupAddress = String(call?.pickupAddress || '').toLowerCase();
+    const term = (callSearchTerm || '').toLowerCase();
+
     const matchesSearch = 
-      (call.customerName?.toLowerCase().includes(callSearchTerm.toLowerCase())) ||
-      (call.customerPhone?.includes(callSearchTerm)) ||
-      (call.pickupAddress?.toLowerCase().includes(callSearchTerm.toLowerCase()));
+      customerName.includes(term) ||
+      customerPhone.includes(callSearchTerm || '') ||
+      pickupAddress.includes(term);
 
     if (!matchesSearch) return false;
 
@@ -917,7 +930,7 @@ export default function Dashboard({ user }: { user: any }) {
                                 call.status === 'active' ? 'EM CURSO' : 
                                 call.status === 'completed' ? 'CONCLUÍDA' : 
                                 call.status === 'cancelled' ? 'CANCELADA' : 
-                                call.status.toUpperCase()}
+                                (call.status || 'STATUS').toUpperCase()}
                             </span>
                          </td>
                          <td className="px-10 py-5">
@@ -1237,7 +1250,7 @@ export default function Dashboard({ user }: { user: any }) {
           isOpen={isInvoiceViewerOpen}
           onClose={() => setIsInvoiceViewerOpen(false)}
           data={selectedInvoiceData}
-          documentNumber={'FR WT2025/' + selectedInvoiceData.id?.slice(-4).toUpperCase()}
+          documentNumber={'FR WT2025/' + (selectedInvoiceData.id?.slice(-4).toUpperCase() || '----')}
         />
       )}
 
@@ -1261,7 +1274,7 @@ export default function Dashboard({ user }: { user: any }) {
               <div className="p-8 bg-brand-primary text-white flex items-center justify-between">
                 <div>
                    <h3 className="text-xl font-black uppercase italic tracking-tighter">Atribuir Motorista</h3>
-                   <p className="text-[10px] font-bold text-white/70 uppercase tracking-widest mt-1 italic">Pedido #{selectedRequest.id.slice(-6).toUpperCase()}</p>
+                   <p className="text-[10px] font-bold text-white/70 uppercase tracking-widest mt-1 italic">Pedido #{selectedRequest?.id?.slice(-6)?.toUpperCase() || '---'}</p>
                 </div>
                 <button onClick={() => setIsAssignModalOpen(false)} className="p-2 hover:bg-white/10 rounded-full transition-all">
                   <X size={20} />
@@ -1272,7 +1285,7 @@ export default function Dashboard({ user }: { user: any }) {
                 <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100">
                   <div className="flex items-start gap-3">
                     <MapPin size={16} className="text-brand-primary mt-1" />
-                    <p className="text-sm font-bold leading-tight">{selectedRequest.pickup}</p>
+                    <p className="text-sm font-bold leading-tight">{selectedRequest?.pickup || 'Não Definido'}</p>
                   </div>
                 </div>
 
@@ -1285,7 +1298,7 @@ export default function Dashboard({ user }: { user: any }) {
                         .map((driver) => (
                           <button
                             key={driver.id}
-                            onClick={() => handleAssignDriver(selectedRequest.id, driver)}
+                            onClick={() => selectedRequest?.id && handleAssignDriver(selectedRequest.id, driver)}
                             className="w-full p-4 bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/5 rounded-2xl hover:border-brand-primary hover:shadow-lg transition-all flex items-center justify-between group"
                           >
                             <div className="flex items-center gap-4 text-left">
