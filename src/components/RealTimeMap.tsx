@@ -1,5 +1,5 @@
 // @ts-nocheck
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import GoogleMap from 'google-maps-react-markers';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
@@ -8,6 +8,7 @@ import { renderToString } from 'react-dom/server';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { Truck, Crosshair, Map as MapIcon, Globe, AlertCircle, Zap, User } from 'lucide-react';
+import { animate } from 'motion/react';
 
 // Fix for Leaflet default icon issues in React/Webpack/Vite
 // @ts-ignore
@@ -97,6 +98,88 @@ const createLeafletIcon = (driver: any) => {
     iconSize: [32, 32],
     iconAnchor: [16, 16],
   });
+};
+
+const MovingTaxiMarker = ({ driver, onLocate }: { driver: any, onLocate: (d: any) => void }) => {
+  const [currentPos, setCurrentPos] = useState<[number, number]>([driver.lat, driver.lng]);
+  
+  // Memoize icon to avoid heavy re-renders during animation
+  const icon = useMemo(() => createLeafletIcon(driver), [
+    driver.status, 
+    driver.speed > 85, 
+    driver.prefix, 
+    driver.name
+  ]);
+
+  useEffect(() => {
+    const startLat = currentPos[0];
+    const startLng = currentPos[1];
+    const endLat = driver.lat;
+    const endLng = driver.lng;
+    
+    if (startLat === endLat && startLng === endLng) return;
+
+    // Smooth movement over 1.5 seconds - appropriate for periodic fleet updates
+    const controls = animate(0, 1, {
+      duration: 1.5,
+      ease: "easeInOut",
+      onUpdate: (latest) => {
+        const lat = startLat + (endLat - startLat) * latest;
+        const lng = startLng + (endLng - startLng) * latest;
+        setCurrentPos([lat, lng]);
+      }
+    });
+
+    return () => controls.stop();
+  }, [driver.lat, driver.lng]);
+
+  return (
+    <Marker 
+      position={currentPos}
+      icon={icon}
+      eventHandlers={{
+        click: () => onLocate(driver)
+      }}
+    >
+      <Popup offset={[0, -10]}>
+        <div className="p-1">
+          <p className="font-bold text-blue-700 text-xs mb-1 uppercase tracking-tighter italic">{driver.prefix}</p>
+          <p className="text-[10px] text-slate-800 font-medium">{driver.name}</p>
+          <div className="mt-1 pt-1 border-t border-slate-100 flex items-center justify-between gap-4">
+            <span className="text-[9px] text-slate-500 font-bold uppercase">{driver.status}</span>
+            <span className="text-[9px] text-brand-primary font-black italic">{driver.speed || 0} KM/H</span>
+          </div>
+        </div>
+      </Popup>
+    </Marker>
+  );
+};
+
+const MovingGoogleTaxiMarker = ({ driver }: { driver: any }) => {
+  const [lat, setLat] = useState(driver.lat);
+  const [lng, setLng] = useState(driver.lng);
+
+  useEffect(() => {
+    const startLat = lat;
+    const startLng = lng;
+    const endLat = driver.lat;
+    const endLng = driver.lng;
+
+    if (startLat === endLat && startLng === endLng) return;
+
+    const controls = animate(0, 1, {
+      duration: 1.5,
+      ease: "easeInOut",
+      onUpdate: (latest) => {
+        setLat(startLat + (endLat - startLat) * latest);
+        setLng(startLng + (endLng - startLng) * latest);
+      }
+    });
+
+    return () => controls.stop();
+  }, [driver.lat, driver.lng]);
+
+  return <TaxiMarker lat={lat} lng={lng} driver={driver} />;
 };
 
 export default function RealTimeMap() {
@@ -289,10 +372,8 @@ export default function RealTimeMap() {
                   mapMinHeight="100%"
                 >
                 {filteredDrivers.map(driver => (
-                  <TaxiMarker 
+                  <MovingGoogleTaxiMarker 
                     key={driver.id} 
-                    lat={driver.lat} 
-                    lng={driver.lng} 
                     driver={driver}
                   />
                 ))}
@@ -313,22 +394,11 @@ export default function RealTimeMap() {
                   url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 />
                 {filteredDrivers.map(driver => (
-                  <Marker 
+                  <MovingTaxiMarker 
                     key={driver.id} 
-                    position={[driver.lat, driver.lng]}
-                    icon={createLeafletIcon(driver)}
-                    eventHandlers={{
-                      click: () => handleLocateDriver(driver)
-                    }}
-                  >
-                    <Popup offset={[0, -10]}>
-                      <div className="p-1">
-                        <p className="font-bold text-blue-700 text-xs mb-1">{driver.prefix}</p>
-                        <p className="text-[10px] text-slate-800 font-medium">{driver.name}</p>
-                        <p className="text-[10px] text-slate-500 mt-1">Status: {driver.status}</p>
-                      </div>
-                    </Popup>
-                  </Marker>
+                    driver={driver}
+                    onLocate={handleLocateDriver}
+                  />
                 ))}
               </MapContainer>
             </div>

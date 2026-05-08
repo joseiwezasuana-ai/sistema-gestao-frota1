@@ -29,6 +29,9 @@ export default function Settings() {
   const [codes, setCodes] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [whatsAppLink, setWhatsAppLink] = useState('');
+  const [appName, setAppName] = useState('TaxiControl');
+  const [maintenanceThreshold, setMaintenanceThreshold] = useState(5000);
+  const [currency, setCurrency] = useState('AOA');
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [newRole, setNewRole] = useState<'operator' | 'driver' | 'mecanico' | 'contabilista'>('operator');
   const [assignedId, setAssignedId] = useState('');
@@ -51,6 +54,9 @@ export default function Settings() {
       if (docSnap.exists()) {
         const data = docSnap.data();
         setWhatsAppLink(data.whatsAppLink || '');
+        setAppName(data.appName || 'TaxiControl');
+        setMaintenanceThreshold(data.maintenanceThreshold || 5000);
+        setCurrency(data.currency || 'AOA');
       }
     });
 
@@ -66,6 +72,9 @@ export default function Settings() {
     try {
       await setDoc(doc(db, 'settings', 'global'), {
         whatsAppLink: whatsAppLink.trim(),
+        appName: appName.trim(),
+        maintenanceThreshold: Number(maintenanceThreshold),
+        currency: currency.trim(),
         updatedAt: serverTimestamp(),
         updatedBy: auth.currentUser?.email
       }, { merge: true });
@@ -164,8 +173,8 @@ export default function Settings() {
     <div className="space-y-6 max-w-[1400px] mx-auto pb-12">
       <div className="flex items-center justify-between bg-white px-6 py-4 rounded-lg border border-slate-200">
         <div>
-          <h2 className="text-xl font-bold text-slate-900 tracking-tight">Configurações de Admin</h2>
-          <p className="text-xs text-slate-500 font-medium uppercase tracking-widest">Gestão de acessos e segurança da central</p>
+          <h2 className="text-xl font-bold text-slate-900 tracking-tight">Configurações do Sistema</h2>
+          <p className="text-xs text-slate-500 font-medium uppercase tracking-widest">Parâmetros globais, gestão de acessos e segurança</p>
         </div>
       </div>
 
@@ -243,34 +252,68 @@ export default function Settings() {
             </div>
           </div>
 
-          <div className="bg-white rounded-lg border border-emerald-100 overflow-hidden h-fit shadow-sm">
-            <div className="px-5 py-4 border-b border-emerald-50 bg-emerald-50/50 flex items-center gap-2">
-              <Share2 size={16} className="text-emerald-600" />
-              <h3 className="font-bold text-[13px] text-emerald-900 uppercase tracking-wider">Social & Atendimento</h3>
+          <div className="bg-white rounded-lg border border-blue-100 overflow-hidden h-fit shadow-sm">
+            <div className="px-5 py-4 border-b border-blue-50 bg-blue-50/50 flex items-center gap-2">
+              <Database size={16} className="text-blue-600" />
+              <h3 className="font-bold text-[13px] text-blue-900 uppercase tracking-wider">Parâmetros Globais</h3>
             </div>
             <div className="p-6 space-y-4">
-               <div className="space-y-2">
-                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1">
-                   Link do Grupo WhatsApp
-                   <span className="text-[9px] lowercase font-normal">(wa.me ou chat.whatsapp.com)</span>
-                 </label>
-                 <input 
-                   type="text" 
-                   value={whatsAppLink}
-                   onChange={(e) => setWhatsAppLink(e.target.value)}
-                   placeholder="https://chat.whatsapp.com/..."
-                   className="w-full px-4 py-2 bg-emerald-50/30 border border-emerald-100 rounded-lg text-xs font-bold focus:bg-white focus:border-emerald-500 outline-none transition-all"
-                 />
+               <div className="grid grid-cols-1 gap-4">
+                 <div className="space-y-2">
+                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Nome da Aplicação</label>
+                   <input 
+                     type="text" 
+                     value={appName}
+                     onChange={(e) => setAppName(e.target.value)}
+                     className="w-full px-4 py-2 bg-slate-50 border border-slate-100 rounded-lg text-xs font-bold focus:bg-white focus:border-blue-500 outline-none transition-all"
+                   />
+                 </div>
+                 
+                 <div className="grid grid-cols-2 gap-4">
+                   <div className="space-y-2">
+                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Moeda Padrão</label>
+                     <input 
+                       type="text" 
+                       value={currency}
+                       onChange={(e) => setCurrency(e.target.value)}
+                       className="w-full px-4 py-2 bg-slate-50 border border-slate-100 rounded-lg text-xs font-bold focus:bg-white focus:border-blue-500 outline-none transition-all"
+                     />
+                   </div>
+                   <div className="space-y-2">
+                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Alerta Manutenção (KM)</label>
+                     <input 
+                       type="number" 
+                       value={maintenanceThreshold}
+                       onChange={(e) => setMaintenanceThreshold(Number(e.target.value))}
+                       className="w-full px-4 py-2 bg-slate-50 border border-slate-100 rounded-lg text-xs font-bold focus:bg-white focus:border-blue-500 outline-none transition-all"
+                     />
+                   </div>
+                 </div>
+
+                 <div className="space-y-2">
+                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                     Link do Grupo WhatsApp
+                     <span className="text-[9px] lowercase font-normal">(wa.me ou chat.whatsapp.com)</span>
+                   </label>
+                   <input 
+                     type="text" 
+                     value={whatsAppLink}
+                     onChange={(e) => setWhatsAppLink(e.target.value)}
+                     placeholder="https://chat.whatsapp.com/..."
+                     className="w-full px-4 py-2 bg-emerald-50/30 border border-emerald-100 rounded-lg text-xs font-bold focus:bg-white focus:border-emerald-500 outline-none transition-all"
+                   />
+                 </div>
                </div>
+
                <button 
                 onClick={saveGlobalSettings}
                 disabled={isSavingSettings}
-                className="w-full bg-emerald-600 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all active:scale-[0.98] disabled:opacity-50"
+                className="w-full bg-slate-900 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2 hover:bg-black transition-all active:scale-[0.98] disabled:opacity-50"
                >
                  {isSavingSettings ? <Loader2 className="animate-spin" size={18} /> : (
                    <>
                      <Check size={18} />
-                     GUARDAR CONFIGURAÇÃO
+                     GUARDAR CONFIGURAÇÕES
                    </>
                  )}
                </button>

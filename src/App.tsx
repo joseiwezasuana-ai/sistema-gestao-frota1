@@ -20,7 +20,7 @@ import {
 import { auth, db, googleProvider } from './lib/firebase';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
-import ErrorBoundary from './components/ErrorBoundary';
+import SystemErrorBoundary from './components/SystemErrorBoundary';
 import FleetManagement from './components/FleetManagement';
 import RealTimeMap from './components/RealTimeMap';
 import History from './components/History';
@@ -58,6 +58,16 @@ export default function App() {
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 1024 : false);
   const [viewPreference, setViewPreference] = useState<'auto' | 'mobile' | 'desktop'>('auto');
   const [isProfileEditOpen, setIsProfileEditOpen] = useState(false);
+  const [globalSettings, setGlobalSettings] = useState<any>(null);
+
+  useEffect(() => {
+    const unsubSettings = onSnapshot(doc(db, 'settings', 'global'), (docSnap) => {
+      if (docSnap.exists()) {
+        setGlobalSettings(docSnap.data());
+      }
+    });
+    return () => unsubSettings();
+  }, []);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -168,14 +178,14 @@ export default function App() {
   if (loading) {
     return (
       <ThemeProvider>
-        <ErrorBoundary>
+        <SystemErrorBoundary>
           <div className="flex h-screen w-full items-center justify-center bg-slate-50 dark:bg-slate-950">
             <div className="flex flex-col items-center gap-4">
               <div className="h-12 w-12 animate-spin rounded-full border-4 border-brand-primary border-t-transparent shadow-xl shadow-brand-primary/20"></div>
               <p className="text-slate-500 dark:text-slate-400 animate-pulse font-black text-xs uppercase tracking-[0.3em] italic">PSM TaxiControl v4.5 Inicializando...</p>
             </div>
           </div>
-        </ErrorBoundary>
+        </SystemErrorBoundary>
       </ThemeProvider>
     );
   }
@@ -187,9 +197,9 @@ export default function App() {
     };
     return (
       <ThemeProvider>
-        <ErrorBoundary>
+        <SystemErrorBoundary>
           <Login onGoogleLogin={handleGoogleLogin} />
-        </ErrorBoundary>
+        </SystemErrorBoundary>
       </ThemeProvider>
     );
   }
@@ -197,9 +207,9 @@ export default function App() {
   if (!userProfile) {
     return (
       <ThemeProvider>
-        <ErrorBoundary>
+        <SystemErrorBoundary>
           <ProfileSetup user={user} onComplete={setUserProfile} />
-        </ErrorBoundary>
+        </SystemErrorBoundary>
       </ThemeProvider>
     );
   }
@@ -219,7 +229,7 @@ export default function App() {
   if (shouldShowMobile && isAdminOrStaff) {
     return (
       <ThemeProvider>
-        <ErrorBoundary>
+        <SystemErrorBoundary>
           <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
             <AlertNotificationManager />
             <StaffMobileView 
@@ -228,7 +238,7 @@ export default function App() {
               onExitMobile={() => setViewPreference('desktop')}
             />
           </div>
-        </ErrorBoundary>
+        </SystemErrorBoundary>
       </ThemeProvider>
     );
   }
@@ -237,12 +247,12 @@ export default function App() {
   if (isMecanico) {
     return (
       <ThemeProvider>
-        <ErrorBoundary>
+        <SystemErrorBoundary>
           <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
             <AlertNotificationManager />
             <MechanicView user={userProfile} />
           </div>
-        </ErrorBoundary>
+        </SystemErrorBoundary>
       </ThemeProvider>
     );
   }
@@ -250,21 +260,22 @@ export default function App() {
   if (isDriver) {
     return (
       <ThemeProvider>
-        <ErrorBoundary>
+        <SystemErrorBoundary>
           <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
             <AlertNotificationManager />
             <DriverView user={userProfile} />
           </div>
-        </ErrorBoundary>
+        </SystemErrorBoundary>
       </ThemeProvider>
     );
   }
 
   return (
     <ThemeProvider>
-      <ErrorBoundary>
+      <SystemErrorBoundary>
         <Layout 
           user={userProfile} 
+          globalSettings={globalSettings}
         activeTab={activeTab} 
         onTabChange={setActiveTab}
         onLogout={() => signOut(auth)}
@@ -300,7 +311,7 @@ export default function App() {
         {activeTab === 'settings' && (isAdmin ? <Settings /> : <Dashboard user={userProfile} />)}
         {activeTab === 'messages' && (isAdmin || isOperator ? <Messages /> : <Dashboard user={userProfile} />)}
       </Layout>
-      </ErrorBoundary>
+      </SystemErrorBoundary>
     </ThemeProvider>
   );
 }

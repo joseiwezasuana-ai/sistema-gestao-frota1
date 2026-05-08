@@ -32,6 +32,7 @@ import { useTheme } from '../context/ThemeContext';
 interface LayoutProps {
   children: React.ReactNode;
   user: any;
+  globalSettings?: any;
   activeTab: string;
   onTabChange: (tab: string) => void;
   onLogout: () => void;
@@ -39,7 +40,7 @@ interface LayoutProps {
   onEditProfile?: () => void;
 }
 
-export default function Layout({ children, user, activeTab, onTabChange, onLogout, onToggleMobile, onEditProfile }: LayoutProps) {
+export default function Layout({ children, user, globalSettings, activeTab, onTabChange, onLogout, onToggleMobile, onEditProfile }: LayoutProps) {
   const { theme, toggleTheme } = useTheme();
   const menuItems = [
     { id: 'dashboard', label: 'Painel Geral', icon: LayoutDashboard },
@@ -55,7 +56,7 @@ export default function Layout({ children, user, activeTab, onTabChange, onLogou
     { id: 'messages', label: 'Hub de Comunicações', icon: MessageSquare, roles: ['admin', 'operator'] },
     { id: 'map', label: 'Geolocalização Live', icon: MapIcon, roles: ['admin', 'operator', 'mecanico'] },
     { id: 'gps_timeline', label: 'Auditoria GPS', icon: HistoryIcon, roles: ['admin', 'operator'] },
-    { id: 'settings', label: 'Parametrização', icon: SettingsIcon, roles: ['admin'] },
+    { id: 'settings', label: 'Configurações', icon: SettingsIcon, roles: ['admin'] },
   ];
 
   const filteredMenuItems = menuItems.filter(item => {
@@ -78,7 +79,9 @@ export default function Layout({ children, user, activeTab, onTabChange, onLogou
             <div className="absolute inset-0 bg-brand-primary blur-xl opacity-20 animate-pulse" />
           </div>
           <div>
-            <h1 className="font-black text-xs tracking-[0.2em] uppercase leading-none text-white italic">PS MOREIRA</h1>
+            <h1 className="font-black text-xs tracking-[0.2em] uppercase leading-none text-white italic">
+              {globalSettings?.appName || 'PS MOREIRA'}
+            </h1>
             <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest mt-1.5 opacity-60">COMERCIAL • MOXICO</p>
             <div className="mt-4 flex items-center justify-center gap-1.5">
                <span className="px-2 py-0.5 bg-brand-primary/10 text-brand-primary text-[8px] font-black rounded-full uppercase tracking-tighter border border-brand-primary/20">
