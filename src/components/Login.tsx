@@ -279,7 +279,7 @@ export default function Login({ onGoogleLogin }: LoginProps) {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4 font-sans antialiased text-slate-900">
+    <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4 font-sans antialiased text-slate-900 notranslate">
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}

@@ -179,7 +179,7 @@ export default function App() {
     return (
       <ThemeProvider>
         <SystemErrorBoundary>
-          <div className="flex h-screen w-full items-center justify-center bg-slate-50 dark:bg-slate-950">
+          <div key="loading-state" className="flex h-screen w-full items-center justify-center bg-slate-50 dark:bg-slate-950">
             <div className="flex flex-col items-center gap-4">
               <div className="h-12 w-12 animate-spin rounded-full border-4 border-brand-primary border-t-transparent shadow-xl shadow-brand-primary/20"></div>
               <p className="text-slate-500 dark:text-slate-400 animate-pulse font-black text-xs uppercase tracking-[0.3em] italic">PSM TaxiControl v4.5 Inicializando...</p>
@@ -198,7 +198,7 @@ export default function App() {
     return (
       <ThemeProvider>
         <SystemErrorBoundary>
-          <Login onGoogleLogin={handleGoogleLogin} />
+          <Login key="login-view" onGoogleLogin={handleGoogleLogin} />
         </SystemErrorBoundary>
       </ThemeProvider>
     );
@@ -208,7 +208,7 @@ export default function App() {
     return (
       <ThemeProvider>
         <SystemErrorBoundary>
-          <ProfileSetup user={user} onComplete={setUserProfile} />
+          <ProfileSetup key="setup-view" user={user} onComplete={setUserProfile} />
         </SystemErrorBoundary>
       </ThemeProvider>
     );
@@ -273,44 +273,46 @@ export default function App() {
   return (
     <ThemeProvider>
       <SystemErrorBoundary>
-        <Layout 
-          user={userProfile} 
-          globalSettings={globalSettings}
-        activeTab={activeTab} 
-        onTabChange={setActiveTab}
-        onLogout={() => signOut(auth)}
-        onToggleMobile={() => setViewPreference('mobile')}
-        onEditProfile={() => setIsProfileEditOpen(true)}
-      >
-        <AlertNotificationManager />
-        <ProfileEdit 
-          user={userProfile} 
-          isOpen={isProfileEditOpen} 
-          onClose={() => setIsProfileEditOpen(false)}
-          onUpdate={setUserProfile}
-        />
-        {dbError && (
-          <div className="bg-amber-100 dark:bg-amber-900/30 border-b border-amber-200 dark:border-amber-800/30 px-4 py-2 text-amber-800 dark:text-amber-200 text-xs font-bold flex items-center gap-2">
-            <div className="animate-pulse h-2 w-2 rounded-full bg-amber-500" />
-            {dbError}
-          </div>
-        )}
-        {activeTab === 'dashboard' && <Dashboard user={userProfile} />}
-        {activeTab === 'recruitment' && (isAdmin ? <RecruitmentHub user={userProfile} /> : <Dashboard user={userProfile} />)}
-        {activeTab === 'fleet' && (isAdmin || isOperator || isMecanico || isContabilista ? <FleetManagement user={userProfile} /> : <Dashboard user={userProfile} />)}
-        {activeTab === 'monitors' && <RealTimeMonitor user={userProfile} />}
-        {activeTab === 'revenue' && (isAdmin || isOperator || isContabilista ? <RevenueManagement user={userProfile} /> : <Dashboard user={userProfile} />)}
-        {activeTab === 'driver_preview' && <DriverView user={userProfile} />}
-        {activeTab === 'map' && <RealTimeMap />}
-        {activeTab === 'gps_timeline' && <GPSTimeline />}
-        {activeTab === 'history' && <History />}
-        {activeTab === 'maintenance' && (isAdmin || isOperator || isMecanico || isContabilista ? <MaintenanceRegistry user={userProfile} /> : <Dashboard user={userProfile} />)}
-        {activeTab === 'accounting' && (isAdmin || isContabilista ? <AccountingManager user={userProfile} /> : <Dashboard user={userProfile} />)}
-        {activeTab === 'warehouse' && (isAdmin || isOperator || isMecanico ? <WarehouseManager user={userProfile} /> : <Dashboard user={userProfile} />)}
-        {activeTab === 'psm_phones' && (isAdmin || isOperator ? <CompanyPhones /> : <Dashboard user={userProfile} />)}
-        {activeTab === 'settings' && (isAdmin ? <Settings /> : <Dashboard user={userProfile} />)}
-        {activeTab === 'messages' && (isAdmin || isOperator ? <Messages /> : <Dashboard user={userProfile} />)}
-      </Layout>
+        <div key="authed-layout" className="min-h-screen">
+          <Layout 
+            user={userProfile} 
+            globalSettings={globalSettings}
+            activeTab={activeTab} 
+            onTabChange={setActiveTab}
+            onLogout={() => signOut(auth)}
+            onToggleMobile={() => setViewPreference('mobile')}
+            onEditProfile={() => setIsProfileEditOpen(true)}
+          >
+            <AlertNotificationManager />
+            <ProfileEdit 
+              user={userProfile} 
+              isOpen={isProfileEditOpen} 
+              onClose={() => setIsProfileEditOpen(false)}
+              onUpdate={setUserProfile}
+            />
+            {dbError && (
+              <div className="bg-amber-100 dark:bg-amber-900/30 border-b border-amber-200 dark:border-amber-800/30 px-4 py-2 text-amber-800 dark:text-amber-200 text-xs font-bold flex items-center gap-2">
+                <div className="animate-pulse h-2 w-2 rounded-full bg-amber-500" />
+                {dbError}
+              </div>
+            )}
+            {activeTab === 'dashboard' && <Dashboard user={userProfile} />}
+            {activeTab === 'recruitment' && (isAdmin ? <RecruitmentHub user={userProfile} /> : <Dashboard user={userProfile} />)}
+            {activeTab === 'fleet' && (isAdmin || isOperator || isMecanico || isContabilista ? <FleetManagement user={userProfile} /> : <Dashboard user={userProfile} />)}
+            {activeTab === 'monitors' && <RealTimeMonitor user={userProfile} />}
+            {activeTab === 'revenue' && (isAdmin || isOperator || isContabilista ? <RevenueManagement user={userProfile} /> : <Dashboard user={userProfile} />)}
+            {activeTab === 'driver_preview' && <DriverView user={userProfile} />}
+            {activeTab === 'map' && <RealTimeMap />}
+            {activeTab === 'gps_timeline' && <GPSTimeline />}
+            {activeTab === 'history' && <History />}
+            {activeTab === 'maintenance' && (isAdmin || isOperator || isMecanico || isContabilista ? <MaintenanceRegistry user={userProfile} /> : <Dashboard user={userProfile} />)}
+            {activeTab === 'accounting' && (isAdmin || isContabilista ? <AccountingManager user={userProfile} /> : <Dashboard user={userProfile} />)}
+            {activeTab === 'warehouse' && (isAdmin || isOperator || isMecanico ? <WarehouseManager user={userProfile} /> : <Dashboard user={userProfile} />)}
+            {activeTab === 'psm_phones' && (isAdmin || isOperator ? <CompanyPhones /> : <Dashboard user={userProfile} />)}
+            {activeTab === 'settings' && (isAdmin ? <Settings /> : <Dashboard user={userProfile} />)}
+            {activeTab === 'messages' && (isAdmin || isOperator ? <Messages /> : <Dashboard user={userProfile} />)}
+          </Layout>
+        </div>
       </SystemErrorBoundary>
     </ThemeProvider>
   );
