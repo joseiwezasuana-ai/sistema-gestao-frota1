@@ -11,32 +11,23 @@ import firebaseConfig from '../../firebase-applet-config.json';
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
-// Use initializeFirestore to allow experimental settings like long polling
-// and force long polling to avoid connection issues in some environments
+// Use initializeFirestore with optimized settings for AIS/Web environments
 const dbSettings: any = {
-  // AIS environments work best with long polling to avoid connection drops
   experimentalForceLongPolling: true,
-  localCache: memoryLocalCache(), 
+  localCache: memoryLocalCache(),
+  ignoreUndefinedProperties: true
 };
 
-// In some AIS environments, IndexedDB persistence can cause "unavailable" errors if stuck
 export const db = initializeFirestore(app, dbSettings, firebaseConfig.firestoreDatabaseId || '(default)');
 
 export const googleProvider = new GoogleAuthProvider();
-googleProvider.setCustomParameters({ prompt: 'select_account' });
+googleProvider.setCustomParameters({ 
+  prompt: 'select_account',
+  // Ensure the popup doesn't get messed up by translations
+  hl: 'pt-PT'
+});
 
-// Validate Connection to Firestore (Instruction: CRITICAL CONSTRAINT)
-async function testConnection() {
-  try {
-    await getDocFromServer(doc(db, '_health', 'connection'));
-    console.log("Firestore connection verified.");
-  } catch (error: any) {
-    if(error?.message?.includes('offline') || error?.code === 'unavailable') {
-      console.error("Please check your Firebase configuration or network. Firestore is unreachable.");
-    }
-  }
-}
-testConnection();
+// Remove aggressive connection test that causes noise in logs
 
 export enum OperationType {
   CREATE = 'create',

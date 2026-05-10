@@ -20,16 +20,6 @@ import {
 import { auth, db, googleProvider } from './lib/firebase';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
-import SystemErrorBoundary from './components/SystemErrorBoundary';
-import FleetManagement from './components/FleetManagement';
-import RealTimeMap from './components/RealTimeMap';
-import History from './components/History';
-import Settings from './components/Settings';
-import Login from './components/Login';
-import Messages from './components/Messages';
-import DriversMaster from './components/DriversMaster';
-import VehicleRegistry from './components/VehicleRegistry';
-import ProfileSetup from './components/ProfileSetup';
 import RealTimeMonitor from './components/RealTimeMonitor';
 import GPSTimeline from './components/GPSTimeline';
 import DriverView from './components/DriverView';
@@ -178,14 +168,12 @@ export default function App() {
   if (loading) {
     return (
       <ThemeProvider>
-        <SystemErrorBoundary>
-          <div key="loading-state" className="flex h-screen w-full items-center justify-center bg-slate-50 dark:bg-slate-950">
-            <div className="flex flex-col items-center gap-4">
-              <div className="h-12 w-12 animate-spin rounded-full border-4 border-brand-primary border-t-transparent shadow-xl shadow-brand-primary/20"></div>
-              <p className="text-slate-500 dark:text-slate-400 animate-pulse font-black text-xs uppercase tracking-[0.3em] italic">PSM TaxiControl v4.5 Inicializando...</p>
-            </div>
+        <div key="loading-state" className="flex h-screen w-full items-center justify-center bg-slate-50 dark:bg-slate-950">
+          <div className="flex flex-col items-center gap-4">
+            <div className="h-12 w-12 animate-spin rounded-full border-4 border-brand-primary border-t-transparent shadow-xl shadow-brand-primary/20"></div>
+            <p className="text-slate-500 dark:text-slate-400 animate-pulse font-black text-xs uppercase tracking-[0.3em] italic">PSM TaxiControl v4.5 Inicializando...</p>
           </div>
-        </SystemErrorBoundary>
+        </div>
       </ThemeProvider>
     );
   }
@@ -197,9 +185,7 @@ export default function App() {
     };
     return (
       <ThemeProvider>
-        <SystemErrorBoundary>
-          <Login key="login-view" onGoogleLogin={handleGoogleLogin} />
-        </SystemErrorBoundary>
+        <Login key="login-view" onGoogleLogin={handleGoogleLogin} />
       </ThemeProvider>
     );
   }
@@ -207,9 +193,7 @@ export default function App() {
   if (!userProfile) {
     return (
       <ThemeProvider>
-        <SystemErrorBoundary>
-          <ProfileSetup key="setup-view" user={user} onComplete={setUserProfile} />
-        </SystemErrorBoundary>
+        <ProfileSetup key="setup-view" user={user} onComplete={setUserProfile} />
       </ThemeProvider>
     );
   }
@@ -229,16 +213,14 @@ export default function App() {
   if (shouldShowMobile && isAdminOrStaff) {
     return (
       <ThemeProvider>
-        <SystemErrorBoundary>
-          <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
-            <AlertNotificationManager />
-            <StaffMobileView 
-              user={userProfile} 
-              onLogout={() => signOut(auth)} 
-              onExitMobile={() => setViewPreference('desktop')}
-            />
-          </div>
-        </SystemErrorBoundary>
+        <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
+          <AlertNotificationManager />
+          <StaffMobileView 
+            user={userProfile} 
+            onLogout={() => signOut(auth)} 
+            onExitMobile={() => setViewPreference('desktop')}
+          />
+        </div>
       </ThemeProvider>
     );
   }
@@ -247,12 +229,10 @@ export default function App() {
   if (isMecanico) {
     return (
       <ThemeProvider>
-        <SystemErrorBoundary>
-          <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
-            <AlertNotificationManager />
-            <MechanicView user={userProfile} />
-          </div>
-        </SystemErrorBoundary>
+        <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
+          <AlertNotificationManager />
+          <MechanicView user={userProfile} />
+        </div>
       </ThemeProvider>
     );
   }
@@ -260,60 +240,56 @@ export default function App() {
   if (isDriver) {
     return (
       <ThemeProvider>
-        <SystemErrorBoundary>
-          <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
-            <AlertNotificationManager />
-            <DriverView user={userProfile} />
-          </div>
-        </SystemErrorBoundary>
+        <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
+          <AlertNotificationManager />
+          <DriverView user={userProfile} />
+        </div>
       </ThemeProvider>
     );
   }
 
   return (
     <ThemeProvider>
-      <SystemErrorBoundary>
-        <div key="authed-layout" className="min-h-screen">
-          <Layout 
+      <div key="authed-layout" className="min-h-screen">
+        <Layout 
+          user={userProfile} 
+          globalSettings={globalSettings}
+          activeTab={activeTab} 
+          onTabChange={setActiveTab}
+          onLogout={() => signOut(auth)}
+          onToggleMobile={() => setViewPreference('mobile')}
+          onEditProfile={() => setIsProfileEditOpen(true)}
+        >
+          <AlertNotificationManager />
+          <ProfileEdit 
             user={userProfile} 
-            globalSettings={globalSettings}
-            activeTab={activeTab} 
-            onTabChange={setActiveTab}
-            onLogout={() => signOut(auth)}
-            onToggleMobile={() => setViewPreference('mobile')}
-            onEditProfile={() => setIsProfileEditOpen(true)}
-          >
-            <AlertNotificationManager />
-            <ProfileEdit 
-              user={userProfile} 
-              isOpen={isProfileEditOpen} 
-              onClose={() => setIsProfileEditOpen(false)}
-              onUpdate={setUserProfile}
-            />
-            {dbError && (
-              <div className="bg-amber-100 dark:bg-amber-900/30 border-b border-amber-200 dark:border-amber-800/30 px-4 py-2 text-amber-800 dark:text-amber-200 text-xs font-bold flex items-center gap-2">
-                <div className="animate-pulse h-2 w-2 rounded-full bg-amber-500" />
-                {dbError}
-              </div>
-            )}
-            {activeTab === 'dashboard' && <Dashboard user={userProfile} />}
-            {activeTab === 'recruitment' && (isAdmin ? <RecruitmentHub user={userProfile} /> : <Dashboard user={userProfile} />)}
-            {activeTab === 'fleet' && (isAdmin || isOperator || isMecanico || isContabilista ? <FleetManagement user={userProfile} /> : <Dashboard user={userProfile} />)}
-            {activeTab === 'monitors' && <RealTimeMonitor user={userProfile} />}
-            {activeTab === 'revenue' && (isAdmin || isOperator || isContabilista ? <RevenueManagement user={userProfile} /> : <Dashboard user={userProfile} />)}
-            {activeTab === 'driver_preview' && <DriverView user={userProfile} />}
-            {activeTab === 'map' && <RealTimeMap />}
-            {activeTab === 'gps_timeline' && <GPSTimeline />}
-            {activeTab === 'history' && <History />}
-            {activeTab === 'maintenance' && (isAdmin || isOperator || isMecanico || isContabilista ? <MaintenanceRegistry user={userProfile} /> : <Dashboard user={userProfile} />)}
-            {activeTab === 'accounting' && (isAdmin || isContabilista ? <AccountingManager user={userProfile} /> : <Dashboard user={userProfile} />)}
-            {activeTab === 'warehouse' && (isAdmin || isOperator || isMecanico ? <WarehouseManager user={userProfile} /> : <Dashboard user={userProfile} />)}
-            {activeTab === 'psm_phones' && (isAdmin || isOperator ? <CompanyPhones /> : <Dashboard user={userProfile} />)}
-            {activeTab === 'settings' && (isAdmin ? <Settings /> : <Dashboard user={userProfile} />)}
-            {activeTab === 'messages' && (isAdmin || isOperator ? <Messages /> : <Dashboard user={userProfile} />)}
-          </Layout>
-        </div>
-      </SystemErrorBoundary>
+            isOpen={isProfileEditOpen} 
+            onClose={() => setIsProfileEditOpen(false)}
+            onUpdate={setUserProfile}
+          />
+          {dbError && (
+            <div className="bg-amber-100 dark:bg-amber-900/30 border-b border-amber-200 dark:border-amber-800/30 px-4 py-2 text-amber-800 dark:text-amber-200 text-xs font-bold flex items-center gap-2">
+              <div className="animate-pulse h-2 w-2 rounded-full bg-amber-500" />
+              {dbError}
+            </div>
+          )}
+          {activeTab === 'dashboard' && <Dashboard user={userProfile} />}
+          {activeTab === 'recruitment' && (isAdmin ? <RecruitmentHub user={userProfile} /> : <Dashboard user={userProfile} />)}
+          {activeTab === 'fleet' && (isAdmin || isOperator || isMecanico || isContabilista ? <FleetManagement user={userProfile} /> : <Dashboard user={userProfile} />)}
+          {activeTab === 'monitors' && <RealTimeMonitor user={userProfile} />}
+          {activeTab === 'revenue' && (isAdmin || isOperator || isContabilista ? <RevenueManagement user={userProfile} /> : <Dashboard user={userProfile} />)}
+          {activeTab === 'driver_preview' && <DriverView user={userProfile} />}
+          {activeTab === 'map' && <RealTimeMap />}
+          {activeTab === 'gps_timeline' && <GPSTimeline />}
+          {activeTab === 'history' && <History />}
+          {activeTab === 'maintenance' && (isAdmin || isOperator || isMecanico || isContabilista ? <MaintenanceRegistry user={userProfile} /> : <Dashboard user={userProfile} />)}
+          {activeTab === 'accounting' && (isAdmin || isContabilista ? <AccountingManager user={userProfile} /> : <Dashboard user={userProfile} />)}
+          {activeTab === 'warehouse' && (isAdmin || isOperator || isMecanico ? <WarehouseManager user={userProfile} /> : <Dashboard user={userProfile} />)}
+          {activeTab === 'psm_phones' && (isAdmin || isOperator ? <CompanyPhones /> : <Dashboard user={userProfile} />)}
+          {activeTab === 'settings' && (isAdmin ? <Settings /> : <Dashboard user={userProfile} />)}
+          {activeTab === 'messages' && (isAdmin || isOperator ? <Messages /> : <Dashboard user={userProfile} />)}
+        </Layout>
+      </div>
     </ThemeProvider>
   );
 }

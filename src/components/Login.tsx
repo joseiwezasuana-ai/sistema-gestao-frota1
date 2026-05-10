@@ -119,8 +119,12 @@ export default function Login({ onGoogleLogin }: LoginProps) {
       } else if (err.code === 'auth/operation-not-allowed') {
         setError('O login com Google não está ativado no Firebase Console.');
         setShowPopupTip(false);
+      } else if (err.code === 'auth/unauthorized-domain') {
+        setError('Este domínio (sistema-auditado.web.app) não está autorizado no Firebase Console. Adicione-o em Authentication > Settings > Authorized Domains.');
+        setShowPopupTip(true);
       } else {
-        setError('Erro ao autenticar com Google. Tente novamente.');
+        setError(`Erro ao autenticar com Google (${err.code || 'erro_desconhecido'}).`);
+        setShowPopupTip(true);
       }
     } finally {
       setLoading(false);
