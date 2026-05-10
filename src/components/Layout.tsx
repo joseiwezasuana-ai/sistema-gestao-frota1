@@ -71,9 +71,24 @@ export default function Layout({ children, user, globalSettings, activeTab, onTa
       {/* Sidebar - 250px width */}
       <aside className="w-[250px] bg-[#0f172a] dark:bg-black text-white flex flex-col flex-shrink-0 animate-in slide-in-from-left duration-500 border-r border-white/5 relative z-20">
         <div className="p-8 pb-10 flex flex-col items-center text-center">
-          <div className="relative mb-4 group cursor-pointer">
-            <div className="w-14 h-14 bg-brand-primary rounded-[20px] flex items-center justify-center text-white shadow-xl shadow-brand-primary/20 rotate-3 group-hover:rotate-0 transition-transform duration-300">
-               <span className="text-2xl font-black italic">PSM</span>
+          <div className="relative mb-4 group cursor-pointer" onClick={() => onTabChange('dashboard')}>
+            <div className="w-16 h-16 bg-white/5 rounded-[20px] flex items-center justify-center text-white shadow-xl shadow-brand-primary/10 rotate-3 group-hover:rotate-0 transition-all duration-300 border border-white/5 p-2 overflow-hidden">
+               <img 
+                 src="/logo.png" 
+                 alt="PSM" 
+                 className="w-full h-full object-contain" 
+                 onError={(e) => {
+                   const img = e.target as HTMLImageElement;
+                   if (img.src.includes('logo.png')) {
+                     img.src = '/logo.svg';
+                   } else {
+                     img.classList.add('hidden');
+                     const span = img.nextElementSibling as HTMLElement;
+                     if (span) span.classList.remove('hidden');
+                   }
+                 }} 
+               />
+               <span className="hidden text-3xl font-black italic text-brand-primary">PSM</span>
             </div>
             <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border-2 border-[#0f172a] z-10" />
             <div className="absolute inset-0 bg-brand-primary blur-xl opacity-20 animate-pulse" />

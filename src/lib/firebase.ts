@@ -8,12 +8,22 @@ import {
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
+// Safety check for incorrect appId which causes blank screen/timeouts in production
+const IS_SISTEMA_AUDITADO = firebaseConfig.projectId === 'sistema-auditado';
+const HAS_DEFAULT_APP_ID = firebaseConfig.appId.includes('1015177486923');
+
+if (IS_SISTEMA_AUDITADO && HAS_DEFAULT_APP_ID) {
+  const msg = "⚠️ ERRO DE CONFIGURAÇÃO: Você ainda está usando o 'appId' padrão. Atualize o arquivo 'firebase-applet-config.json' com os dados do projeto 'sistema-auditado' no Console Firebase.";
+  console.error(msg);
+  (window as any)._firebaseConfigError = msg;
+}
+
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
-// Use initializeFirestore with optimized settings for AIS/Web environments
+// Optimized settings for specific AI Studio runtime constraints
 const dbSettings: any = {
-  experimentalForceLongPolling: true,
+  experimentalAutoDetectLongPolling: true, // Auto-ajuste para melhor compatibilidade
   localCache: memoryLocalCache(),
   ignoreUndefinedProperties: true
 };

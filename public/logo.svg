@@ -1,0 +1,6 @@
+<svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="200" height="200" rx="40" fill="#2563EB"/>
+  <path d="M60 140V60H80C100 60 110 70 110 85C110 100 100 110 80 110H60V140ZM80 95C90 95 95 90 95 85C95 80 90 75 80 75H75V95H80Z" fill="white"/>
+  <path d="M120 140V125H140V115H120V60H140V75H135V115H140V140H120Z" fill="white" opacity="0.8"/>
+  <text x="100" y="180" text-anchor="middle" fill="white" font-family="sans-serif" font-weight="bold" font-size="20">PSM</text>
+</svg>

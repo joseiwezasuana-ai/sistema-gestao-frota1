@@ -10,7 +10,7 @@ interface State {
   error?: Error;
 }
 
-class SystemErrorBoundary extends Component<Props, State> {
+export default class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
     super(props);
     this.state = {
@@ -93,5 +93,3 @@ class SystemErrorBoundary extends Component<Props, State> {
     return this.props.children;
   }
 }
-
-export default SystemErrorBoundary;

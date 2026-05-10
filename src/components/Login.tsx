@@ -111,6 +111,9 @@ export default function Login({ onGoogleLogin }: LoginProps) {
       if (err.code === 'auth/popup-blocked' || err.message?.includes('popup')) {
         setError('O pop-up de login foi bloqueado pelo seu navegador.');
         setShowPopupTip(true);
+      } else if (err.code === 'auth/network-request-failed') {
+        setError('Falha na conexão de rede. Verifique seu sinal de internet ou se existe algum firewall bloqueando o acesso ao Google.');
+        setShowPopupTip(false);
       } else if (err.code === 'auth/cancelled-popup-request' || err.message?.includes('cancelled-popup-request')) {
         setError('Solicitação de login cancelada. Tente novamente clicando apenas uma vez.');
       } else if (err.message?.includes('INTERNAL ASSERTION FAILED')) {
@@ -120,7 +123,12 @@ export default function Login({ onGoogleLogin }: LoginProps) {
         setError('O login com Google não está ativado no Firebase Console.');
         setShowPopupTip(false);
       } else if (err.code === 'auth/unauthorized-domain') {
-        setError('Este domínio (sistema-auditado.web.app) não está autorizado no Firebase Console. Adicione-o em Authentication > Settings > Authorized Domains.');
+        const currentDomain = window.location.hostname;
+        setError(`O domínio "${currentDomain}" não está autorizado no Firebase Console. 
+          Vá em Authentication > Settings > Authorized Domains e adicione este endereço e também o domínio de produção.`);
+        setShowPopupTip(true);
+      } else if (err.code === 'auth/network-request-failed') {
+        setError('Ocorreu um erro de rede. Isso pode ser devido a uma conexão instável ou ao bloqueio de scripts externos. Tente novamente ou use ID Central.');
         setShowPopupTip(true);
       } else {
         setError(`Erro ao autenticar com Google (${err.code || 'erro_desconhecido'}).`);
@@ -303,11 +311,31 @@ export default function Login({ onGoogleLogin }: LoginProps) {
             initial={{ scale: 0.8, rotate: -5 }}
             animate={{ scale: 1, rotate: 0 }}
             transition={{ type: 'spring', damping: 12 }}
-            className="mx-auto flex h-20 w-20 items-center justify-center rounded-3xl bg-gradient-to-br from-brand-primary to-blue-700 shadow-2xl shadow-brand-primary/40 relative z-10 mb-6 border border-white/10 group overflow-hidden"
+            className="mx-auto flex h-24 w-full items-center justify-center relative z-10 mb-6 group"
           >
-            <div className="absolute inset-0 bg-white/10 group-hover:bg-transparent transition-colors"></div>
-            <Car size={40} className="text-white drop-shadow-lg relative z-10" />
-            <div className="absolute -bottom-1 -right-1">
+            <img 
+              src="/logo.png" 
+              alt="PS Moreira Logo" 
+              className="max-h-full max-w-full object-contain relative z-10 drop-shadow-[0_0_15px_rgba(59,130,246,0.3)]"
+              style={{ filter: 'drop-shadow(0 0 15px rgba(59,130,246,0.3))' }}
+              onError={(e) => {
+                const img = e.target as HTMLImageElement;
+                if (img.src.includes('logo.png')) {
+                  img.src = '/logo.svg';
+                } else {
+                  img.style.display = 'none';
+                  const fallback = img.nextElementSibling as HTMLElement;
+                  if (fallback) fallback.classList.remove('hidden');
+                }
+              }}
+            />
+            <div className="hidden h-20 w-20 flex items-center justify-center rounded-3xl bg-gradient-to-br from-brand-primary to-blue-700 shadow-2xl shadow-brand-primary/40 relative z-10 border border-white/10">
+              <Car size={40} className="text-white drop-shadow-lg" />
+            </div>
+            
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 bg-brand-primary/20 blur-[60px] rounded-full pointer-events-none -z-10" />
+            
+            <div className="absolute -bottom-1 -right-1 z-20">
               <div className="w-5 h-5 bg-emerald-500 rounded-full border-4 border-[#0f172a] flex items-center justify-center">
                  <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
               </div>
