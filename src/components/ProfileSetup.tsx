@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { User, Shield, ArrowRight, Loader2, Key, AlertCircle, ChevronRight, CheckCircle2, ShieldCheck, LogOut, Mail } from 'lucide-react';
 import { motion } from 'motion/react';
 import { doc, setDoc, getDoc, updateDoc, collection, query, where, getDocs, orderBy } from 'firebase/firestore';
-import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
+import { db, auth, handleFirestoreError, OperationType, withTimeout } from '../lib/firebase';
 import { signOut } from 'firebase/auth';
 
 interface ProfileSetupProps {
@@ -46,7 +46,7 @@ export default function ProfileSetup({ user, onComplete }: ProfileSetupProps) {
             collection(db, 'administrative_staff'), 
             where('status', '==', 'Ativo')
           );
-          const staffSnap = await getDocs(staffQuery);
+          const staffSnap = await withTimeout(getDocs(staffQuery));
           results = staffSnap.docs
             .filter(doc => doc.data().name)
             .map(doc => ({ id: doc.id, name: doc.data().name }));
@@ -55,7 +55,7 @@ export default function ProfileSetup({ user, onComplete }: ProfileSetupProps) {
             collection(db, 'drivers_master'), 
             where('status', '==', 'Ativo')
           );
-          const driversSnap = await getDocs(driversQuery);
+          const driversSnap = await withTimeout(getDocs(driversQuery));
           results = driversSnap.docs
             .filter(doc => doc.data().name)
             .map(doc => ({ id: doc.id, name: doc.data().name }));
@@ -90,7 +90,7 @@ export default function ProfileSetup({ user, onComplete }: ProfileSetupProps) {
         where('assignedId', '==', id.trim().toUpperCase()),
         where('used', '==', false)
       );
-      const querySnapshot = await getDocs(q);
+      const querySnapshot = await withTimeout(getDocs(q));
 
       if (querySnapshot.empty) {
         throw new Error("Código de acesso ou ID inválidos.");
@@ -129,7 +129,7 @@ export default function ProfileSetup({ user, onComplete }: ProfileSetupProps) {
         
         let codeSnap;
         try {
-          codeSnap = await getDocs(q);
+          codeSnap = await withTimeout(getDocs(q));
         } catch (err) {
           handleFirestoreError(err, OperationType.GET, 'access_codes');
           return;
@@ -142,16 +142,15 @@ export default function ProfileSetup({ user, onComplete }: ProfileSetupProps) {
         }
 
         const codeDoc = codeSnap.docs[0];
-        const codeData = codeDoc.data();
         const codeRef = codeDoc.ref;
         
         // Mark code as used
         try {
-          await updateDoc(codeRef, {
+          await withTimeout(updateDoc(codeRef, {
             used: true,
             usedBy: user.uid,
             usedAt: new Date().toISOString()
-          });
+          }));
         } catch (err) {
           handleFirestoreError(err, OperationType.UPDATE, `access_codes/${codeDoc.id}`);
           return;
@@ -170,7 +169,7 @@ export default function ProfileSetup({ user, onComplete }: ProfileSetupProps) {
       };
 
       try {
-        await setDoc(doc(db, 'users', user.uid), newProfile);
+        await withTimeout(setDoc(doc(db, 'users', user.uid), newProfile));
       } catch (err) {
         handleFirestoreError(err, OperationType.WRITE, path);
         return;

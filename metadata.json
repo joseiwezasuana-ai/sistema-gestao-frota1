@@ -1,5 +1,5 @@
 {
-  "name": "SUPER Taxi - TaxiControl",
+  "name": "Sistema Auditado - TaxiControl",
   "description": "Ecossistema técnico para gestão total de frota da PS MOREIRA: Monitoramento em tempo real, Inteligência Artificial (Gemini), aprovação financeira multinível e folha de salários automatizada.",
   "requestFramePermissions": [
     "geolocation"

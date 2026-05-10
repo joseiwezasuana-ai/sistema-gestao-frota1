@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { LogIn, Car, User, Key, ArrowRight, Shield, AlertCircle, Loader2, CheckCircle2, ShieldCheck, ChevronRight, MessageSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, signInWithRedirect } from 'firebase/auth';
-import { db, auth, googleProvider } from '../lib/firebase';
+import { db, auth, googleProvider, withTimeout } from '../lib/firebase';
 import { collection, query, where, getDocs, updateDoc, doc, setDoc, serverTimestamp, orderBy, getDoc } from 'firebase/firestore';
 
 interface LoginProps {
@@ -29,7 +29,7 @@ export default function Login({ onGoogleLogin }: LoginProps) {
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const settingsSnap = await getDoc(doc(db, 'settings', 'global'));
+        const settingsSnap = await withTimeout(getDoc(doc(db, 'settings', 'global')));
         if (settingsSnap.exists()) {
           setWhatsAppLink(settingsSnap.data().whatsAppLink || '');
         }
@@ -71,7 +71,7 @@ export default function Login({ onGoogleLogin }: LoginProps) {
             collection(db, 'administrative_staff'), 
             where('status', '==', 'Ativo')
           );
-          const staffSnap = await getDocs(staffQuery);
+          const staffSnap = await withTimeout(getDocs(staffQuery));
           results = staffSnap.docs
             .filter(doc => doc.data().name)
             .map(doc => ({ id: doc.id, name: doc.data().name }));
@@ -80,7 +80,7 @@ export default function Login({ onGoogleLogin }: LoginProps) {
             collection(db, 'drivers_master'), 
             where('status', '==', 'Ativo')
           );
-          const driversSnap = await getDocs(driversQuery);
+          const driversSnap = await withTimeout(getDocs(driversQuery));
           results = driversSnap.docs
             .filter(doc => doc.data().name)
             .map(doc => ({ id: doc.id, name: doc.data().name }));
@@ -170,12 +170,12 @@ export default function Login({ onGoogleLogin }: LoginProps) {
         where('assignedId', '==', id.trim().toUpperCase()),
         where('used', '==', false)
       );
-      const querySnapshot = await getDocs(q);
+      const querySnapshot = await withTimeout(getDocs(q));
 
       if (querySnapshot.empty) {
         // Fallback check to give better error message
         const codeOnlyQuery = query(collection(db, 'access_codes'), where('code', '==', code.trim().toUpperCase()));
-        const codeOnlySnap = await getDocs(codeOnlyQuery);
+        const codeOnlySnap = await withTimeout(getDocs(codeOnlyQuery));
         
         if (codeOnlySnap.empty) {
           throw new Error("Código de ativação inválido.");
@@ -221,7 +221,7 @@ export default function Login({ onGoogleLogin }: LoginProps) {
         where('assignedId', '==', id.trim().toUpperCase()),
         where('used', '==', false)
       );
-      const querySnapshot = await getDocs(q);
+      const querySnapshot = await withTimeout(getDocs(q));
 
       if (querySnapshot.empty) {
         throw new Error("Código de ativação inválido ou já utilizado.");
@@ -231,27 +231,27 @@ export default function Login({ onGoogleLogin }: LoginProps) {
       const codeData = codeDoc.data();
 
       // 2. Create Auth Account (Client-side bypasses Admin API errors)
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const userCredential = await withTimeout(createUserWithEmailAndPassword(auth, email, password), 20000); // 20s for auth
       const user = userCredential.user;
 
       // 3. Update Profile & Sync Firestore
       await updateProfile(user, { displayName: name });
       
-      await setDoc(doc(db, 'users', user.uid), {
+      await withTimeout(setDoc(doc(db, 'users', user.uid), {
         uid: user.uid,
         name: name,
         email: email,
         role: codeData.role,
         createdAt: serverTimestamp(),
         syncedAt: serverTimestamp()
-      });
+      }));
 
       // 4. Mark code as used
-      await updateDoc(doc(db, 'access_codes', codeDoc.id), {
+      await withTimeout(updateDoc(doc(db, 'access_codes', codeDoc.id), {
         used: true,
         usedBy: user.uid,
         usedAt: serverTimestamp()
-      });
+      }));
 
       setSuccess('Conta ativada com sucesso! Já pode navegar no painel.');
       // Auto switch to login or it will auto-redirect if App.tsx listens

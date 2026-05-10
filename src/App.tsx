@@ -133,8 +133,15 @@ export default function App() {
         let profileSnap;
         try {
           profileSnap = await Promise.race([profilePromise, timeoutPromise]) as any;
-        } catch (e) {
+        } catch (e: any) {
           console.error("Profile fetch failed:", e);
+          
+          let errorMsg = "Falha ao carregar perfil.";
+          if (e.message === 'timeout' || e.code === 'unavailable' || e.message.includes('offline')) {
+            errorMsg = "A base de dados não está a responder. Verifique se o Cloud Firestore foi ativado no Console Firebase.";
+          }
+          setDbError(errorMsg);
+
           // If it's the master admin, we can fallback to a temporary profile to allow entry
           if (firebaseUser.email?.toLowerCase() === 'joseiwezasuana@gmail.com') {
              const fallbackProfile = {
@@ -182,8 +189,15 @@ export default function App() {
         }
       } catch (err: any) {
         console.error("Auth State Error:", err);
-        if (err.message === 'timeout' || err.code === 'unavailable') {
-          setDbError("A ligação à base de dados está lenta. Pode haver limitações no carregamento de dados.");
+        const currentDomain = window.location.hostname;
+        const isFirebaseHosting = currentDomain.includes('firebaseapp.com') || currentDomain.includes('web.app');
+        
+        if (err.message === 'timeout' || err.code === 'unavailable' || err.message.includes('offline')) {
+          let msg = "A ligação à base de dados está offline ou lenta.";
+          if (isFirebaseHosting) {
+            msg += " Verifique se o domínio foi autorizado no Console Firebase (Authentication > Settings).";
+          }
+          setDbError(msg);
         } else {
           setDbError(`Erro ao recuperar perfil: ${err.message}`);
         }

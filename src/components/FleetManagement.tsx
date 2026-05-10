@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { collection, onSnapshot, addDoc, deleteDoc, doc, query, orderBy, serverTimestamp, updateDoc, arrayRemove, limit, getDocs, where, writeBatch } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { db, handleFirestoreError, OperationType, withTimeout } from '../lib/firebase';
 import { formatSafe } from '../lib/dateUtils';
 import { cn } from '../lib/utils';
 
@@ -37,6 +37,7 @@ export default function FleetManagement({ user }: { user?: any }) {
   const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
   const [selectedDriverForShift, setSelectedDriverForShift] = useState<any>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [shiftError, setShiftError] = useState<string | null>(null);
 
   const isContabilista = user?.role === 'contabilista';
@@ -282,7 +283,7 @@ export default function FleetManagement({ user }: { user?: any }) {
         where('status', 'not-in', ['finalized', 'paid_to_staff']),
         limit(1)
       );
-      const pendingSnap = await getDocs(qPending);
+      const pendingSnap = await withTimeout(getDocs(qPending));
       if (!pendingSnap.empty) {
         const pendingData = pendingSnap.docs[0].data();
         setScaleError(`BLOQUEIO DE ESCALA: Existe uma declaração de renda pendente (${pendingData.date}). Status: ${pendingData.status}.`);
@@ -290,7 +291,7 @@ export default function FleetManagement({ user }: { user?: any }) {
         return;
       }
 
-      await addDoc(collection(db, path), {
+      await withTimeout(addDoc(collection(db, path), {
         ...newDriver,
         driverId,
         status: 'Ativo',
@@ -302,10 +303,28 @@ export default function FleetManagement({ user }: { user?: any }) {
         rendaStatus: 'pending',
         callCount: 0,
         updatedAt: new Date().toISOString()
-      });
+      }));
       setIsModalOpen(false);
+      setSubmitError(null);
       setNewDriver({ name: '', phone: '', secondaryPhone: '', prefix: '', plate: '', trackerId: '' });
-    } catch (error) {
+    } catch (error: any) {
+      console.error("Scale Submission Error:", error);
+      let errorMessage = "Ocorreu um erro ao gravar os dados.";
+      
+      try {
+        const parsedError = JSON.parse(error.message);
+        if (parsedError.error.includes('index')) {
+          errorMessage = "O sistema ainda está a criar os índices de pesquisa no Firebase. Aguarde 5 minutos e tente novamente.";
+        } else if (parsedError.error.includes('permission-denied')) {
+          errorMessage = "Erro de Permissão: O seu utilizador não tem autorização para gravar nesta coleção.";
+        } else {
+          errorMessage = "Erro técnico: " + (parsedError.error || "Desconhecido");
+        }
+      } catch {
+        errorMessage = "Erro: " + error.message;
+      }
+      
+      setSubmitError(errorMessage);
       handleFirestoreError(error, OperationType.CREATE, path);
     } finally {
       setIsSubmitting(false);
@@ -852,14 +871,20 @@ export default function FleetManagement({ user }: { user?: any }) {
               </div>
 
               <form onSubmit={handleAddDriver} className="p-6 space-y-4">
-                {scaleError && (
+                {(scaleError || submitError) && (
                   <motion.div 
                     initial={{ opacity: 0, x: -10 }}
                     animate={{ opacity: 1, x: 0 }}
                     className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3"
                   >
-                    <X className="text-red-500 shrink-0" size={16} />
-                    <p className="text-[11px] font-bold text-red-600 leading-tight">{scaleError}</p>
+                    <AlertCircle className="text-red-500 shrink-0" size={16} />
+                    <div className="flex-1">
+                      <p className="text-[10px] font-black text-red-700 uppercase tracking-widest mb-0.5">Erro de Registo</p>
+                      <p className="text-[11px] font-bold text-red-600 leading-tight">{scaleError || submitError}</p>
+                      {(submitError?.includes('índices') || submitError?.includes('index')) && (
+                        <p className="text-[9px] text-red-500 mt-1 italic font-medium">O Firebase está a configurar a base de dados. Tente novamente em 2-3 minutos.</p>
+                      )}
+                    </div>
                   </motion.div>
                 )}
                 <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 flex items-start gap-4 mb-2">

@@ -1,0 +1,24 @@
+{
+  "short_name": "SUPER Taxi",
+  "name": "SUPER Taxi - PSM TaxiControl",
+  "icons": [
+    {
+      "src": "/logo.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo.svg",
+      "type": "image/svg+xml",
+      "sizes": "512x512",
+      "purpose": "maskable"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#0f172a",
+  "background_color": "#0f172a",
+  "orientation": "portrait",
+  "description": "Sistema de Gestão de Frotas PSM COMERCIAL LUENA MOXICO"
+}

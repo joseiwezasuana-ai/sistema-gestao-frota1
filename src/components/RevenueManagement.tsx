@@ -61,6 +61,7 @@ export default function RevenueManagement({ user }: { user: any }) {
   const [filter, setFilter] = useState('all');
   const [selectedDriver, setSelectedDriver] = useState('all');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [globalError, setGlobalError] = useState<string | null>(null);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [archivedRevenues, setArchivedRevenues] = useState<RevenueLog[]>([]);
 
@@ -118,6 +119,8 @@ export default function RevenueManagement({ user }: { user: any }) {
   }, [isHistoryModalOpen]);
 
   const handleStatusChange = async (revenueId: string, newStatus: string, reason?: string) => {
+    setIsProcessing(true);
+    setGlobalError(null);
     try {
       const revenue = revenues.find(r => r.id === revenueId);
       if (!revenue) return;
@@ -183,8 +186,25 @@ export default function RevenueManagement({ user }: { user: any }) {
           timestamp: new Date().toISOString()
         });
       }
-    } catch (error) {
+    } catch (error: any) {
+      console.error("Revenue Status Change Error:", error);
+      let errorMessage = "Ocorreu um erro ao atualizar o estado da renda.";
+      try {
+        const parsed = JSON.parse(error.message);
+        if (parsed.error.includes('permission-denied')) {
+          errorMessage = "Erro de Permissão: O seu utilizador não tem autorização para validar esta renda.";
+        } else if (parsed.error.includes('index')) {
+          errorMessage = "O Firebase está a configurar a base de dados. Tente novamente em 2-3 minutos.";
+        } else {
+          errorMessage = "Erro técnico: " + (parsed.error || "Desconhecido");
+        }
+      } catch {
+        errorMessage = "Erro: " + error.message;
+      }
+      setGlobalError(errorMessage);
       handleFirestoreError(error, OperationType.UPDATE, `revenue_logs/${revenueId}`);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -291,6 +311,27 @@ export default function RevenueManagement({ user }: { user: any }) {
 
   return (
     <div className="max-w-[1500px] mx-auto space-y-8 pb-20">
+      {globalError && (
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-red-50 border border-red-200 p-4 rounded-2xl flex items-center justify-between gap-4"
+        >
+          <div className="flex items-center gap-3">
+            <XCircle className="text-red-500" size={20} />
+            <div>
+              <p className="text-[10px] font-black text-red-700 uppercase tracking-widest">Alerta de Sistema</p>
+              <p className="text-xs text-red-600 font-bold">{globalError}</p>
+            </div>
+          </div>
+          <button 
+            onClick={() => setGlobalError(null)}
+            className="text-red-400 hover:text-red-600 transition-colors"
+          >
+            <XCircle size={18} />
+          </button>
+        </motion.div>
+      )}
       <div className="bg-white px-10 py-10 rounded-[2.5rem] border border-slate-200 shadow-sm relative overflow-hidden flex flex-col lg:flex-row lg:items-center justify-between gap-8 group">
           <div className="absolute top-0 right-0 w-[40%] h-full bg-slate-50 border-l border-slate-100 -mr-20 rotate-12 -z-0 opacity-50 group-hover:rotate-6 transition-transform duration-1000" />
           

@@ -1,14 +1,15 @@
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { 
+  getFirestore,
   initializeFirestore, 
   memoryLocalCache,
-  doc, 
-  getDocFromServer
+  persistentLocalCache,
+  persistentMultipleTabManager
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
-// Safety check for incorrect appId which causes blank screen/timeouts in production
+// Safety check for incorrect appId
 const IS_SISTEMA_AUDITADO = firebaseConfig.projectId === 'sistema-auditado';
 const HAS_DEFAULT_APP_ID = firebaseConfig.appId.includes('1015177486923');
 
@@ -18,26 +19,47 @@ if (IS_SISTEMA_AUDITADO && HAS_DEFAULT_APP_ID) {
   (window as any)._firebaseConfigError = msg;
 }
 
-const app = initializeApp(firebaseConfig);
+// Ensure app is only initialized once
+const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
-// Optimized settings for specific AI Studio runtime constraints
+// Use a more robust initialization pattern for Firestore
+// forceLongPolling is often required in environments with strict proxies or deep inspection
 const dbSettings: any = {
-  experimentalAutoDetectLongPolling: true, // Auto-ajuste para melhor compatibilidade
-  localCache: memoryLocalCache(),
+  experimentalForceLongPolling: true, 
+  localCache: memoryLocalCache(), 
   ignoreUndefinedProperties: true
 };
 
-export const db = initializeFirestore(app, dbSettings, firebaseConfig.firestoreDatabaseId || '(default)');
+// Handle (default) or named database correctly
+const databaseId = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== "" 
+  ? firebaseConfig.firestoreDatabaseId 
+  : "(default)";
+
+export const db = initializeFirestore(app, dbSettings, databaseId);
+
+// Diagnostic helper to detect hangs
+export async function withTimeout<T>(promise: Promise<T>, timeoutMs: number = 15000): Promise<T> {
+  let timeoutId: any;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error("ERRO_TIMEOUT: A base de dados não respondeu a tempo. Verifique se o Cloud Firestore está ativo no Console Firebase."));
+    }, timeoutMs);
+  });
+
+  try {
+    const result = await Promise.race([promise, timeoutPromise]);
+    return result as T;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ 
   prompt: 'select_account',
-  // Ensure the popup doesn't get messed up by translations
   hl: 'pt-PT'
 });
-
-// Remove aggressive connection test that causes noise in logs
 
 export enum OperationType {
   CREATE = 'create',
@@ -70,10 +92,11 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
         providerId: provider.providerId,
         displayName: provider.displayName || '',
         email: provider.email || '',
-        photoUrl: provider.photoURL || ''
+        photoURL: provider.photoURL || ''
       })) || []
     }
   };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  console.error('Firestore Error Details:', errInfo);
+  // Don't stringify nested info in the throw message to avoid double escaping issues
+  throw new Error(`Firebase Error [${operationType}] at ${path}: ${errInfo.error}`);
 }
