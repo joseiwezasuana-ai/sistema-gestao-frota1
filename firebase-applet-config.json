@@ -3,7 +3,7 @@
   "appId": "1:761215823828:web:c98972ad9bed0bc1fe3041",
   "apiKey": "AIzaSyCvXr9Gj4XAptYMcnDEmKM1NvPraz7pBeE",
   "authDomain": "sistema-auditado.firebaseapp.com",
-  "firestoreDatabaseId": "",
+  "firestoreDatabaseId": "(default)",
   "storageBucket": "sistema-auditado.appspot.com",
   "messagingSenderId": "761215823828",
   "measurementId": ""

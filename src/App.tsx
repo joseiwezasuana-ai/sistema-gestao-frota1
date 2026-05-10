@@ -205,85 +205,27 @@ export default function App() {
     return (
       <ThemeProvider>
         <div className="flex min-h-screen w-full flex-col items-center justify-center bg-slate-950 p-8 text-center text-white font-sans">
-          <div className="w-24 h-24 bg-amber-500 rounded-[32px] flex items-center justify-center mb-8 shadow-2xl shadow-amber-500/20 animate-pulse">
-             <AlertCircle size={48} />
+          <div className="w-20 h-20 bg-rose-500 rounded-3xl flex items-center justify-center mb-6 shadow-2xl shadow-rose-500/20">
+             <AlertCircle size={40} />
           </div>
-          <h1 className="text-3xl font-black mb-6 uppercase tracking-tighter italic">Erro Crítico de Firebase</h1>
+          <h1 className="text-2xl font-black mb-4 uppercase tracking-tighter">Erro de Inicialização</h1>
           
-          <div className="max-w-xl bg-slate-900/50 backdrop-blur-xl p-8 rounded-3xl border border-white/10 text-left mb-8 shadow-2xl">
-            <p className="text-amber-400 font-bold text-sm mb-4 flex items-center gap-2">
-              <Activity size={16} /> DETALHES DO CONFIGURAÇÃO:
+          <div className="max-w-md bg-slate-900/50 backdrop-blur-xl p-6 rounded-2xl border border-white/10 text-left mb-8 shadow-2xl">
+            <p className="text-slate-300 text-sm leading-relaxed">
+              Ocorreu um problema ao conectar com os serviços centrais. Por favor, verifique a sua ligação à internet ou contacte o administrador.
             </p>
-            <p className="text-slate-300 text-sm leading-relaxed mb-6">
-              {configError}
-            </p>
-            
-            <div className="space-y-4">
-              <h3 className="text-white font-bold text-xs uppercase tracking-widest px-3 py-1 bg-white/5 rounded-full inline-block">Lista de Verificação:</h3>
-              <ol className="text-slate-400 text-xs space-y-3 list-decimal pl-4">
-                <li>Verifique se a <strong>Chave de API (apiKey)</strong> no arquivo <code>firebase-applet-config.json</code> corresponde à do novo projeto.</li>
-                <li>Confirme se o <strong>Firestore</strong> está ativado e as <strong>Regras de Segurança</strong> foram publicadas no Console.</li>
-                <li>Garanta que o <strong>appId</strong> e <strong>messagingSenderId</strong> estão corretos.</li>
-                <li>Em <strong>Authentication &gt; Settings &gt; Authorized Domains</strong>, adicione estes dois domínios:<br/>
-                  <div className="space-y-2 mt-2">
-                    <div className="flex items-center gap-2 group">
-                      <code className="text-white flex-1 bg-white/10 p-2 rounded text-[9px] break-all border border-white/5 group-hover:border-white/20 transition-all font-mono">ais-dev-x7ae5zjwislnpda2b3a6l6-214885335133.europe-west3.run.app</code>
-                      <button 
-                        onClick={() => {
-                          navigator.clipboard.writeText('ais-dev-x7ae5zjwislnpda2b3a6l6-214885335133.europe-west3.run.app');
-                          const btn = document.activeElement as HTMLElement;
-                          if (btn) btn.innerHTML = '<span class="text-emerald-400">Copiado!</span>';
-                          setTimeout(() => { if (btn) btn.innerHTML = 'Copiar'; }, 2000);
-                        }}
-                        className="bg-white/10 px-3 py-2 rounded-lg text-[9px] uppercase font-black tracking-widest hover:bg-white/20 active:scale-95 transition-all h-[34px] min-w-[70px]"
-                      >
-                        Copiar
-                      </button>
-                    </div>
-                    <div className="flex items-center gap-2 group">
-                      <code className="text-white flex-1 bg-white/10 p-2 rounded text-[9px] break-all border border-white/5 group-hover:border-white/20 transition-all font-mono">ais-pre-x7ae5zjwislnpda2b3a6l6-214885335133.europe-west3.run.app</code>
-                      <button 
-                        onClick={() => {
-                          navigator.clipboard.writeText('ais-pre-x7ae5zjwislnpda2b3a6l6-214885335133.europe-west3.run.app');
-                          const btn = document.activeElement as HTMLElement;
-                          if (btn) btn.innerHTML = '<span class="text-emerald-400">Copiado!</span>';
-                          setTimeout(() => { if (btn) btn.innerHTML = 'Copiar'; }, 2000);
-                        }}
-                        className="bg-white/10 px-3 py-2 rounded-lg text-[9px] uppercase font-black tracking-widest hover:bg-white/20 active:scale-95 transition-all h-[34px] min-w-[70px]"
-                      >
-                        Copiar
-                      </button>
-                    </div>
-                  </div>
-                </li>
-                <li className="bg-amber-500/10 p-4 rounded-2xl border border-amber-500/20">
-                  <span className="text-amber-400 font-black block mb-2 underline decoration-amber-500/30">🔥 AÇÃO NECESSÁRIA (GOOGLE CLOUD):</span>
-                  No <strong>Google Cloud Console</strong>, procure por <strong>"Tela de Consentimento OAuth"</strong>. 
-                  Verifique se o "User Type" está como <strong>"External"</strong> (Externa). 
-                  Se estiver como <strong>"Internal"</strong>, o Google bloqueia o seu email pessoal. Clique em <strong>"MAKE EXTERNAL"</strong>.
-                </li>
-                <li className="bg-blue-500/10 p-4 rounded-2xl border border-blue-500/20">
-                  <span className="text-blue-400 font-black block mb-2">🌐 DICA DE CONEXÃO:</span>
-                  Se vir erros de "Offline" ou "Timeout", verifique se o seu sinal de internet está estável ou se existe algum Firewall/Antivírus bloqueando o tráfego do Google Firebase.
-                </li>
-              </ol>
+            <div className="mt-4 p-3 bg-white/5 rounded-lg border border-white/5">
+              <code className="text-[10px] text-rose-400 break-all">{configError}</code>
             </div>
           </div>
 
-          <div className="flex flex-col items-center gap-6">
-            <button 
-              onClick={() => window.location.reload()}
-              className="flex items-center gap-2 px-8 py-3 bg-brand-primary text-white font-black text-[11px] uppercase tracking-widest rounded-xl hover:bg-brand-secondary transition-all shadow-lg active:scale-95"
-            >
-              <RefreshCw size={14} className="animate-spin-slow" />
-              Tentar Novamente
-            </button>
-            <div className="flex items-center justify-center gap-6 opacity-30">
-              <div className="h-px w-12 bg-white/20" />
-              <div className="text-[10px] uppercase tracking-[0.3em] font-black italic">PSM TaxiControl</div>
-              <div className="h-px w-12 bg-white/20" />
-            </div>
-          </div>
+          <button 
+            onClick={() => window.location.reload()}
+            className="flex items-center gap-2 px-8 py-3 bg-white/10 text-white font-black text-[11px] uppercase tracking-widest rounded-xl hover:bg-white/20 transition-all active:scale-95 border border-white/10"
+          >
+            <RefreshCw size={14} />
+            Recarregar Sistema
+          </button>
         </div>
       </ThemeProvider>
     );

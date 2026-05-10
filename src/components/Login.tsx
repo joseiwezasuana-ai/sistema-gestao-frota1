@@ -311,29 +311,14 @@ export default function Login({ onGoogleLogin }: LoginProps) {
             initial={{ scale: 0.8, rotate: -5 }}
             animate={{ scale: 1, rotate: 0 }}
             transition={{ type: 'spring', damping: 12 }}
-            className="mx-auto flex h-24 w-full items-center justify-center relative z-10 mb-6 group"
+            className="mx-auto flex h-24 w-24 items-center justify-center relative z-10 mb-6 group bg-white/5 rounded-[2.5rem] p-4 border border-white/10 shadow-2xl overflow-hidden"
           >
             <img 
-              src="/logo.png" 
-              alt="PS Moreira Logo" 
-              className="max-h-full max-w-full object-contain relative z-10 drop-shadow-[0_0_15px_rgba(59,130,246,0.3)]"
-              style={{ filter: 'drop-shadow(0 0 15px rgba(59,130,246,0.3))' }}
-              onError={(e) => {
-                const img = e.target as HTMLImageElement;
-                if (img.src.includes('logo.png')) {
-                  img.src = '/logo.svg';
-                } else {
-                  img.style.display = 'none';
-                  const fallback = img.nextElementSibling as HTMLElement;
-                  if (fallback) fallback.classList.remove('hidden');
-                }
-              }}
+              src="/logo.svg" 
+              alt="SUPER Taxi" 
+              className="w-full h-full object-contain relative z-10 drop-shadow-[0_0_15px_rgba(59,130,246,0.3)] transition-transform group-hover:scale-110 duration-500"
             />
-            <div className="hidden h-20 w-20 flex items-center justify-center rounded-3xl bg-gradient-to-br from-brand-primary to-blue-700 shadow-2xl shadow-brand-primary/40 relative z-10 border border-white/10">
-              <Car size={40} className="text-white drop-shadow-lg" />
-            </div>
-            
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 bg-brand-primary/20 blur-[60px] rounded-full pointer-events-none -z-10" />
+            <div className="absolute inset-0 bg-brand-primary/20 blur-[30px] rounded-full pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity" />
             
             <div className="absolute -bottom-1 -right-1 z-20">
               <div className="w-5 h-5 bg-emerald-500 rounded-full border-4 border-[#0f172a] flex items-center justify-center">

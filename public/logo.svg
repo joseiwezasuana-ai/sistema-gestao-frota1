@@ -1,6 +1,40 @@
-<svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="200" height="200" rx="40" fill="#2563EB"/>
-  <path d="M60 140V60H80C100 60 110 70 110 85C110 100 100 110 80 110H60V140ZM80 95C90 95 95 90 95 85C95 80 90 75 80 75H75V95H80Z" fill="white"/>
-  <path d="M120 140V125H140V115H120V60H140V75H135V115H140V140H120Z" fill="white" opacity="0.8"/>
-  <text x="100" y="180" text-anchor="middle" fill="white" font-family="sans-serif" font-weight="bold" font-size="20">PSM</text>
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="logo-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#2563EB;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1E3A8A;stop-opacity:1" />
+    </linearGradient>
+    <filter id="logo-shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="10" />
+      <feOffset dx="4" dy="4" result="offsetblur" />
+      <feComponentTransfer>
+        <feFuncA type="linear" slope="0.3" />
+      </feComponentTransfer>
+      <feMerge>
+        <feMergeNode />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <rect width="512" height="512" rx="128" fill="#0F172A" />
+  <rect x="32" y="32" width="448" height="448" rx="96" fill="url(#logo-grad)" stroke="#3B82F6" stroke-width="4" />
+  
+  <g filter="url(#logo-shadow)">
+    <!-- Stylized Modern Car / Taxi Silhouette -->
+    <path d="M120 280C120 280 140 220 256 220C372 220 392 280 392 280V340H350V300H162V340H120V280Z" fill="white" />
+    <rect x="180" y="235" width="152" height="40" rx="4" fill="white" opacity="0.9" />
+    
+    <!-- Top Light -->
+    <rect x="220" y="195" width="72" height="25" rx="4" fill="#FBBF24" />
+    <path d="M225 205H287" stroke="#0F172A" stroke-width="2" stroke-linecap="round" />
+    
+    <!-- ST Letters simplified -->
+    <text x="256" y="420" text-anchor="middle" fill="white" font-family="'Inter', sans-serif" font-weight="900" font-size="70" style="font-style: italic; letter-spacing: -2px;">SUPER TAXI</text>
+  </g>
+  
+  <!-- Technical Accents -->
+  <circle cx="256" cy="256" r="230" stroke="white" stroke-width="2" stroke-dasharray="20 15" opacity="0.1" />
+  <path d="M50 256H462" stroke="white" stroke-width="1" opacity="0.05" />
+  <path d="M256 50V462" stroke="white" stroke-width="1" opacity="0.05" />
 </svg>
