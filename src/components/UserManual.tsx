@@ -57,6 +57,16 @@ export default function UserManual() {
         'Controle de dívidas e saldos pendentes.',
         'Gala de faturamento para contabilistas.'
       ]
+    },
+    {
+      title: '5. Auditoria AI (Gemini)',
+      icon: <Smartphone size={20} />,
+      content: 'O sistema utiliza Inteligência Artificial para analisar a performance da frota.',
+      details: [
+        'Insights automáticos sobre consumo e gastos.',
+        'Detecção de padrões de risco ou sub-faturação.',
+        'Relatórios narrativos para suporte à decisão.'
+      ]
     }
   ];
 
