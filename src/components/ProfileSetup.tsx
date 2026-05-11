@@ -142,6 +142,7 @@ export default function ProfileSetup({ user, onComplete }: ProfileSetupProps) {
         }
 
         const codeDoc = codeSnap.docs[0];
+        const codeData = codeDoc.data();
         const codeRef = codeDoc.ref;
         
         // Mark code as used

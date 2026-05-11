@@ -22,7 +22,10 @@ import {
   MessageSquare,
   PhoneIncoming,
   Mail,
-  Zap
+  Zap,
+  AlertCircle,
+  Calendar,
+  Truck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { collection, onSnapshot, addDoc, deleteDoc, doc, query, orderBy, serverTimestamp, updateDoc, arrayRemove, limit, getDocs, where, writeBatch } from 'firebase/firestore';
@@ -30,7 +33,11 @@ import { db, handleFirestoreError, OperationType, withTimeout } from '../lib/fir
 import { formatSafe } from '../lib/dateUtils';
 import { cn } from '../lib/utils';
 
+import { geminiService } from '../services/geminiService';
+import ShiftScheduler from './ShiftScheduler';
+
 export default function FleetManagement({ user }: { user?: any }) {
+  const [activeSubTab, setActiveSubTab] = useState<'fleet' | 'scheduler'>('fleet');
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -39,6 +46,29 @@ export default function FleetManagement({ user }: { user?: any }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [shiftError, setShiftError] = useState<string | null>(null);
+
+  const [aiAudits, setAiAudits] = useState<{[key: string]: {text: string, loading: boolean}}>({});
+
+  const handleRequestAudit = async (driver: any) => {
+    setAiAudits(prev => ({ ...prev, [driver.id]: { text: '', loading: true } }));
+    
+    // Calculate basic stats for the prompt
+    const driverCalls = allCalls.filter(c => c.driverId === driver.id || c.customerPhone === driver.phone);
+    const driverSms = allMessages.filter(m => m.targets?.includes(driver.phone) || m.from === driver.phone);
+    
+    const stats = {
+      totalCalls: driverCalls.length,
+      totalSms: driverSms.length,
+      speedScore: Math.max(0, 100 - (driver.speedViolationsCount || 0) * 10),
+    };
+
+    try {
+      const result = await geminiService.getDriverPerformanceAudit(driver, stats);
+      setAiAudits(prev => ({ ...prev, [driver.id]: { text: result, loading: false } }));
+    } catch (err) {
+      setAiAudits(prev => ({ ...prev, [driver.id]: { text: 'Falha na auditoria.', loading: false } }));
+    }
+  };
 
   const isContabilista = user?.role === 'contabilista';
   const isMecanico = user?.role === 'mecanico';
@@ -74,7 +104,9 @@ export default function FleetManagement({ user }: { user?: any }) {
   useEffect(() => {
     const qVehicles = query(collection(db, 'drivers'));
     const unsubVehicles = onSnapshot(qVehicles, (snapshot) => {
-      setFirestoreDrivers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[];
+      docs.sort((a, b) => (a.prefix || '').localeCompare((b.prefix || ''), undefined, { numeric: true, sensitivity: 'base' }));
+      setFirestoreDrivers(docs);
     }, (error) => handleFirestoreError(error, OperationType.GET, 'drivers'));
 
     const qMaster = query(collection(db, 'drivers_master'), orderBy('name', 'asc'));
@@ -82,9 +114,11 @@ export default function FleetManagement({ user }: { user?: any }) {
       setMasterDriversList(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     }, (error) => handleFirestoreError(error, OperationType.GET, 'drivers_master'));
 
-    const qMasterVehicles = query(collection(db, 'master_vehicles'), orderBy('prefix', 'asc'));
+    const qMasterVehicles = query(collection(db, 'master_vehicles'));
     const unsubMasterVehicles = onSnapshot(qMasterVehicles, (snapshot) => {
-      setMasterVehicles(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const vehiclesList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[];
+      vehiclesList.sort((a, b) => a.prefix.localeCompare(b.prefix, undefined, { numeric: true, sensitivity: 'base' }));
+      setMasterVehicles(vehiclesList);
     }, (error) => handleFirestoreError(error, OperationType.GET, 'master_vehicles'));
 
     const qShifts = query(collection(db, 'shifts'), orderBy('timestamp', 'desc'));
@@ -447,7 +481,44 @@ export default function FleetManagement({ user }: { user?: any }) {
 
   return (
     <div className="space-y-6 max-w-[1400px] mx-auto">
-      <div className="flex items-center justify-between bg-white border border-slate-200 px-6 py-6 rounded-[2rem] shadow-sm relative overflow-hidden group">
+      {/* Sub-tab Navigation */}
+      <div className="flex items-center gap-2 p-1.5 bg-slate-100/50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5 w-fit">
+        <button
+          onClick={() => setActiveSubTab('fleet')}
+          className={cn(
+            "flex items-center gap-2 px-6 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all",
+            activeSubTab === 'fleet' 
+              ? "bg-white dark:bg-slate-900 text-brand-primary shadow-sm" 
+              : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+          )}
+        >
+          <Truck size={14} />
+          Frota Ativa
+        </button>
+        <button
+          onClick={() => setActiveSubTab('scheduler')}
+          className={cn(
+            "flex items-center gap-2 px-6 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all",
+            activeSubTab === 'scheduler' 
+              ? "bg-white dark:bg-slate-900 text-brand-primary shadow-sm" 
+              : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+          )}
+        >
+          <Calendar size={14} />
+          Escalas & Planeamento
+        </button>
+      </div>
+
+      <AnimatePresence mode="wait">
+        {activeSubTab === 'fleet' ? (
+          <motion.div
+            key="fleet"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="space-y-6"
+          >
+            <div className="flex items-center justify-between bg-white border border-slate-200 px-6 py-6 rounded-[2rem] shadow-sm relative overflow-hidden group">
         <div className="absolute top-0 right-0 w-64 h-64 bg-brand-primary/5 blur-[80px] -mr-32 -mt-32 rounded-full group-hover:bg-brand-primary/10 transition-colors duration-700" />
         
         <div className="relative z-10">
@@ -821,6 +892,69 @@ export default function FleetManagement({ user }: { user?: any }) {
                                           <p className="text-[11px] text-slate-400 font-black uppercase tracking-widest italic">Logs de SMS Vazios</p>
                                         </div>
                                       )}
+                                    </div>
+                                  </div>
+                                  {/* AI Audit Section (Full Width) */}
+                                  <div className="lg:col-span-2 pt-8 border-t border-slate-200">
+                                    <div className="bg-brand-primary/5 dark:bg-brand-primary/10 border border-brand-primary/20 rounded-[2rem] p-6 relative overflow-hidden group/audit">
+                                      <div className="absolute top-0 right-0 w-32 h-32 bg-brand-primary/10 blur-3xl -mr-16 -mt-16 group-hover/audit:bg-brand-primary/20 transition-colors" />
+                                      
+                                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
+                                        <div className="flex items-center gap-4">
+                                          <div className="w-12 h-12 bg-brand-primary rounded-2xl flex items-center justify-center text-white shadow-lg shadow-brand-primary/20">
+                                            <Zap size={24} />
+                                          </div>
+                                          <div>
+                                            <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest italic">Auditoria de Performance IA</h4>
+                                            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Análise operacional baseada em inteligência artificial</p>
+                                          </div>
+                                        </div>
+
+                                        {!aiAudits[driver.id]?.text && !aiAudits[driver.id]?.loading && (
+                                          <button
+                                            onClick={() => handleRequestAudit(driver)}
+                                            className="bg-brand-primary text-white text-[11px] font-black uppercase tracking-widest px-8 py-3.5 rounded-xl hover:bg-blue-700 transition-all flex items-center gap-2 active:scale-95 shadow-md"
+                                          >
+                                            <TrendingUp size={16} />
+                                            Solicitar Auditoria Técnica
+                                          </button>
+                                        )}
+                                      </div>
+
+                                      <AnimatePresence mode="wait">
+                                        {aiAudits[driver.id]?.loading ? (
+                                          <motion.div 
+                                            initial={{ opacity: 0, y: 10 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            className="mt-6 flex items-center gap-3 p-4 bg-white/50 rounded-xl"
+                                          >
+                                            <Loader2 size={16} className="animate-spin text-brand-primary" />
+                                            <p className="text-[11px] text-slate-600 font-bold uppercase tracking-widest">A processar logs operacionais com IA...</p>
+                                          </motion.div>
+                                        ) : aiAudits[driver.id]?.text ? (
+                                          <motion.div 
+                                            initial={{ opacity: 0, y: 10 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            className="mt-6 bg-white/80 dark:bg-slate-900/80 p-6 rounded-[1.5rem] border border-brand-primary/10 shadow-sm backdrop-blur-sm"
+                                          >
+                                            <div className="flex items-center gap-2 mb-3">
+                                              <div className="w-1.5 h-1.5 rounded-full bg-brand-primary animate-pulse" />
+                                              <span className="text-[10px] font-black text-brand-primary uppercase tracking-widest">Relatório Gemini 3 Flash-Preview</span>
+                                            </div>
+                                            <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed font-bold italic">
+                                              {aiAudits[driver.id].text}
+                                            </p>
+                                            <div className="mt-4 flex justify-end">
+                                              <button 
+                                                onClick={() => handleRequestAudit(driver)}
+                                                className="text-[9px] font-black text-brand-primary uppercase tracking-widest hover:underline"
+                                              >
+                                                Atualizar Auditoria
+                                              </button>
+                                            </div>
+                                          </motion.div>
+                                        ) : null}
+                                      </AnimatePresence>
                                     </div>
                                   </div>
                                 </div>
@@ -1210,6 +1344,19 @@ export default function FleetManagement({ user }: { user?: any }) {
           </table>
         </div>
       </div>
-    </div>
+    </motion.div>
+    ) : (
+      <motion.div
+        key="scheduler"
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -10 }}
+        className="animate-in fade-in duration-500"
+      >
+        <ShiftScheduler user={user} />
+      </motion.div>
+    )}
+  </AnimatePresence>
+</div>
   );
 }

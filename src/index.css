@@ -50,4 +50,34 @@
   body {
     @apply bg-[--color-bg-main] text-[--color-text-main] font-sans;
   }
+
+  @media print {
+    /* Esconder elementos de interface que não pertencem ao manual */
+    nav, 
+    aside, 
+    header,
+    button:not(.print-visible), 
+    .no-print,
+    .sidebar {
+      display: none !important;
+    }
+
+    /* Ocupar a página toda no PDF */
+    main, .main-content, #root {
+      margin: 0 !important;
+      padding: 0 !important;
+      width: 100% !important;
+      display: block !important;
+    }
+
+    body {
+      background: white !important;
+      color: black !important;
+    }
+
+    /* Evitar que seções sejam cortadas a meio */
+    .print-break-inside-avoid {
+      page-break-inside: avoid;
+    }
+  }
 }

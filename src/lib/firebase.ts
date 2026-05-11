@@ -1,11 +1,10 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
+import 'firebase/auth'; // Force registration
 import { 
   getFirestore,
   initializeFirestore, 
   memoryLocalCache,
-  persistentLocalCache,
-  persistentMultipleTabManager
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
@@ -20,23 +19,29 @@ if (IS_SISTEMA_AUDITADO && HAS_DEFAULT_APP_ID) {
 }
 
 // Ensure app is only initialized once
-const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
-export const auth = getAuth(app);
+let app;
+try {
+  app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+  console.log("[Firebase] App initialized successfully");
+} catch (e) {
+  console.error("[Firebase] App initialization failed", e);
+  throw e;
+}
 
-// Use a more robust initialization pattern for Firestore
-// forceLongPolling is often required in environments with strict proxies or deep inspection
-const dbSettings: any = {
-  experimentalForceLongPolling: true, 
-  localCache: memoryLocalCache(), 
-  ignoreUndefinedProperties: true
-};
+// Initialize services
+export const auth = getAuth(app);
+console.log("[Firebase] Auth service registered");
 
 // Handle (default) or named database correctly
 const databaseId = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== "" 
   ? firebaseConfig.firestoreDatabaseId 
   : "(default)";
 
-export const db = initializeFirestore(app, dbSettings, databaseId);
+export const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true, 
+  localCache: memoryLocalCache(), 
+  ignoreUndefinedProperties: true
+}, databaseId);
 
 // Diagnostic helper to detect hangs
 export async function withTimeout<T>(promise: Promise<T>, timeoutMs: number = 15000): Promise<T> {

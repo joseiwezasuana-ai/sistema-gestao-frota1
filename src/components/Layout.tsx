@@ -22,6 +22,8 @@ import {
   FileText,
   CarFront,
   Users,
+  Calendar,
+  BookOpen,
   Sun,
   Moon
 } from 'lucide-react';
@@ -57,6 +59,7 @@ export default function Layout({ children, user, globalSettings, activeTab, onTa
     { id: 'map', label: 'Geolocalização Live', icon: MapIcon, roles: ['admin', 'operator', 'mecanico'] },
     { id: 'gps_timeline', label: 'Auditoria GPS', icon: HistoryIcon, roles: ['admin', 'operator'] },
     { id: 'settings', label: 'Configurações', icon: SettingsIcon, roles: ['admin'] },
+    { id: 'manual', label: 'Manual & Guia', icon: BookOpen, roles: ['admin', 'operator', 'contabilista', 'mecanico'] },
   ];
 
   const filteredMenuItems = menuItems.filter(item => {

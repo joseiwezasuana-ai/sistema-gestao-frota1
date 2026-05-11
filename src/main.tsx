@@ -1,14 +1,14 @@
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App';
-import ErrorBoundary from './components/ErrorBoundary';
+import SystemErrorBoundary from './components/SystemErrorBoundary';
 import './index.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ErrorBoundary>
+    <SystemErrorBoundary>
       <App />
-    </ErrorBoundary>
+    </SystemErrorBoundary>
   </StrictMode>,
 );
 

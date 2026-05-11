@@ -42,6 +42,7 @@ import InternalClients from './components/InternalClients';
 import RentACar from './components/RentACar';
 import CompanyPhones from './components/CompanyPhones';
 import ProfileEdit from './components/ProfileEdit';
+import UserManual from './components/UserManual';
 
 import { 
   AlertCircle, 
@@ -366,6 +367,7 @@ export default function App() {
           {activeTab === 'accounting' && (isAdmin || isContabilista ? <AccountingManager user={userProfile} /> : <Dashboard user={userProfile} />)}
           {activeTab === 'warehouse' && (isAdmin || isOperator || isMecanico ? <WarehouseManager user={userProfile} /> : <Dashboard user={userProfile} />)}
           {activeTab === 'psm_phones' && (isAdmin || isOperator ? <CompanyPhones /> : <Dashboard user={userProfile} />)}
+          {activeTab === 'manual' && <UserManual />}
           {activeTab === 'settings' && (isAdmin ? <Settings /> : <Dashboard user={userProfile} />)}
           {activeTab === 'messages' && (isAdmin || isOperator ? <Messages /> : <Dashboard user={userProfile} />)}
         </Layout>

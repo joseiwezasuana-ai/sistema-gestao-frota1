@@ -29,6 +29,8 @@ import {
   Users,
   Loader2,
   ExternalLink,
+  RefreshCw,
+  Zap,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { cn } from "../lib/utils";
@@ -55,6 +57,8 @@ import { signOut } from "firebase/auth";
 import { MapContainer, TileLayer, Marker, useMap, Popup } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+
+import { geminiService } from "../services/geminiService";
 
 // Fix for Leaflet default icon issues
 // @ts-ignore
@@ -83,6 +87,37 @@ export default function DriverView({ user }: DriverViewProps) {
   const [earnings, setEarnings] = useState(0);
   const [stars, setStars] = useState(4.8);
   const [tripHistory, setTripHistory] = useState<any[]>([]);
+
+  const [aiAdvice, setAiAdvice] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [safetyChecklist, setSafetyChecklist] = useState<string | null>(null);
+  const [showSafetyCheck, setShowSafetyCheck] = useState(false);
+
+  const fetchAiAdvice = async () => {
+    if (!user || aiLoading) return;
+    setAiLoading(true);
+    try {
+      const context = {
+        targetRevenue: 25000, // Exemplo de meta diária
+        currentRevenue: earnings,
+        shiftHours: tripHistory.length > 0 ? 8 : 0, // Placeholder
+      };
+      const result = await geminiService.getDriverCoachingInsights(user, context);
+      setAiAdvice(result);
+    } catch (err) {
+      setAiAdvice("Foque na segurança e excelência no atendimento.");
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    // Initial fetch of advice after a short delay
+    const timer = setTimeout(() => {
+      fetchAiAdvice();
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [user?.uid]);
 
   // Listen for accumulated earnings from approved revenue logs
   useEffect(() => {
@@ -651,12 +686,28 @@ export default function DriverView({ user }: DriverViewProps) {
     }
   };
 
-  const handleStartShift = () => {
-    setIsOnline(!isOnline);
-    if (isOnline) {
+  const handleStartShift = async () => {
+    if (!isOnline) {
+      setAiLoading(true);
+      try {
+        const checklist = await geminiService.getSafetyChecklist(assignedVehicle || { prefix: user.prefix });
+        setSafetyChecklist(checklist);
+        setShowSafetyCheck(true);
+      } catch (err) {
+        setIsOnline(true);
+      } finally {
+        setAiLoading(false);
+      }
+    } else {
+      setIsOnline(false);
       setCurrentService(null);
       setShowNotification(false);
     }
+  };
+
+  const confirmSafetyAndStart = () => {
+    setIsOnline(true);
+    setShowSafetyCheck(false);
   };
 
   const acceptService = async () => {
@@ -755,9 +806,16 @@ export default function DriverView({ user }: DriverViewProps) {
                 <h4 className="text-[13px] font-black text-slate-800 leading-none">
                   PSM COMERCIAL
                 </h4>
-                <p className="text-[10px] font-bold text-slate-400 uppercase mt-1 tracking-wider">
-                  Luena, Moxico
-                </p>
+                <div className="flex items-center gap-1.5 mt-1">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    Luena, Moxico
+                  </span>
+                  {stars >= 4.7 && (
+                    <span className="bg-amber-100 text-amber-700 text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-tighter border border-amber-200">
+                      Top Rated
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
             <div className="flex items-center gap-2 relative">
@@ -810,6 +868,41 @@ export default function DriverView({ user }: DriverViewProps) {
           </header>
 
           <main className="flex-1 px-6 py-6 space-y-6">
+            <AnimatePresence>
+              {showSafetyCheck && (
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  className="fixed inset-x-6 top-24 z-50 bg-white rounded-[2.5rem] border-4 border-slate-900 p-8 shadow-2xl"
+                >
+                  <div className="w-16 h-16 bg-brand-primary text-white rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-brand-primary/20">
+                    <Wrench size={32} />
+                  </div>
+                  <h3 className="text-lg font-black text-slate-900 text-center uppercase tracking-tighter italic mb-4">
+                    Inspeção de Segurança IA
+                  </h3>
+                  <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 mb-8">
+                     <p className="text-[12px] text-slate-600 font-bold leading-relaxed whitespace-pre-wrap italic">
+                        {safetyChecklist || "Verifique os pneus, luzes e níveis de óleo antes de iniciar."}
+                     </p>
+                  </div>
+                  <button 
+                    onClick={confirmSafetyAndStart}
+                    className="w-full bg-brand-primary text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl active:scale-95 transition-all"
+                  >
+                    Confirmar e Iniciar Turno
+                  </button>
+                  <button 
+                    onClick={() => setShowSafetyCheck(false)}
+                    className="w-full mt-4 text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-600"
+                  >
+                    Cancelar
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             {activeInternalTab === "dashboard" ? (
               <div className="space-y-6">
                 {/* Warning Cards for Pending Items (Previous Shift Focus) */}
@@ -1012,6 +1105,49 @@ export default function DriverView({ user }: DriverViewProps) {
                       Botão de Pânico (S.O.S)
                     </span>
                   </button>
+
+                  {/* Gemini AI Coach Widget */}
+                  <div className="bg-slate-900 rounded-[2rem] p-6 relative overflow-hidden group shadow-xl border border-white/5">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-brand-primary/20 blur-2xl -mr-12 -mt-12 transition-all group-hover:bg-brand-primary/40" />
+                    
+                    <div className="flex items-center justify-between mb-4 relative z-10">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 bg-brand-primary rounded-xl flex items-center justify-center text-white">
+                          <Zap size={16} fill="white" />
+                        </div>
+                        <h4 className="text-[11px] font-black text-white uppercase tracking-widest italic">Mentor IA</h4>
+                      </div>
+                      <button 
+                        onClick={fetchAiAdvice}
+                        disabled={aiLoading}
+                        className="text-[9px] font-black text-brand-primary uppercase tracking-widest hover:text-white transition-colors flex items-center gap-1"
+                      >
+                        {aiLoading ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />}
+                        Atualizar
+                      </button>
+                    </div>
+
+                    <div className="bg-white/5 rounded-2xl p-4 border border-white/10 relative z-10 transition-all hover:bg-white/10">
+                      {aiLoading ? (
+                        <div className="space-y-2 animate-pulse">
+                          <div className="h-2 w-3/4 bg-white/20 rounded" />
+                          <div className="h-2 w-full bg-white/20 rounded" />
+                        </div>
+                      ) : (
+                        <p className="text-[12px] text-slate-300 font-bold italic leading-relaxed">
+                          {aiAdvice || "A calcular melhor estratégia para o roteiro de hoje no Luena..."}
+                        </p>
+                      )}
+                    </div>
+                    
+                    <div className="mt-3 flex items-center justify-between relative z-10">
+                       <span className="text-[8px] font-black text-slate-500 uppercase tracking-[0.2em]">SISTEMA AUDITADO • GEMINI</span>
+                       {aiAdvice && <div className="flex gap-1">
+                          <div className="w-1 h-1 rounded-full bg-brand-primary animate-ping" />
+                          <div className="w-1 h-1 rounded-full bg-brand-primary" />
+                       </div>}
+                    </div>
+                  </div>
 
                   {/* Shift Control */}
                   <div
