@@ -27,7 +27,7 @@ import {
   Sun,
   Moon
 } from 'lucide-react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { useTheme } from '../context/ThemeContext';
 
@@ -206,14 +206,17 @@ export default function Layout({ children, user, globalSettings, activeTab, onTa
 
         <section className="flex-1 overflow-y-auto bg-slate-50/50 dark:bg-slate-950/50">
           <div className="p-8">
-            <motion.div
-              key={activeTab}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3 }}
-            >
-              {children}
-            </motion.div>
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeTab}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.2 }}
+              >
+                {children}
+              </motion.div>
+            </AnimatePresence>
           </div>
         </section>
       </main>

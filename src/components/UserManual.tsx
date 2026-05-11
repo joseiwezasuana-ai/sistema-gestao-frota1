@@ -14,7 +14,6 @@ import {
   ChevronRight,
   Info
 } from 'lucide-react';
-import { motion } from 'motion/react';
 
 export default function UserManual() {
   const sections = [
@@ -149,10 +148,7 @@ export default function UserManual() {
       {/* Main Sections */}
       <div className="space-y-4">
         {sections.map((section, idx) => (
-          <motion.div 
-            initial={{ opacity: 0, x: -20 }}
-            whileInView={{ opacity: 1, x: 0 }}
-            transition={{ delay: idx * 0.1 }}
+          <div 
             key={idx}
             className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 p-8 rounded-[2rem] shadow-sm print-break-inside-avoid"
           >
@@ -177,7 +173,7 @@ export default function UserManual() {
                 </li>
               ))}
             </ul>
-          </motion.div>
+          </div>
         ))}
       </div>
 
