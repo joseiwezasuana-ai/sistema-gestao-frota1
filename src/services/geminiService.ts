@@ -1,10 +1,25 @@
 import { GoogleGenAI } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+let genAI: GoogleGenAI | null = null;
+
+function getAI() {
+  if (!genAI) {
+    const key = process.env.GEMINI_API_KEY;
+    if (!key || key === "undefined" || key.includes("...")) {
+      console.warn("Gemini API Key is not set or invalid. AI features will be disabled.");
+      return null;
+    }
+    genAI = new GoogleGenAI({ apiKey: key });
+  }
+  return genAI;
+}
 
 export const geminiService = {
   async getFleetInsights(data: any) {
     try {
+      const ai = getAI();
+      if (!ai) return "Sistema em modo offline para IA. Chave API não configurada.";
+
       const prompt = `
         Analise os seguintes dados de uma frota de táxis em Luena, Moxico (Angola) e forneça um resumo operacional "Technical Dashboard" em Português.
         Seja breve, profissional e direto. Dê sugestões de melhoria se houver problemas.
@@ -37,6 +52,9 @@ export const geminiService = {
 
   async getDriverPerformanceAudit(driver: any, stats: any) {
     try {
+      const ai = getAI();
+      if (!ai) return "IA indisponível no momento.";
+
       const prompt = `
         Realize uma Auditoria de Performance Técnica para o motorista de táxi "${driver.name}" (Viatura ${driver.prefix}) em Luena, Moxico.
         
@@ -69,6 +87,9 @@ export const geminiService = {
 
   async getDriverCoachingInsights(driverData: any, context: any) {
     try {
+      const ai = getAI();
+      if (!ai) return "Foco na segurança e bom serviço!";
+
       const prompt = `
         Aja como um Consultor Técnico Sénior da frota "TaxiControl" em Luena, Moxico.
         Forneça um "Personal Coaching" rápido para o motorista "${driverData.name}".
@@ -100,6 +121,9 @@ export const geminiService = {
 
   async getSafetyChecklist(vehicleData: any) {
     try {
+      const ai = getAI();
+      if (!ai) return "1. Verificar óleos\n2. Pressão dos pneus\n3. Luzes\n4. Travões";
+
       const prompt = `
         Gere um Checklist de Segurança Técnica breve (4 pontos) para um motorista de táxi em Luena, Angola.
         Viatura: ${vehicleData.prefix || "Toyota Hiace"}.
