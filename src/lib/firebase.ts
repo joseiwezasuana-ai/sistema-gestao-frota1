@@ -12,13 +12,8 @@ import firebaseConfig from '../../firebase-applet-config.json';
 // Ensure app is only initialized once
 let app: any;
 let analytics: any;
-let configErrorHappened = false;
 
 try {
-  // We only initialize if the config looks somewhat real
-  if (!firebaseConfig.apiKey || firebaseConfig.apiKey.includes('...')) {
-    throw new Error("Configuração incompleta detetada. Por favor, atualize as chaves no ficheiro firebase-applet-config.json com os valores reais do seu Console Firebase.");
-  }
   app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
   
   // Analytics is only supported in some environments
@@ -31,17 +26,16 @@ try {
   const msg = `ERRO_FIREBASE: ${e.message}`;
   console.error("[Firebase] App initialization failed", e);
   (window as any)._firebaseConfigError = msg;
-  configErrorHappened = true;
-  app = null;
+  app = getApps().length > 0 ? getApps()[0] : null;
 }
 
 // Initialize services with guards
 export const auth = app ? getAuth(app) : { onAuthStateChanged: () => () => {}, currentUser: null } as any;
 
 // Handle (default) or named database correctly
-const databaseId = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== "" 
+const databaseId = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== "" && firebaseConfig.firestoreDatabaseId !== "(default)"
   ? firebaseConfig.firestoreDatabaseId 
-  : "(default)";
+  : undefined; 
 
 export const db = app ? initializeFirestore(app, {
   experimentalForceLongPolling: true, 
