@@ -625,7 +625,7 @@ export default function Dashboard({ user }: { user: any }) {
                   <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
                 </div>
                 <p className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
-                  v.3 ESTÁVEL <span className="text-[10px] text-slate-400 font-bold ml-1 uppercase">Monitor Live</span>
+                  v.4.5 ESTÁVEL <span className="text-[10px] text-slate-400 font-bold ml-1 uppercase">Monitor Live</span>
                 </p>
              </div>
           </div>

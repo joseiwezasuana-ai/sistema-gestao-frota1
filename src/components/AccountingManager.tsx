@@ -924,7 +924,7 @@ export default function AccountingManager({ user }: { user?: any }) {
                   <span className="text-slate-800">LUENA, MOXICO</span>
                 </span>
                 <span className="flex items-center gap-2.5 px-3 py-1 bg-emerald-50 text-emerald-600 rounded-lg border border-emerald-100 shadow-sm">
-                  <ShieldCheck size={12} /> SISTEMA AUDITADO V.3 ESTÁVEL
+                  <ShieldCheck size={12} /> SISTEMA AUDITADO V.4.5 ESTÁVEL
                 </span>
               </div>
             </div>
@@ -1160,7 +1160,7 @@ export default function AccountingManager({ user }: { user?: any }) {
                  >
                    <Send size={16} /> Enviar p/ Colaborador (WhatsApp)
                  </button>
-                 <p className="text-[7px] text-slate-400 text-center font-black uppercase tracking-[0.2em] italic">Comprovativo PSM TAXICONTROL • Luena, Moxico • v.3.0</p>
+                 <p className="text-[7px] text-slate-400 text-center font-black uppercase tracking-[0.2em] italic">Comprovativo PSM TAXICONTROL • Luena, Moxico • v.4.5</p>
               </div>
             </motion.div>
           </div>
