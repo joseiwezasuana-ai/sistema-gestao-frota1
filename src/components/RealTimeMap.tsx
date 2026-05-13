@@ -197,14 +197,16 @@ export default function RealTimeMap() {
   useEffect(() => {
     // Detect Google Maps Authentication/Configuration Failures
     // @ts-ignore
-    window.gm_authFailure = () => {
-      console.error("Google Maps API failed to authenticate.");
-      setGoogleMapsError('ApiTargetBlockedMapError');
+    window.gm_authFailure = (error) => {
+      console.error("Google Maps API failed to authenticate.", error);
+      
+      // Try to determine the more specific error if possible
+      setGoogleMapsError('InvalidKeyMapError');
       
       // Auto-fallback to OpenStreetMap after a short delay
       setTimeout(() => {
         setUseGoogleMaps(false);
-      }, 3000);
+      }, 5000);
     };
 
     return () => {
@@ -252,7 +254,7 @@ export default function RealTimeMap() {
 
   const mapCenterArray = mapConfig.center;
 
-  const showGoogleError = googleMapsError || (useGoogleMaps && !import.meta.env.VITE_GOOGLE_MAPS_API_KEY);
+  const showGoogleError = googleMapsError || (useGoogleMaps && (!import.meta.env.VITE_GOOGLE_MAPS_API_KEY || import.meta.env.VITE_GOOGLE_MAPS_API_KEY === "undefined" || import.meta.env.VITE_GOOGLE_MAPS_API_KEY.includes("...")));
 
   return (
     <div className="h-full flex flex-col gap-6">
@@ -312,7 +314,18 @@ export default function RealTimeMap() {
                   {googleMapsError ? 'Erro de Configuração Google' : 'Configuração Necessária'}
                 </h4>
                 <div className="text-slate-500 text-sm mb-6 text-left space-y-3">
-                  {googleMapsError === 'ApiTargetBlockedMapError' ? (
+                  {googleMapsError === 'InvalidKeyMapError' ? (
+                    <>
+                      <p className="font-bold text-red-600 underline">A Chave de API do Google é Inválida.</p>
+                      <p>Siga estes passos para resolver:</p>
+                      <ul className="list-disc list-inside space-y-1 text-xs">
+                        <li>Verifique se copiou a chave completa sem espaços.</li>
+                        <li>Confirme se a chave começa com <strong>AIzaSy...</strong>.</li>
+                        <li>Garanta que a <strong>Billing</strong> (Faturação) está ativa na Google Cloud.</li>
+                        <li>Certifique-se de que não há restrições de IP que bloqueiem o domínio <code>web.app</code>.</li>
+                      </ul>
+                    </>
+                  ) : googleMapsError === 'ApiTargetBlockedMapError' ? (
                     <>
                       <p className="font-bold text-amber-600">O Google Maps está bloqueado para o seu projeto.</p>
                       <p>Para corrigir, siga estes passos no Google Cloud Console:</p>
