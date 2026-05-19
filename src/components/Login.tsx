@@ -10,7 +10,7 @@ interface LoginProps {
 }
 
 export default function Login({ onGoogleLogin }: LoginProps) {
-  const [loginMethod, setLoginMethod] = useState<'cover' | 'google' | 'credentials' | 'register'>('cover');
+  const [loginMethod, setLoginMethod] = useState<'cover' | 'google' | 'credentials' | 'register' | 'recover'>('cover');
   const [showMenu, setShowMenu] = useState(false);
   const [id, setId] = useState('');
   const [password, setPassword] = useState('');
@@ -41,7 +41,7 @@ export default function Login({ onGoogleLogin }: LoginProps) {
     fetchSettings();
   }, []);
 
-  const handleMethodChange = (method: 'cover' | 'google' | 'credentials' | 'register') => {
+  const handleMethodChange = (method: 'cover' | 'google' | 'credentials' | 'register' | 'recover') => {
     setLoginMethod(method);
     setShowMenu(false);
     setIsCodeValidated(false);
@@ -53,6 +53,50 @@ export default function Login({ onGoogleLogin }: LoginProps) {
     setPassword('');
     setCode('');
     setName('');
+  };
+
+  const handleRecover = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      if (!id.trim() || !code.trim() || !password.trim()) {
+        throw new Error("Todos os campos são obrigatórios para a recuperação.");
+      }
+      if (password.length < 6) {
+        throw new Error("A nova palavra-passe deve ter pelo menos 6 caracteres.");
+      }
+
+      const response = await fetch('/api/auth/recover-access', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: id.trim().toUpperCase(),
+          code: code.trim().toUpperCase(),
+          newPassword: password.trim()
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Ocorreu um erro ao recuperar seu acesso.");
+      }
+
+      setSuccess("Palavra-passe redefinida com sucesso! Introduza a sua nova palavra-passe.");
+      alert("Acesso recuperado com sucesso! Já pode aceder com a nova palavra-passe.");
+      setLoginMethod('credentials');
+      setPassword('');
+    } catch (err: any) {
+      console.error("Recovery error:", err);
+      setError(err.message || "Falha na comunicação com o servidor central.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Fetch registered collaborators (Staff & Drivers)
@@ -428,7 +472,7 @@ export default function Login({ onGoogleLogin }: LoginProps) {
               >
                 <div className="mb-8 flex items-center justify-between">
                   <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter italic">
-                    {loginMethod === 'google' ? 'Google Cloud' : loginMethod === 'credentials' ? 'ID Central' : 'Ativação ID'}
+                    {loginMethod === 'google' ? 'Google Cloud' : loginMethod === 'credentials' ? 'ID Central' : loginMethod === 'recover' ? 'Recuperar Acesso' : 'Ativação ID'}
                   </h3>
                   <button 
                     onClick={() => handleMethodChange('cover')}
@@ -471,6 +515,12 @@ export default function Login({ onGoogleLogin }: LoginProps) {
                         {error}
                       </div>
                     )}
+                    {success && (
+                      <div className="p-4 bg-emerald-50 border border-emerald-100 text-emerald-600 text-xs font-bold rounded-2xl flex items-center gap-3">
+                        <CheckCircle2 size={16} />
+                        {success}
+                      </div>
+                    )}
                     <div className="space-y-1">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">ID Operador</label>
                       <input 
@@ -493,12 +543,96 @@ export default function Login({ onGoogleLogin }: LoginProps) {
                         className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:bg-white focus:border-brand-primary outline-none transition-all"
                       />
                     </div>
+                    
+                    <div className="flex justify-between items-center px-1">
+                      <button
+                        type="button"
+                        onClick={() => handleMethodChange('recover')}
+                        className="text-[10px] font-black text-brand-primary hover:underline uppercase tracking-wider text-left transition-colors"
+                      >
+                        Esqueceu a senha? Recuperar
+                      </button>
+                    </div>
+
                     <button
                       type="submit"
                       disabled={loading}
-                      className="w-full bg-brand-primary text-white flex items-center justify-center gap-3 py-5 rounded-2xl font-black text-[11px] uppercase tracking-widest hover:bg-brand-secondary transition-all shadow-xl shadow-brand-primary/30 disabled:opacity-50 mt-6 h-[60px]"
+                      className="w-full bg-brand-primary text-white flex items-center justify-center gap-3 py-5 rounded-2xl font-black text-[11px] uppercase tracking-widest hover:bg-brand-secondary transition-all shadow-xl shadow-brand-primary/30 disabled:opacity-50 mt-4 h-[60px]"
                     >
                       {loading ? <Loader2 className="animate-spin" size={20} /> : <>ENTRAR AGORA <ArrowRight size={18}/></>}
+                    </button>
+                  </form>
+                )}
+
+                {loginMethod === 'recover' && (
+                  <form onSubmit={handleRecover} className="space-y-4">
+                    <p className="text-[11px] text-slate-500 font-medium mb-4 leading-relaxed bg-brand-primary/5 p-3.5 rounded-2xl border border-brand-primary/10">
+                      José e a gerência geraram um <strong>Código de Ativação</strong> quando criaram a sua conta. Introduza esse código junto ao seu ID para atualizar a palavra-passe diretamente na central.
+                    </p>
+
+                    {error && (
+                      <div className="p-4 bg-red-50 border border-red-100 text-red-600 text-xs font-bold rounded-2xl flex items-center gap-3">
+                        <AlertCircle size={16} />
+                        {error}
+                      </div>
+                    )}
+                    {success && (
+                      <div className="p-4 bg-emerald-50 border border-emerald-100 text-emerald-600 text-xs font-bold rounded-2xl flex items-center gap-3">
+                        <CheckCircle2 size={16} />
+                        {success}
+                      </div>
+                    )}
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Seu ID de Operador / Viatura</label>
+                      <input 
+                        required
+                        type="text" 
+                        placeholder="Ex: TX-104 ou OP-12"
+                        value={id}
+                        onChange={(e) => setId(e.target.value.toUpperCase())}
+                        className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:bg-white focus:border-brand-primary outline-none transition-all"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Código de Ativação Original</label>
+                      <input 
+                        required
+                        type="text" 
+                        placeholder="Ex: PSM-XXXX"
+                        value={code}
+                        onChange={(e) => setCode(e.target.value.toUpperCase())}
+                        className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:bg-white focus:border-brand-primary font-mono outline-none transition-all"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nova Palavra-passe</label>
+                      <input 
+                        required
+                        type="password" 
+                        placeholder="Mínimo 6 caracteres"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:bg-white focus:border-brand-primary outline-none transition-all"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="w-full bg-slate-900 text-white flex items-center justify-center gap-3 py-5 rounded-2xl font-black text-[11px] uppercase tracking-widest hover:bg-black transition-all shadow-xl shadow-slate-900/30 disabled:opacity-50 mt-4 h-[60px]"
+                    >
+                      {loading ? <Loader2 className="animate-spin" size={20} /> : <>REDEFINIR PALAVRA-PASSE <ArrowRight size={18}/></>}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleMethodChange('credentials')}
+                      className="w-full mt-2 text-[10px] font-black text-slate-500 hover:text-slate-900 text-center uppercase tracking-wider"
+                    >
+                      Voltar ao Início de Sessão
                     </button>
                   </form>
                 )}

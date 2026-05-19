@@ -187,6 +187,60 @@ async function startServer() {
     }
   });
 
+  // Admin-only Password Overwrite Route
+  app.post("/api/admin/reset-user-password", async (req, res) => {
+    console.log("[Admin] >>> Starting Admin Reset User Password sequence");
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith("Bearer ")) {
+      console.warn("[Admin] !!! Unauthorized: Missing Bearer token");
+      return res.status(401).json({ error: "Missing or invalid authorization" });
+    }
+
+    const token = authHeader.split(" ")[1];
+    
+    try {
+      const decodedToken = await admin.auth().verifyIdToken(token);
+      const userEmail = decodedToken.email || "no-email";
+
+      const isMasterAdmin = userEmail === "joseiwezasuana@gmail.com";
+      let isAdmin = isMasterAdmin;
+      
+      if (!isAdmin) {
+        const adminDoc = await db.collection("users").doc(decodedToken.uid).get();
+        if (adminDoc.exists && adminDoc.data()?.role === "admin") {
+          isAdmin = true;
+        }
+      }
+      
+      if (!isAdmin) {
+        console.warn(`[Admin] !!! ACCESS DENIED: ${userEmail} is not authorized to reset passwords.`);
+        return res.status(403).json({ error: "Permissão negada: Acesso de Administrador necessário." });
+      }
+
+      const { email, password } = req.body;
+      if (!email || !password) {
+        return res.status(400).json({ error: "E-mail e nova palavra-passe são obrigatórios." });
+      }
+
+      if (password.length < 6) {
+        return res.status(400).json({ error: "A nova palavra-passe deve ter pelo menos 6 caracteres." });
+      }
+
+      const auth = admin.auth();
+      const userRecord = await auth.getUserByEmail(email);
+
+      await auth.updateUser(userRecord.uid, {
+        password: password
+      });
+
+      console.log(`[Admin Reset] Password updated successfully for UID: ${userRecord.uid} (${email})`);
+      res.json({ success: true, message: "A palavra-passe do colaborador foi atualizada com sucesso pelo Administrador." });
+    } catch (err: any) {
+      console.error("[Admin Reset] ERROR:", err);
+      res.status(500).json({ error: err.message || "Erro interno ao atualizar palavra-passe." });
+    }
+  });
+
   // Self-Registration Route (using Activation Code)
   app.post("/api/auth/register", async (req, res) => {
     const { id, code, name, password } = req.body;
@@ -287,6 +341,58 @@ async function startServer() {
         error: `Falha ao processar o registo: ${error.message || "Erro desconhecido"}`,
         debugCode: error.code 
       });
+    }
+  });
+
+  // 2.5 Recovery / Reset password endpoint utilizing Access Code and ID
+  app.post("/api/auth/recover-access", async (req, res) => {
+    const { id, code, newPassword } = req.body;
+
+    if (!id || !code || !newPassword) {
+      return res.status(400).json({ error: "Todos os campos são obrigatórios." });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: "A palavra-passe deve ter pelo menos 6 caracteres." });
+    }
+
+    try {
+      const app = admin.app();
+      const auth = admin.auth(app);
+
+      const sanitizedId = id.trim().toUpperCase();
+      const sanitizedCode = code.trim().toUpperCase();
+
+      const codesSnap = await db.collection("access_codes")
+        .where("code", "==", sanitizedCode)
+        .where("assignedId", "==", sanitizedId)
+        .get();
+
+      if (codesSnap.empty) {
+        return res.status(404).json({ error: "O par ID de Acesso e Código de Ativação fornecido é inválido ou não foi encontrado." });
+      }
+
+      const email = id.includes('@') ? id.toLowerCase().trim() : `${id.toLowerCase().trim().replace(/\s+/g, '-')}@taxicontrol.ao`;
+
+      let userRecord;
+      try {
+        userRecord = await auth.getUserByEmail(email);
+      } catch (authErr: any) {
+        if (authErr.code === 'auth/user-not-found') {
+          return res.status(404).json({ error: "Este ID existe no sistema, mas a conta digital associada ainda não foi ativada. Ative primeiro o seu ID." });
+        }
+        throw authErr;
+      }
+
+      await auth.updateUser(userRecord.uid, {
+        password: newPassword
+      });
+
+      console.log(`[Recover] Secured credentials updated successfully for ${email}`);
+      res.json({ success: true, message: "A palavra-passe foi redefinida com sucesso!" });
+    } catch (error: any) {
+      console.error("[Recover] Secure Recovery Error:", error);
+      res.status(500).json({ error: `Falha ao redefinir credenciais: ${error.message}` });
     }
   });
 

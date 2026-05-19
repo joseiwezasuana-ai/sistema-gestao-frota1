@@ -13,10 +13,12 @@ import {
   Ticket,
   Trash2,
   ExternalLink,
-  XCircle
+  XCircle,
+  Lock,
+  X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { db, handleFirestoreError, OperationType, auth } from '../lib/firebase';
 import { formatSafe } from '../lib/dateUtils';
 import { cn } from '../lib/utils';
 import DriversMaster from './DriversMaster';
@@ -62,11 +64,17 @@ export default function RecruitmentHub({ user }: { user?: any }) {
   const [successCode, setSuccessCode] = useState<string | null>(null);
   const [activeCodes, setActiveCodes] = useState<any[]>([]);
   const [activeUsers, setActiveUsers] = useState<any[]>([]);
+  const [allCodesHistory, setAllCodesHistory] = useState<any[]>([]);
   const [adminStaff, setAdminStaff] = useState<any[]>([]);
   const [driversMasterCount, setDriversMasterCount] = useState(0);
   const [driversMaster, setDriversMaster] = useState<any[]>([]);
 
   const [isAdminStaffModalOpen, setIsAdminStaffModalOpen] = useState(false);
+  const [showResetPasswordModal, setShowResetPasswordModal] = useState(false);
+  const [selectedUserForReset, setSelectedUserForReset] = useState<any | null>(null);
+  const [resetPasswordInput, setResetPasswordInput] = useState('');
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
+
   const [formData, setFormData] = useState({
     name: '',
     role: 'operator',
@@ -82,9 +90,11 @@ export default function RecruitmentHub({ user }: { user?: any }) {
 
   // Listen for data
   useEffect(() => {
-    const qCodes = query(collection(db, 'access_codes'), where('used', '==', false));
+    const qCodes = collection(db, 'access_codes');
     const unsubCodes = onSnapshot(qCodes, (snapshot) => {
-      setActiveCodes(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const allDocs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setActiveCodes(allDocs.filter((c: any) => !c.used));
+      setAllCodesHistory(allDocs);
     });
 
     const qUsers = query(collection(db, 'users'), orderBy('syncedAt', 'desc'));
@@ -311,6 +321,50 @@ export default function RecruitmentHub({ user }: { user?: any }) {
       } finally {
         setLoading(false);
       }
+    }
+  };
+
+  const handleAdminResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedUserForReset || !resetPasswordInput.trim()) return;
+    if (resetPasswordInput.trim().length < 6) {
+      alert("A nova palavra-passe deve ter pelo menos 6 caracteres.");
+      return;
+    }
+
+    setIsResettingPassword(true);
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) throw new Error("Você precisa estar autenticado como administrador.");
+
+      const token = await currentUser.getIdToken();
+
+      const response = await fetch('/api/admin/reset-user-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          email: selectedUserForReset.email,
+          password: resetPasswordInput.trim()
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Erro ao redefinir palavra-passe.");
+      }
+
+      alert(`Palavra-passe de ${selectedUserForReset.name} redefinida com sucesso!`);
+      setShowResetPasswordModal(false);
+      setSelectedUserForReset(null);
+      setResetPasswordInput('');
+    } catch (err: any) {
+      console.error("Error resetting password:", err);
+      alert(err.message || "Erro de rede ao conectar ao servidor central.");
+    } finally {
+      setIsResettingPassword(false);
     }
   };
 
@@ -836,38 +890,141 @@ export default function RecruitmentHub({ user }: { user?: any }) {
                      </span>
                   </td>
                   <td className="px-6 py-5">
-                    <div className="flex items-center gap-2">
-                       <span className="text-xs font-bold text-slate-500">{user.email}</span>
-                       <button onClick={() => copyToClipboard(user.email)} className="text-slate-300 hover:text-brand-primary transition-colors">
-                         <Copy size={12} />
-                       </button>
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-2">
+                         <span className="text-xs font-bold text-slate-500">{user.email}</span>
+                         <button onClick={() => copyToClipboard(user.email)} className="text-slate-300 hover:text-brand-primary transition-colors">
+                           <Copy size={12} />
+                         </button>
+                      </div>
+                      {(() => {
+                        const originalCodeDoc = allCodesHistory.find((c: any) => 
+                          c.usedBy === user.id || 
+                          c.usedBy === user.uid || 
+                          c.targetName === user.name ||
+                          (c.assignedId && user.email.toLowerCase().includes(c.assignedId.toLowerCase()))
+                        );
+                        if (originalCodeDoc) {
+                          return (
+                            <div className="flex items-center gap-1">
+                              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Chave original:</span>
+                              <code className="text-[9px] font-black text-brand-primary font-mono bg-brand-primary/5 px-1.5 py-0.5 rounded border border-brand-primary/10 select-all">
+                                {originalCodeDoc.code}
+                              </code>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
                     </div>
                   </td>
                   <td className="px-6 py-5 text-[10px] text-slate-400 font-bold uppercase tracking-widest">
                     {formatSafe(user.createdAt, 'dd/MM/yyyy', 'Sistema')}
                   </td>
                   <td className="px-6 py-5 text-right">
-                    {user.email !== 'joseiwezasuana@gmail.com' && (
-                       <button 
-                         onClick={() => deleteUser(user.id, user.name)}
-                         className="text-slate-300 hover:text-red-500 transition-colors p-2 hover:bg-red-50 rounded-lg"
-                         title="Remover Acesso"
-                       >
-                         <Trash2 size={16} />
-                       </button>
+                    {user.email !== 'joseiwezasuana@gmail.com' ? (
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => {
+                            setSelectedUserForReset(user);
+                            setShowResetPasswordModal(true);
+                          }}
+                          className="text-slate-400 hover:text-brand-primary transition-colors p-2 hover:bg-brand-primary/5 rounded-lg"
+                          title="Redefinir Palavra-passe do Colaborador"
+                        >
+                          <Lock size={15} />
+                        </button>
+                        <button 
+                          onClick={() => deleteUser(user.id, user.name)}
+                          className="text-slate-300 hover:text-red-500 transition-colors p-2 hover:bg-red-50 rounded-lg"
+                          title="Remover Acesso"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-[9px] text-emerald-500 font-black uppercase tracking-wider bg-emerald-50 px-2 py-1 rounded-md border border-emerald-100">MASTER ADMIN</span>
                     )}
                   </td>
                 </tr>
               ))}
               {activeUsers.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="py-12 text-center text-[11px] font-bold text-slate-300 uppercase tracking-widest">Nenhum utilizador sincronizado</td>
+                   <td colSpan={5} className="py-12 text-center text-[11px] font-bold text-slate-300 uppercase tracking-widest">Nenhum utilizador sincronizado</td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
       </div>
+
+      {/* Modal Redefinir Senha Administrador (exclusivo José) */}
+      <AnimatePresence>
+        {showResetPasswordModal && selectedUserForReset && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-[2rem] w-full max-w-md p-8 border border-slate-200 shadow-2xl relative"
+            >
+              <button 
+                onClick={() => {
+                  setShowResetPasswordModal(false);
+                  setSelectedUserForReset(null);
+                  setResetPasswordInput('');
+                }}
+                className="absolute top-6 right-6 p-2 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-all"
+              >
+                <X size={18} />
+              </button>
+
+              <div className="flex items-center gap-3.5 mb-6">
+                <div className="w-12 h-12 rounded-full bg-brand-primary/10 flex items-center justify-center text-brand-primary">
+                  <Lock size={22} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight italic">Forçar Redefinição de Senha</h3>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{selectedUserForReset.name}</p>
+                </div>
+              </div>
+
+              <form onSubmit={handleAdminResetPassword} className="space-y-4">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">ID de E-mail de Acesso</label>
+                  <input 
+                    disabled
+                    type="text"
+                    value={selectedUserForReset.email}
+                    className="w-full px-4 py-3 bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold font-mono outline-none text-slate-500 cursor-not-allowed"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Nova Palavra-passe</label>
+                  <input 
+                    required
+                    type="text"
+                    placeholder="Introduza a nova senha (mínimo 6 chars)"
+                    value={resetPasswordInput}
+                    onChange={(e) => setResetPasswordInput(e.target.value)}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:bg-white focus:border-brand-primary"
+                  />
+                </div>
+
+                <button 
+                  type="submit" 
+                  disabled={isResettingPassword}
+                  className="w-full bg-slate-900 text-white py-4 rounded-xl font-black text-xs uppercase shadow-xl hover:bg-black transition-all flex items-center justify-center gap-3 disabled:opacity-50 h-[52px]"
+                >
+                  {isResettingPassword ? <Loader2 className="animate-spin" size={16} /> : <CheckCircle2 size={16} />}
+                  ATUALIZAR CREDENCIAIS AGORA
+                </button>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

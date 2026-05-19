@@ -16,6 +16,7 @@ import {
   ArrowUpRight, 
   ArrowDownRight, 
   Phone, 
+  PhoneIncoming,
   MessageSquare, 
   Clock, 
   CheckCircle,
@@ -588,11 +589,11 @@ export default function Dashboard({ user }: { user: any }) {
         </AnimatePresence>
       </div>
 
-      <div className="bg-white dark:bg-slate-900 px-10 py-10 rounded-[2.5rem] border border-slate-200 dark:border-white/5 shadow-sm relative overflow-hidden flex flex-col lg:flex-row lg:items-center justify-between gap-8 group">
+      <div className="bg-white dark:bg-slate-900 px-10 py-10 rounded-[2.25rem] border border-slate-200 dark:border-white/5 shadow-sm relative overflow-hidden flex flex-col lg:flex-row lg:items-center justify-between gap-8 group">
           <div className="absolute top-0 right-0 w-[40%] h-full bg-slate-50 dark:bg-slate-800/50 border-l border-slate-100 dark:border-white/5 -mr-20 rotate-12 -z-0 opacity-50 group-hover:rotate-6 transition-transform duration-1000" />
           
           <div className="relative z-10 flex items-center gap-8">
-            <div className="w-20 h-20 bg-slate-900 dark:bg-black rounded-[2.5rem] flex items-center justify-center text-white shadow-2xl shadow-slate-900/20 rotate-3 group-hover:rotate-0 transition-all duration-500">
+            <div className="w-20 h-20 bg-slate-900 dark:bg-black rounded-[2.25rem] flex items-center justify-center text-white shadow-2xl shadow-slate-900/20 rotate-3 group-hover:rotate-0 transition-all duration-500">
                <Gauge size={40} className="text-brand-primary" />
             </div>
             <div>
@@ -641,7 +642,7 @@ export default function Dashboard({ user }: { user: any }) {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: idx * 0.1 }}
-                className="bg-white dark:bg-slate-900 p-7 rounded-[2rem] border border-slate-200 dark:border-white/5 shadow-sm relative overflow-hidden hover:border-brand-primary/20 hover:shadow-xl hover:shadow-slate-100 dark:hover:shadow-black transition-all group"
+                className="bg-white dark:bg-slate-900 p-7 rounded-[2.25rem] border border-slate-200 dark:border-white/5 shadow-sm relative overflow-hidden hover:border-brand-primary/20 hover:shadow-xl hover:shadow-slate-100 dark:hover:shadow-black transition-all group"
               >
                 <div className="flex justify-between items-start mb-6">
                   <div className="w-12 h-12 bg-slate-50 dark:bg-slate-800 rounded-2xl flex items-center justify-center text-slate-400 group-hover:bg-brand-primary group-hover:text-white transition-all shadow-inner">
@@ -661,11 +662,11 @@ export default function Dashboard({ user }: { user: any }) {
 
             {/* Real-Time Mobile Interactions Monitor - NEW GATEWAY */}
             <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="col-span-1 md:col-span-2 bg-slate-900 p-1 rounded-[2.5rem] shadow-2xl shadow-slate-900/30"
+               initial={{ opacity: 0, scale: 0.95 }}
+               animate={{ opacity: 1, scale: 1 }}
+               className="col-span-1 md:col-span-2 bg-gradient-to-r from-slate-900 to-slate-950 p-1 rounded-[2.25rem] shadow-2xl shadow-slate-900/30 border border-slate-800"
             >
-              <div className="bg-white dark:bg-slate-900 rounded-[2.4rem] p-8">
+               <div className="bg-white dark:bg-slate-900 rounded-[2.15rem] p-8">
                 <div className="flex items-center justify-between mb-6">
                   <div className="flex items-center gap-4">
                     <div className="w-12 h-12 bg-emerald-500 rounded-2xl flex items-center justify-center text-white shadow-xl shadow-emerald-500/20">
@@ -733,7 +734,7 @@ export default function Dashboard({ user }: { user: any }) {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.4 }}
-                className="bg-slate-900 p-7 rounded-[2rem] border border-white/10 shadow-2xl relative overflow-hidden group col-span-1 md:col-span-2"
+                className="bg-gradient-to-r from-slate-900 to-slate-950 p-7 rounded-[2.25rem] border border-white/10 dark:border-white/5 shadow-2xl relative overflow-hidden group col-span-1 md:col-span-2"
               >
                 <div className="absolute top-0 right-0 p-8 opacity-[0.05] pointer-events-none rotate-12">
                    <Smartphone size={140} />
@@ -774,12 +775,12 @@ export default function Dashboard({ user }: { user: any }) {
           </div>
 
           {/* Performance Monitoring Section */}
-          <div className="bg-white dark:bg-slate-900 p-10 rounded-[2.5rem] border border-slate-200 dark:border-white/5 shadow-sm relative group overflow-hidden">
+          <div className="bg-white dark:bg-slate-900 p-10 rounded-[2.25rem] border border-slate-200 dark:border-white/5 shadow-sm relative group overflow-hidden">
              <div className="absolute top-0 right-0 p-8 opacity-[0.03] group-hover:scale-110 transition-transform duration-1000 rotate-12">
                <TrendingUp size={120} />
              </div>
              
-             <div className="flex items-center justify-between mb-10 border-b border-slate-100 pb-6">
+             <div className="flex items-center justify-between mb-10 border-b border-slate-100 dark:border-white/10 pb-6">
                 <div>
                   <h3 className="font-black text-lg uppercase tracking-tighter text-slate-900 dark:text-white flex items-center gap-3">
                       <TrendingUp className="text-brand-primary" size={24} />
@@ -851,8 +852,92 @@ export default function Dashboard({ user }: { user: any }) {
              </div>
           </div>
 
-          <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-200 dark:border-white/5 shadow-sm overflow-hidden group">
-             <div className="px-10 py-8 border-b border-slate-100 bg-slate-50/50 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          {/* Monitor de Reencaminhamentos de Contactos Directos */}
+          <div className="bg-white dark:bg-slate-900 rounded-[2.25rem] border border-slate-200 dark:border-white/5 shadow-sm overflow-hidden mb-10 group">
+             <div className="px-10 py-8 border-b border-slate-100 dark:border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-6 bg-gradient-to-r from-orange-500/5 to-amber-500/5">
+                <div>
+                  <h3 className="font-black text-lg text-slate-900 dark:text-white uppercase tracking-tighter italic flex items-center gap-3 font-sans">
+                    <PhoneIncoming className="text-orange-500 animate-pulse" size={24} />
+                    Painel de Reencaminhamento de Contactos Directos (Telemóvel)
+                  </h3>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em] mt-1 font-sans">
+                    Monitorização de clientes que ligam para motoristas e são delegados entre a frota SUPER Táxi / Luena
+                  </p>
+                </div>
+                <div className="px-5 py-2 bg-orange-500/10 text-orange-600 rounded-full text-[10px] font-black uppercase tracking-widest font-mono">
+                  {calls.filter(c => c.type === 'direct_referral').length} REENCAMINHAMENTOS REGISTADOS
+                </div>
+             </div>
+
+             <div className="overflow-x-auto overflow-y-auto max-h-[400px] no-scrollbar">
+                {calls.filter(c => c.type === 'direct_referral').length > 0 ? (
+                  <table className="w-full text-left border-collapse">
+                     <thead>
+                        <tr className="bg-slate-50/50 dark:bg-slate-800/10 text-slate-400 text-[10px] font-black uppercase tracking-[0.15em] border-b border-slate-100 dark:border-white/5 font-sans">
+                           <th className="px-10 py-4">Selo Temporal</th>
+                           <th className="px-10 py-4">De (Motorista Originador)</th>
+                           <th className="px-10 py-4">Para (Motorista Delegado)</th>
+                           <th className="px-10 py-4">Contacto Cliente</th>
+                           <th className="px-10 py-4">Ponto de Recolha</th>
+                           <th className="px-10 py-4 text-center font-sans">Estado do Envio</th>
+                        </tr>
+                     </thead>
+                     <tbody className="divide-y divide-slate-100 dark:divide-white/5">
+                        {calls.filter(c => c.type === 'direct_referral').map((referral) => (
+                        <tr key={referral.id} className="hover:bg-slate-50 dark:hover:bg-white/[0.01] transition-colors group/row text-[11px] font-bold uppercase text-slate-700 dark:text-slate-300 font-mono">
+                           <td className="px-10 py-4 font-black tracking-tight text-[11px] text-slate-600 dark:text-slate-400">
+                              {formatSafe(referral.timestamp, 'dd/MM HH:mm', '--/-- --:--')}
+                           </td>
+                           <td className="px-10 py-4 font-sans">
+                              <span className="font-extrabold text-slate-900 dark:text-white block">{referral.transferredBy?.name || 'N/A'}</span>
+                              <span className="text-[9px] text-orange-500 font-black uppercase tracking-wider">Origem Telefónica</span>
+                           </td>
+                           <td className="px-10 py-4 font-sans">
+                              <span className="font-extrabold text-slate-900 dark:text-white block">{referral.driverName || 'N/A'}</span>
+                              <span className="text-[9px] text-emerald-500 font-black uppercase tracking-wider">Destinatário</span>
+                           </td>
+                           <td className="px-10 py-4">
+                              <div className="flex items-center gap-2">
+                                <span>{referral.customerPhone}</span>
+                                {referral.customerName && (
+                                  <span className="text-[10px] text-slate-400 font-bold tracking-tight">({referral.customerName})</span>
+                                )}
+                              </div>
+                           </td>
+                           <td className="px-10 py-4 max-w-[200px] truncate italic text-slate-500 dark:text-slate-400 text-[11px] font-sans">
+                              {referral.pickupAddress || 'Chamada direto p/ motorista'}
+                           </td>
+                           <td className="px-10 py-4 text-center font-sans">
+                              <span className={cn(
+                                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[9px] font-black tracking-wider transition-all border",
+                                referral.status === 'pending' ? 'bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-500/10' :
+                                referral.status === 'active' ? 'bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-500/10' :
+                                referral.status === 'completed' ? 'bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-500/10' :
+                                'bg-rose-50 text-rose-600 border border-rose-200 dark:bg-rose-500/10'
+                              )}>
+                                 <div className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
+                                 {referral.status === 'pending' ? 'PENDENTE' : 
+                                  referral.status === 'active' ? 'EM CURSO' : 
+                                  referral.status === 'completed' ? 'CONCLUÍDA' : 
+                                  'RECUSADA/CANCELADA'}
+                              </span>
+                           </td>
+                        </tr>
+                        ))}
+                     </tbody>
+                  </table>
+                ) : (
+                  <div className="py-12 text-center text-slate-400 border-2 border-dashed border-slate-100 dark:border-white/5 m-6 rounded-[2rem] font-sans">
+                    <PhoneIncoming size={32} className="mx-auto text-slate-300 dark:text-slate-700 mb-3 animate-bounce" />
+                    <p className="text-xs font-black uppercase tracking-wider leading-relaxed text-slate-700 dark:text-slate-200">Nenhum reencaminhamento direto entre motoristas hoje</p>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-1">Os dados aparecem aqui quando os motoristas encaminham clientes recebidos por telefone</p>
+                  </div>
+                )}
+             </div>
+          </div>
+
+          <div className="bg-white dark:bg-slate-900 rounded-[2.25rem] border border-slate-200 dark:border-white/5 shadow-sm overflow-hidden group">
+             <div className="px-10 py-8 border-b border-slate-100 dark:border-white/10 bg-slate-50/50 dark:bg-slate-800/20 flex flex-col md:flex-row md:items-center justify-between gap-6">
                 <div>
                   <h3 className="font-black text-lg text-slate-900 dark:text-white uppercase tracking-tighter italic flex items-center gap-3">
                     <HistoryIcon className="text-slate-400 group-hover:rotate-180 transition-transform duration-700" size={24} />
@@ -868,20 +953,20 @@ export default function Dashboard({ user }: { user: any }) {
                         placeholder="PESQUISAR CLIENTE OU TELEFONE..."
                         value={callSearchTerm}
                         onChange={(e) => setCallSearchTerm(e.target.value)}
-                        className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:border-brand-primary shadow-sm"
+                        className="w-full pl-9 pr-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:border-brand-primary shadow-sm text-slate-900 dark:text-white"
                       />
                    </div>
 
-                   <div className="flex items-center gap-4 bg-white border border-slate-200 px-6 py-2.5 rounded-[1.25rem] shadow-sm">
+                   <div className="flex items-center gap-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-6 py-2.5 rounded-[1.25rem] shadow-sm">
                       <Calendar size={16} className="text-brand-primary" />
-                      <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="bg-transparent border-none text-[10px] font-black text-slate-900 outline-none uppercase" />
+                      <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="bg-transparent border-none text-[10px] font-black text-slate-900 dark:text-white outline-none uppercase" />
                       <span className="text-slate-200 font-thin italic text-lg">/</span>
-                      <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="bg-transparent border-none text-[10px] font-black text-slate-900 outline-none uppercase" />
+                      <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="bg-transparent border-none text-[10px] font-black text-slate-900 dark:text-white outline-none uppercase" />
                    </div>
-                   <button onClick={() => { setStartDate(''); setEndDate(''); setCallSearchTerm(''); }} className="p-2.5 bg-slate-100 hover:bg-slate-200 rounded-xl transition-all"><X size={18} className="text-slate-500" /></button>
+                   <button onClick={() => { setStartDate(''); setEndDate(''); setCallSearchTerm(''); }} className="p-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-xl transition-all"><X size={18} className="text-slate-500 dark:text-slate-400" /></button>
                    <button 
                       onClick={exportLogs}
-                      className="flex items-center gap-2 px-6 py-3 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all active:scale-95 shadow-lg shadow-black/10"
+                      className="flex items-center gap-2 px-6 py-3 bg-slate-900 dark:bg-slate-800 border border-transparent dark:border-white/10 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-black dark:hover:bg-slate-700 transition-all active:scale-95 shadow-lg shadow-black/10"
                     >
                        <Download size={14} /> Exportar
                    </button>
@@ -955,7 +1040,7 @@ export default function Dashboard({ user }: { user: any }) {
         {/* Sidebar Column */}
         <div className="space-y-10">
               {/* Technical Node Status */}
-              <div className="bg-slate-900 border border-white/10 rounded-[2rem] p-6 space-y-4">
+              <div className="bg-slate-950 border border-slate-850 dark:border-white/5 shadow-xl rounded-[2.25rem] p-6 space-y-4">
                  <div className="flex items-center justify-between">
                     <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Estado da Central</span>
                     <span className="text-[9px] font-black text-brand-primary uppercase animate-pulse italic">Live Feed</span>
@@ -976,7 +1061,7 @@ export default function Dashboard({ user }: { user: any }) {
               <motion.div 
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
-                className="bg-brand-primary/5 dark:bg-brand-primary/10 border border-brand-primary/20 rounded-[2.5rem] p-8 relative overflow-hidden"
+                className="bg-brand-primary/5 dark:bg-brand-primary/10 border border-brand-primary/20 rounded-[2.25rem] p-8 relative overflow-hidden"
               >
                  <div className="absolute top-0 right-0 p-4 opacity-10">
                     <Zap size={64} className="text-brand-primary" />
@@ -1008,7 +1093,7 @@ export default function Dashboard({ user }: { user: any }) {
             <motion.div 
                initial={{ opacity: 0, scale: 0.95 }}
                animate={{ opacity: 1, scale: 1 }}
-               className="bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/30 rounded-[2.5rem] overflow-hidden shadow-2xl relative"
+               className="bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/30 rounded-[2.25rem] overflow-hidden shadow-2xl relative"
             >
                <div className="absolute top-0 right-0 w-32 h-32 bg-rose-500/5 rounded-full -mr-16 -mt-16 blur-3xl pointer-events-none" />
                
@@ -1066,7 +1151,7 @@ export default function Dashboard({ user }: { user: any }) {
             </motion.div>
           )}
 
-          <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-200 dark:border-white/5 shadow-sm overflow-hidden h-[500px] flex flex-col group mt-10">
+          <div className="bg-white dark:bg-slate-900 rounded-[2.25rem] border border-slate-200 dark:border-white/5 shadow-sm overflow-hidden h-[500px] flex flex-col group">
              <div className="px-8 py-6 border-b border-slate-100 dark:border-white/5 flex items-center justify-between">
                 <div>
                    <h3 className="font-black text-sm text-slate-900 dark:text-white uppercase tracking-widest italic flex items-center gap-3 text-brand-primary">
@@ -1106,7 +1191,7 @@ export default function Dashboard({ user }: { user: any }) {
              </div>
           </div>
 
-          <div className="bg-slate-900 rounded-[2.5rem] border border-white/10 shadow-2xl overflow-hidden mt-10 group">
+          <div className="bg-slate-950 rounded-[2.25rem] border border-slate-850 dark:border-white/5 shadow-2xl overflow-hidden group">
              <div className="px-8 py-6 bg-red-600 flex items-center justify-between text-white">
                 <div className="flex items-center gap-4">
                    <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
@@ -1155,10 +1240,10 @@ export default function Dashboard({ user }: { user: any }) {
              </div>
           </div>
 
-          <div className="bg-[#1e293b] rounded-[2.5rem] border border-slate-700 shadow-2xl relative overflow-hidden group">
+          <div className="bg-slate-950 rounded-[2.25rem] border border-slate-850 dark:border-white/5 shadow-2xl relative overflow-hidden group">
              <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500/10 rounded-full -mr-16 -mt-16 blur-2xl pointer-events-none" />
              
-             <div className="px-8 py-8 border-b border-white/5 bg-[#1e293b] flex items-center justify-between text-white relative z-10 font-sans italic">
+             <div className="px-8 py-8 border-b border-white/5 bg-transparent flex items-center justify-between text-white relative z-10 font-sans italic">
                 <div className="flex items-center gap-4">
                    <div className="w-10 h-10 bg-orange-500 rounded-2xl flex items-center justify-center shadow-lg shadow-orange-500/20 rotate-3 group-hover:rotate-0 transition-all">
                       <Smartphone size={20} className="text-white" />
@@ -1192,7 +1277,7 @@ export default function Dashboard({ user }: { user: any }) {
              </div>
           </div>
           
-          <div className="bg-white rounded-[2.5rem] border border-slate-200 overflow-hidden shadow-sm">
+          <div className="bg-white dark:bg-slate-900 rounded-[2.25rem] border border-slate-200 dark:border-white/5 overflow-hidden shadow-sm">
             <div className="px-5 py-4 border-b border-slate-200 bg-red-600 flex items-center justify-between">
               <h3 className="font-bold text-[13px] text-white uppercase tracking-widest flex items-center gap-2">
                 <ShieldAlert size={16} className="animate-pulse" />
@@ -1207,12 +1292,12 @@ export default function Dashboard({ user }: { user: any }) {
                     alert.id.startsWith('panic-') 
                       ? 'bg-red-600 border-white text-white animate-pulse shadow-xl shadow-red-200' 
                       : alert.type === 'danger' || alert.id.startsWith('speed-')
-                        ? 'bg-red-50 border-red-600' 
-                        : 'bg-amber-50 border-amber-500'
+                        ? 'bg-red-50 dark:bg-red-950/20 border-red-600' 
+                        : 'bg-amber-50 dark:bg-amber-950/20 border-amber-500'
                   }`}>
                     <div className="flex justify-between items-start mb-1">
                       <span className={`text-[10px] font-black uppercase tracking-tighter ${
-                        alert.id.startsWith('panic-') ? 'text-white' : alert.type === 'danger' ? 'text-red-700' : 'text-amber-700'
+                        alert.id.startsWith('panic-') ? 'text-white' : alert.type === 'danger' ? 'text-red-700 dark:text-red-400' : 'text-amber-700 dark:text-amber-400'
                       }`}>
                         {formatSafe(alert.time, 'HH:mm')} - {alert.title}
                       </span>
@@ -1227,7 +1312,7 @@ export default function Dashboard({ user }: { user: any }) {
                         <CheckCircle size={14} />
                       </button>
                     </div>
-                    <p className={`text-[12px] font-bold leading-tight ${alert.id.startsWith('panic-') ? 'text-white' : 'text-slate-800'}`}>{alert.message}</p>
+                    <p className={`text-[12px] font-bold leading-tight ${alert.id.startsWith('panic-') ? 'text-white' : 'text-slate-800 dark:text-slate-200'}`}>{alert.message}</p>
                   </div>
                 ))
               ) : (

@@ -86,6 +86,13 @@ interface DriverViewProps {
 export default function DriverView({ user }: DriverViewProps) {
   const [isOnline, setIsOnline] = useState(false);
   const [currentService, setCurrentService] = useState<any>(null);
+  const [otherDrivers, setOtherDrivers] = useState<any[]>([]);
+  const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
+  const [transferLoading, setTransferLoading] = useState(false);
+  const [isNewCallTransferModalOpen, setIsNewCallTransferModalOpen] = useState(false);
+  const [transferCustomerPhone, setTransferCustomerPhone] = useState("");
+  const [transferCustomerName, setTransferCustomerName] = useState("");
+  const [transferPickupAddress, setTransferPickupAddress] = useState("");
   const [earnings, setEarnings] = useState(0);
   const [stars, setStars] = useState(4.8);
   const [tripHistory, setTripHistory] = useState<any[]>([]);
@@ -600,6 +607,23 @@ export default function DriverView({ user }: DriverViewProps) {
     return () => unsubscribe();
   }, [user.uid, currentService]);
 
+  // Listen for other active and available drivers in the fleet
+  useEffect(() => {
+    if (!user?.uid) return;
+    const q = query(
+      collection(db, "drivers"),
+      where("status", "in", ["available", "ativo", "disponível"])
+    );
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const driversList = snapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .filter((d: any) => d.driverId !== user.uid && d.name !== user.name);
+      setOtherDrivers(driversList);
+    }, (error) => handleFirestoreError(error, OperationType.GET, "drivers"));
+
+    return () => unsubscribe();
+  }, [user.uid, user.name]);
+
   // Background GPS Tracking & Offline Logger/Syncer Logic
   useEffect(() => {
     if (!isOnline) return;
@@ -871,6 +895,86 @@ export default function DriverView({ user }: DriverViewProps) {
       setCurrentService(null);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `calls/${currentService.id}`);
+    }
+  };
+
+  const transferService = async (targetDriver: any) => {
+    if (!currentService || !targetDriver) return;
+    setTransferLoading(true);
+    try {
+      const callRef = doc(db, "calls", currentService.id);
+      await updateDoc(callRef, {
+        driverId: targetDriver.driverId || targetDriver.id,
+        driverName: targetDriver.name,
+        driverInfo: {
+          name: targetDriver.name,
+          phone: targetDriver.phone || targetDriver.phoneNumber || '',
+          vehicleModel: targetDriver.vehicleModel || targetDriver.brand || 'Táxi PSM',
+          vehiclePlate: targetDriver.vehiclePlate || targetDriver.licensePlate || ''
+        },
+        status: "pending",
+        responseHistory: arrayUnion({
+          action: "transferred",
+          timestamp: new Date().toISOString(),
+          fromId: user?.uid,
+          fromName: user?.name,
+          toId: targetDriver.driverId || targetDriver.id,
+          toName: targetDriver.name,
+        }),
+      });
+      setIsTransferModalOpen(false);
+      setCurrentService(null);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `calls/${currentService.id}`);
+    } finally {
+      setTransferLoading(false);
+    }
+  };
+
+  const sendDirectCallTransfer = async (targetDriver: any) => {
+    if (!transferCustomerPhone || !targetDriver) return;
+    setTransferLoading(true);
+    try {
+      const trimmedPhone = transferCustomerPhone.trim();
+      const phoneWithPrefix = trimmedPhone.startsWith('+244') 
+        ? trimmedPhone 
+        : trimmedPhone.startsWith('244')
+          ? `+${trimmedPhone}`
+          : `+244 ${trimmedPhone}`;
+      
+      await addDoc(collection(db, "calls"), {
+        customerPhone: phoneWithPrefix,
+        customerName: transferCustomerName || "Cliente Particular",
+        pickupAddress: transferPickupAddress || "Chamada Direta Recebida por Telemóvel",
+        destinationAddress: "A definir com o cliente",
+        price: 2500,
+        timestamp: new Date().toISOString(),
+        driverId: targetDriver.driverId || targetDriver.id,
+        driverName: targetDriver.name,
+        driverInfo: {
+          name: targetDriver.name,
+          phone: targetDriver.phone || targetDriver.phoneNumber || '',
+          vehicleModel: targetDriver.vehicleModel || targetDriver.brand || 'Táxi PSM',
+          vehiclePlate: targetDriver.vehiclePlate || targetDriver.licensePlate || ''
+        },
+        status: "pending",
+        type: "direct_referral",
+        transferredBy: {
+          id: user?.uid,
+          name: user?.name,
+        }
+      });
+      
+      setTransferCustomerPhone("");
+      setTransferCustomerName("");
+      setTransferPickupAddress("");
+      setIsNewCallTransferModalOpen(false);
+      alert("Contacto de cliente reencaminhado com sucesso para " + targetDriver.name + "!");
+    } catch (error) {
+      handleFirestoreError(error, OperationType.ADD, "calls");
+      alert("Erro ao reencaminhar contacto de cliente.");
+    } finally {
+      setTransferLoading(false);
     }
   };
 
@@ -1198,6 +1302,24 @@ export default function DriverView({ user }: DriverViewProps) {
                   </div>
                 </div>
 
+                {/* Reencaminhar Chamada de cliente direta */}
+                {isOnline && (
+                  <motion.button
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    onClick={() => {
+                      setTransferCustomerPhone("");
+                      setTransferCustomerName("");
+                      setTransferPickupAddress("");
+                      setIsNewCallTransferModalOpen(true);
+                    }}
+                    className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-black py-3.5 px-4 rounded-2xl text-[10px] uppercase tracking-wider transition-all shadow-md active:scale-95"
+                  >
+                    <PhoneIncoming size={14} className="animate-pulse" />
+                    Reencaminhar Chamada Direta
+                  </motion.button>
+                )}
+
                 {/* Collapsible Mentor IA Coaching Card */}
                 <div className="bg-white border border-slate-200/60 rounded-2xl p-4 shadow-sm transition-all hover:border-brand-primary/30">
                   <div 
@@ -1324,15 +1446,24 @@ export default function DriverView({ user }: DriverViewProps) {
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-2">
-                            <button className="flex-1 bg-slate-100 text-slate-600 p-3 rounded-xl font-bold text-[11px] transition-all hover:bg-slate-200">
-                              NAVEGAR
-                            </button>
+                          <div className="flex flex-col gap-2">
+                            <div className="flex items-center gap-2">
+                              <button className="flex-1 bg-slate-100 text-slate-600 p-3 rounded-xl font-bold text-[11px] transition-all hover:bg-slate-200">
+                                NAVEGAR
+                              </button>
+                              <button
+                                onClick={finishService}
+                                className="flex-1 bg-brand-primary text-white p-3 rounded-xl font-bold text-[11px] transition-all hover:bg-brand-secondary shadow-lg shadow-brand-primary/20"
+                              >
+                                FINALIZAR
+                              </button>
+                            </div>
                             <button
-                              onClick={finishService}
-                              className="flex-1 bg-brand-primary text-white p-3 rounded-xl font-bold text-[11px] transition-all hover:bg-brand-secondary shadow-lg shadow-brand-primary/20"
+                              onClick={() => setIsTransferModalOpen(true)}
+                              className="w-full bg-slate-100 hover:bg-slate-200 p-3 rounded-xl font-bold text-[11px] transition-all flex items-center justify-center gap-2 border border-slate-200 shadow-sm text-slate-700"
                             >
-                              FINALIZAR
+                              <Users size={14} className="text-slate-500" />
+                              DELEGAR / ENCAMINHAR CLIENTE
                             </button>
                           </div>
                         </div>
@@ -2182,6 +2313,214 @@ export default function DriverView({ user }: DriverViewProps) {
           )}
         </AnimatePresence>
 
+        {/* Direct Call Referral/Transfer Modal Overlay */}
+        <AnimatePresence>
+          {isNewCallTransferModalOpen && (
+            <div className="absolute inset-0 z-[60] flex items-end p-4">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setIsNewCallTransferModalOpen(false)}
+                className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+              />
+              <motion.div
+                initial={{ y: 300, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: 300, opacity: 0 }}
+                className="relative w-full bg-white rounded-[2.5rem] p-6 space-y-4 shadow-2xl z-20 flex flex-col max-h-[90%]"
+              >
+                <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">
+                      Encaminhar Chamada
+                    </h3>
+                    <p className="text-[10px] font-medium text-slate-400 uppercase tracking-widest">
+                      Enviar contacto de cliente para colega
+                    </p>
+                  </div>
+                  <button 
+                    onClick={() => setIsNewCallTransferModalOpen(false)}
+                    className="p-1.5 hover:bg-slate-100 rounded-full transition-all"
+                  >
+                    <X size={16} className="text-slate-500" />
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black text-slate-500 uppercase tracking-wider block">
+                      Número do Cliente
+                    </label>
+                    <div className="relative flex items-center bg-slate-100 rounded-xl px-3 border border-slate-200">
+                      <span className="text-[11px] font-black text-slate-400 mr-1">+244</span>
+                      <input
+                        type="tel"
+                        maxLength={9}
+                        placeholder="9XX XXX XXX"
+                        value={transferCustomerPhone}
+                        onChange={(e) => {
+                          const digitsOnly = e.target.value.replace(/\D/g, "");
+                          setTransferCustomerPhone(digitsOnly);
+                        }}
+                        className="w-full bg-transparent border-none py-2.5 text-xs font-black text-slate-800 outline-none uppercase"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black text-slate-500 uppercase tracking-wider block">
+                      Nome do Cliente (Opcional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Ex: Sr. Carlos António"
+                      value={transferCustomerName}
+                      onChange={(e) => setTransferCustomerName(e.target.value)}
+                      className="w-full bg-slate-100 rounded-xl px-3 py-2 text-xs font-black text-slate-800 outline-none border border-slate-200 uppercase"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black text-slate-500 uppercase tracking-wider block">
+                      Ponto de Recolha / Descrição (Opcional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Ex: Definitivos Próximo da Unitel"
+                      value={transferPickupAddress}
+                      onChange={(e) => setTransferPickupAddress(e.target.value)}
+                      className="w-full bg-slate-100 rounded-xl px-3 py-2 text-xs font-black text-slate-800 outline-none border border-slate-200 uppercase"
+                    />
+                  </div>
+                </div>
+
+                <div className="border-t border-slate-100 pt-3 flex-1 flex flex-col min-h-0">
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block mb-2">
+                    Selecionar Motorista Coop / Moxico
+                  </span>
+                  
+                  <div className="overflow-y-auto pr-1 space-y-2 flex-1 max-h-[160px] no-scrollbar">
+                    {otherDrivers.length > 0 ? (
+                      otherDrivers.map((driver) => (
+                        <button
+                          key={driver.id}
+                          disabled={transferLoading || !transferCustomerPhone}
+                          onClick={() => sendDirectCallTransfer(driver)}
+                          className="w-full flex items-center justify-between p-3 bg-slate-50 hover:bg-orange-500 hover:text-white disabled:opacity-50 disabled:hover:bg-slate-50 disabled:hover:text-inherit rounded-xl border border-slate-100 transition-all text-left group"
+                        >
+                          <div>
+                            <p className="text-xs font-black text-slate-800 uppercase group-hover:text-white leading-tight">
+                              {driver.name}
+                            </p>
+                            <p className="text-[9px] text-slate-400 uppercase font-bold group-hover:text-white/80 mt-1">
+                              Viatura: {driver.prefix || "N/A"} • {driver.status || "Ativo"}
+                            </p>
+                          </div>
+                          <div className="p-2 bg-white/80 text-orange-500 rounded-lg group-hover:bg-white group-hover:text-orange-500 shadow-sm transition-all">
+                            <PhoneIncoming size={12} />
+                          </div>
+                        </button>
+                      ))
+                    ) : (
+                      <div className="py-6 text-center">
+                        <Users size={20} className="text-slate-300 mx-auto mb-1.5" />
+                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider leading-relaxed">
+                          Nenhum colega de turno<br />disponível de momento
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {transferLoading && (
+                  <div className="flex items-center justify-center gap-2 text-[10px] font-bold text-orange-500 uppercase tracking-wider py-2 bg-orange-500/5 rounded-xl flex-shrink-0 animate-pulse">
+                    <Loader2 size={12} className="animate-spin" />
+                    A enviar contacto ao colega...
+                  </div>
+                )}
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
+        {/* Delegate / Transfer Customer Modal Overlay */}
+        <AnimatePresence>
+          {isTransferModalOpen && (
+            <div className="absolute inset-0 z-[60] flex items-end p-4">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setIsTransferModalOpen(false)}
+                className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+              />
+              <motion.div
+                initial={{ y: 300, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: 300, opacity: 0 }}
+                className="relative w-full bg-white rounded-[2.5rem] p-6 space-y-6 shadow-2xl z-20 flex flex-col max-h-[85%]"
+              >
+                <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">
+                      Delegar Cliente
+                    </h3>
+                    <p className="text-[10px] font-medium text-slate-400 uppercase tracking-widest">
+                      Frota SUPER Táxi / Luena
+                    </p>
+                  </div>
+                  <button 
+                    onClick={() => setIsTransferModalOpen(false)}
+                    className="p-1.5 hover:bg-slate-100 rounded-full transition-all"
+                  >
+                    <X size={16} className="text-slate-500" />
+                  </button>
+                </div>
+
+                <div className="overflow-y-auto pr-1 space-y-2 flex-1 max-h-[220px] no-scrollbar">
+                  {otherDrivers.length > 0 ? (
+                    otherDrivers.map((driver) => (
+                      <button
+                        key={driver.id}
+                        disabled={transferLoading}
+                        onClick={() => transferService(driver)}
+                        className="w-full flex items-center justify-between p-3 bg-slate-50 hover:bg-brand-primary hover:text-white rounded-xl border border-slate-100 transition-all text-left group"
+                      >
+                        <div>
+                          <p className="text-xs font-black text-slate-800 uppercase group-hover:text-white leading-tight">
+                            {driver.name}
+                          </p>
+                          <p className="text-[9px] text-slate-400 uppercase font-bold group-hover:text-white/80 mt-1">
+                            Viatura: {driver.prefix || "N/A"} • {driver.status || "Ativo"}
+                          </p>
+                        </div>
+                        <div className="p-2 bg-white/80 text-brand-primary rounded-lg group-hover:bg-white group-hover:text-brand-primary shadow-sm transition-all">
+                          <Navigation size={12} className="rotate-45" />
+                        </div>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="py-8 text-center animate-pulse">
+                      <Users size={24} className="text-slate-300 mx-auto mb-2" />
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider leading-relaxed">
+                        Nenhum motorista<br />disponível de momento
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {transferLoading && (
+                  <div className="flex items-center justify-center gap-2 text-[10px] font-bold text-brand-primary uppercase tracking-wider py-2 bg-brand-primary/5 rounded-xl">
+                    <Loader2 size={12} className="animate-spin" />
+                    A reencaminhar serviço...
+                  </div>
+                )}
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
         {/* Incoming Service Notification Modal Overlay */}
         <AnimatePresence>
           {showNotification && (
@@ -2199,21 +2538,37 @@ export default function DriverView({ user }: DriverViewProps) {
                 className="relative w-full bg-white rounded-[2.5rem] p-8 space-y-8 shadow-2xl"
               >
                 <div className="text-center space-y-2">
-                  <div className="w-20 h-20 bg-brand-primary/10 rounded-full flex items-center justify-center mx-auto mb-4 border-2 border-brand-primary/20">
+                  <div className={cn(
+                    "w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 border-2",
+                    currentService?.type === "direct_referral"
+                      ? "bg-orange-500/10 border-orange-500/20 text-orange-500"
+                      : "bg-brand-primary/10 border-brand-primary/20 text-brand-primary"
+                  )}>
                     <Phone
                       size={32}
-                      className="text-brand-primary animate-bounce"
+                      className="animate-bounce"
                     />
                   </div>
                   <h3 className="text-2xl font-black text-slate-900 tracking-tighter uppercase leading-none">
-                    Novo Serviço!
+                    {currentService?.type === "direct_referral" ? "Chamada Recebida!" : "Novo Serviço!"}
                   </h3>
                   <p className="text-sm font-medium text-slate-500 uppercase tracking-widest">
-                    Pedido da Central PSM
+                    {currentService?.type === "direct_referral" 
+                      ? `De: ${currentService.transferredBy?.name || "Colega de Turno"}`
+                      : "Pedido da Central PSM"
+                    }
                   </p>
                 </div>
 
                 <div className="space-y-4 bg-slate-50 p-6 rounded-3xl border border-slate-100">
+                  {currentService?.type === "direct_referral" && (
+                    <div className="bg-orange-50 border border-orange-200 p-3 rounded-2xl text-left mb-2">
+                      <p className="text-[9px] font-black text-orange-800 uppercase tracking-wide">💡 NOTA DE REENCAMINHAMENTO</p>
+                      <p className="text-[10px] text-orange-700 font-bold leading-tight mt-1">
+                        O colega {currentService.transferredBy?.name} reencaminhou este cliente direto por estar muito ocupado com outras corridas de momento.
+                      </p>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
                       Passageiro
@@ -2222,6 +2577,16 @@ export default function DriverView({ user }: DriverViewProps) {
                       {currentService?.customerName || "Cliente Particular"}
                     </span>
                   </div>
+                  {currentService?.customerPhone && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                        Telemóvel
+                      </span>
+                      <span className="text-[11px] font-black text-slate-800 tracking-wider">
+                        {currentService.customerPhone}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
                       Estimativa
