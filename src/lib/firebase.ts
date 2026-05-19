@@ -5,7 +5,8 @@ import 'firebase/auth'; // Force registration
 import { 
   getFirestore,
   initializeFirestore, 
-  memoryLocalCache,
+  persistentLocalCache,
+  persistentMultipleTabManager
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
@@ -39,7 +40,7 @@ const databaseId = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestor
 
 export const db = app ? initializeFirestore(app, {
   experimentalForceLongPolling: true, 
-  localCache: memoryLocalCache(), 
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }), 
   ignoreUndefinedProperties: true
 }, databaseId) : { collection: () => ({}), doc: () => ({}) } as any;
 

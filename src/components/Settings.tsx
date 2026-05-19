@@ -127,6 +127,16 @@ export default function Settings() {
     }
   };
 
+  const deleteUser = async (id: string, name: string) => {
+    if (window.confirm(`ATENÇÃO: Deseja remover permanentemente o utilizador "${name}" da equipa? Esta ação não pode ser desfeita.`)) {
+      try {
+        await deleteDoc(doc(db, 'users', id));
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, `users/${id}`);
+      }
+    }
+  };
+
   const [isClearingGPS, setIsClearingGPS] = useState(false);
 
   const clearGPSHistory = async () => {
@@ -499,16 +509,17 @@ export default function Settings() {
                     <th className="px-6 py-3 text-left border-b border-slate-200">UTILIZADOR</th>
                     <th className="px-6 py-3 text-left border-b border-slate-200">ROLE</th>
                     <th className="px-6 py-3 text-left border-b border-slate-200">EMAIL / ID</th>
-                    <th className="px-6 py-3 text-right border-b border-slate-200">DATA</th>
+                    <th className="px-6 py-3 text-left border-b border-slate-200">DATA</th>
+                    <th className="px-6 py-3 text-right border-b border-slate-200">AÇÕES</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {users.map((u) => (
-                    <tr key={u.uid} className="hover:bg-slate-50/50">
+                    <tr key={u.id} className="hover:bg-slate-50/50">
                       <td className="px-6 py-4">
                         <div className="flex flex-col">
                           <span className="font-bold text-slate-800">{u.name}</span>
-                          <span className="text-[10px] text-slate-400 font-mono">UID: {u.uid.slice(0, 8)}...</span>
+                          <span className="text-[10px] text-slate-400 font-mono">UID: {u.uid?.slice(0, 8)}...</span>
                         </div>
                       </td>
                       <td className="px-6 py-4">
@@ -522,8 +533,17 @@ export default function Settings() {
                         </span>
                       </td>
                       <td className="px-6 py-4 text-slate-500 font-medium">{u.email}</td>
-                      <td className="px-6 py-4 text-right text-slate-400 font-mono text-[11px]">
+                      <td className="px-6 py-4 text-left text-slate-400 font-mono text-[11px]">
                          {formatSafe(u.createdAt, 'dd/MM/yy')}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <button 
+                          onClick={() => deleteUser(u.id, u.name)}
+                          className="text-slate-300 hover:text-red-500 transition-colors p-2"
+                          title="Remover Utilizador"
+                        >
+                          <Trash2 size={16} />
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -569,39 +589,6 @@ export default function Settings() {
                     </button>
                   </div>
                   <p className="text-[10px] text-slate-400 mt-2 font-medium italic">Configure o app para enviar JSON com: type, from, to, content.</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="p-2 bg-slate-200 rounded-lg">
-                  <Terminal size={18} className="text-slate-700" />
-                </div>
-                <div>
-                  <h4 className="text-[14px] font-bold text-slate-900">Integração Twilio / Central</h4>
-                  <p className="text-[11px] text-slate-500">Configure no Painel Twilio para as comunicações da central.</p>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <div className="bg-white p-3 rounded border border-slate-100 flex items-center justify-between group">
-                  <div>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase">Twilio SMS Webhook</p>
-                    <code className="text-[10px] text-brand-primary font-mono">{window.location.origin}/api/webhooks/twilio/sms</code>
-                  </div>
-                  <button onClick={() => copyToClipboard(`${window.location.origin}/api/webhooks/twilio/sms`)} className="opacity-0 group-hover:opacity-100 p-1 bg-slate-50 rounded transition-all">
-                    <Copy size={12} />
-                  </button>
-                </div>
-                <div className="bg-white p-3 rounded border border-slate-100 flex items-center justify-between group">
-                  <div>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase">Twilio Voice (Chamadas)</p>
-                    <code className="text-[10px] text-brand-primary font-mono">{window.location.origin}/api/webhooks/twilio/voice</code>
-                  </div>
-                  <button onClick={() => copyToClipboard(`${window.location.origin}/api/webhooks/twilio/voice`)} className="opacity-0 group-hover:opacity-100 p-1 bg-slate-50 rounded transition-all">
-                    <Copy size={12} />
-                  </button>
                 </div>
               </div>
             </div>

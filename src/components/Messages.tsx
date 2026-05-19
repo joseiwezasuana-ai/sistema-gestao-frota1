@@ -11,11 +11,13 @@ import {
   Loader2,
   Trash2,
   MessageCircle,
-  ExternalLink
+  ExternalLink,
+  Smartphone
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
 import { format } from 'date-fns';
+import { WhatsAppMonitor } from './WhatsAppMonitor';
 
 import { collection, onSnapshot, addDoc, query, orderBy, limit, serverTimestamp, getDocs, deleteDoc, doc } from 'firebase/firestore';
 import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
@@ -27,7 +29,6 @@ export default function Messages() {
   const [isSending, setIsSending] = useState(false);
   const [activeNumbers, setActiveNumbers] = useState<string[]>([]);
   const [selectedChannel, setSelectedChannel] = useState('all');
-  const [isSimulated, setIsSimulated] = useState(true);
   const [activeVehicleCount, setActiveVehicleCount] = useState(0);
   const [whatsAppLink, setWhatsAppLink] = useState('');
   const [drivers, setDrivers] = useState<any[]>([]);
@@ -169,21 +170,12 @@ export default function Messages() {
           </div>
 
           <div className="relative z-10 flex items-center gap-6">
-            {isSimulated ? (
-              <div className="flex items-center gap-3 px-5 py-2.5 bg-amber-50 rounded-2xl border border-amber-200 italic shadow-sm">
-                <ShieldAlert size={16} className="text-amber-500" />
-                <span className="text-[10px] font-black text-amber-600 uppercase tracking-widest leading-none">
-                   Gateway Local (Simulado)
-                </span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-3 px-5 py-2.5 bg-emerald-50 rounded-2xl border border-emerald-200 italic shadow-sm">
-                <ShieldCheck size={16} className="text-emerald-600" />
-                <span className="text-[10px] font-black text-green-600 uppercase tracking-widest leading-none">
-                   Twilio Global Link ATIVO
-                </span>
-              </div>
-            )}
+            <div className="flex items-center gap-3 px-5 py-2.5 bg-indigo-50 rounded-2xl border border-indigo-200 italic shadow-sm">
+              <ShieldCheck size={16} className="text-indigo-600" />
+              <span className="text-[10px] font-black text-indigo-700 uppercase tracking-widest leading-none">
+                 Sistema de Registo Operacional ATIVO
+              </span>
+            </div>
             
             <div className="h-10 w-px bg-slate-200" />
 
@@ -274,34 +266,36 @@ export default function Messages() {
           
           <div className="flex-1 overflow-y-auto p-10 space-y-6 flex flex-col-reverse no-scrollbar">
             {selectedChannel === 'whatsapp' && (
-              <div className="flex-1 flex items-center justify-center flex-col gap-8 py-20">
-                <div className="w-24 h-24 bg-emerald-50 rounded-[2rem] flex items-center justify-center text-emerald-500 animate-bounce">
-                  <MessageCircle size={48} />
+              <div className="flex-1 flex flex-col h-full">
+                <div className="p-6 bg-emerald-50/50 border-b border-emerald-100 flex items-center justify-between">
+                   <div className="flex items-center gap-3">
+                      <div className="p-2 bg-emerald-100 text-emerald-600 rounded-lg">
+                         <MessageCircle size={20} />
+                      </div>
+                      <div>
+                         <h4 className="font-black text-lg text-slate-900 uppercase tracking-tighter italic">Comandos WhatsApp Operacional</h4>
+                         <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5 italic">Monitorização Directa de Grupos de Despacho</p>
+                      </div>
+                   </div>
+                   {whatsAppLink && (
+                      <a 
+                        href={whatsAppLink} 
+                        target="_blank" 
+                        rel="noreferrer"
+                        className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 transition-all"
+                      >
+                        Abrir App WhatsApp <ExternalLink size={12} />
+                      </a>
+                   )}
                 </div>
-                <div className="text-center space-y-3 max-w-md">
-                  <h4 className="font-black text-2xl text-slate-900 uppercase tracking-tighter italic">Integração WhatsApp</h4>
-                  <p className="text-[11px] text-slate-400 leading-relaxed font-bold uppercase tracking-widest">
-                    A PS MOREIRA utiliza um terminal dedicado para atendimento mobile no Moxico. A comunicação externa deve ser gerida pelo link seguro abaixo.
-                  </p>
+                <div className="flex-1 p-6 overflow-hidden">
+                   <WhatsAppMonitor />
                 </div>
-                {whatsAppLink ? (
-                  <a 
-                    href={whatsAppLink} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-3 px-10 py-5 bg-emerald-600 text-white rounded-[1.25rem] font-black text-xs uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-2xl shadow-emerald-600/30 active:scale-95"
-                  >
-                    Abrir Gateway WhatsApp Oficial
-                  </a>
-                ) : (
-                  <div className="p-6 bg-rose-50 border border-rose-100 rounded-2xl flex items-start gap-4">
-                    <ShieldAlert size={20} className="text-rose-500 mt-1" />
-                    <div>
-                      <p className="text-[11px] text-rose-700 font-black uppercase tracking-widest mb-1 italic">Interrupção de Gateway</p>
-                      <p className="text-[10px] text-rose-500 font-bold uppercase leading-tight">Configurações de link externo ausentes. Contacte o administrador.</p>
-                    </div>
-                  </div>
-                )}
+                <div className="p-6 bg-slate-50 border-t border-slate-100">
+                   <p className="text-[10px] text-slate-500 font-bold leading-relaxed italic text-center">
+                     "José, este monitor centraliza as mensagens dos grupos de motoristas. Pode ver reportes de localização e status sem precisar de abrir o telemóvel."
+                   </p>
+                </div>
               </div>
             )}
 

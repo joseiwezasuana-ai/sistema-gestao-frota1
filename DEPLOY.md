@@ -26,17 +26,33 @@ Depois disso, execute o `npm run build` e o `firebase deploy` normalmente.
 
 ## Passos para o Deploy
 
-1.  **Extrair o ficheiro ZIP** que descarregou do AI Studio.
-2.  **Abrir o Terminal ou CMD** na pasta onde extraiu os ficheiros.
-3.  **Instalar as dependências**:
+### A) Primeira Vez (Instalação)
+1.  **Abrir o Terminal ou CMD** numa pasta do seu computador (ex: Documentos).
+2.  **Clonar o Repositório**:
+    `git clone https://github.com/joseiwezasuana-ai/sistema-gestao-frota1.git`
+3.  **Entrar na pasta**:
+    `cd sistema-gestao-frota1`
+4.  **Instalar as dependências** (Só precisa fazer isto uma vez):
     `npm install`
-4.  **Gerar a versão de produção**:
+
+### B) Atualizações (Sempre que houver mudanças no AI Studio)
+1.  **Entrar na pasta** (se já não estiver nela):
+    `cd sistema-gestao-frota1`
+2.  **Puxar as novidades do GitHub**:
+    `git pull origin main`
+3.  **Instalar novas bibliotecas** (opcional, mas recomendado se o código mudou):
+    `npm install`
+
+### C) Colocando no Ar (Build & Deploy)
+Sempre que atualizar o código com o passo acima, deve seguir estes passos finais:
+1.  **Definir as chaves API** (conforme a secção "Configuração da IA e Mapas" acima).
+2.  **Gerar a versão de produção**:
     `npm run build`
-5.  **Fazer login no Firebase** (se ainda não estiver):
+3.  **Fazer login no Firebase** (se ainda não estiver):
     `firebase login`
-6.  **Garantir que está no projeto correto**:
+4.  **Garantir que está no projeto correto**:
     `firebase use sistema-auditado`
-7.  **Enviar para o ar**:
+5.  **Enviar para o ar**:
     `firebase deploy`
 
 ## Configuração Atual

@@ -55,6 +55,7 @@ import {
 } from 'lucide-react';
 import InvoiceDrafting from './components/InvoiceDrafting';
 import { ThemeProvider } from './context/ThemeContext';
+import { ConnectivityBanner } from './components/ConnectivityBanner';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -219,6 +220,7 @@ export default function App() {
   if (configError) {
     return (
       <ThemeProvider>
+        <ConnectivityBanner />
         <div className="flex min-h-screen w-full flex-col items-center justify-center bg-slate-950 p-8 text-center text-white font-sans">
           <div className="w-20 h-20 bg-rose-500 rounded-3xl flex items-center justify-center mb-6 shadow-2xl shadow-rose-500/20">
              <AlertCircle size={40} />
@@ -249,6 +251,7 @@ export default function App() {
   if (loading) {
     return (
       <ThemeProvider>
+        <ConnectivityBanner />
         <div key="loading-state" className="flex h-screen w-full items-center justify-center bg-slate-50 dark:bg-slate-950">
           <div className="flex flex-col items-center gap-4">
             <div className="h-12 w-12 animate-spin rounded-full border-4 border-brand-primary border-t-transparent shadow-xl shadow-brand-primary/20"></div>
@@ -266,6 +269,7 @@ export default function App() {
     };
     return (
       <ThemeProvider>
+        <ConnectivityBanner />
         <Login key="login-view" onGoogleLogin={handleGoogleLogin} />
       </ThemeProvider>
     );
@@ -274,6 +278,7 @@ export default function App() {
   if (!userProfile) {
     return (
       <ThemeProvider>
+        <ConnectivityBanner />
         <ProfileSetup key="setup-view" user={user} onComplete={setUserProfile} />
       </ThemeProvider>
     );
@@ -294,6 +299,7 @@ export default function App() {
   if (shouldShowMobile && isAdminOrStaff) {
     return (
       <ThemeProvider>
+        <ConnectivityBanner />
         <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
           <AlertNotificationManager />
           <StaffMobileView 
@@ -310,6 +316,7 @@ export default function App() {
   if (isMecanico) {
     return (
       <ThemeProvider>
+        <ConnectivityBanner />
         <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
           <AlertNotificationManager />
           <MechanicView user={userProfile} />
@@ -321,6 +328,7 @@ export default function App() {
   if (isDriver) {
     return (
       <ThemeProvider>
+        <ConnectivityBanner />
         <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
           <AlertNotificationManager />
           <DriverView user={userProfile} />
@@ -331,6 +339,7 @@ export default function App() {
 
   return (
     <ThemeProvider>
+      <ConnectivityBanner />
       <div key="authed-layout" className="min-h-screen">
         <Layout 
           user={userProfile} 

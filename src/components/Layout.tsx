@@ -46,18 +46,14 @@ export default function Layout({ children, user, globalSettings, activeTab, onTa
   const { theme, toggleTheme } = useTheme();
   const menuItems = [
     { id: 'dashboard', label: 'Painel Geral', icon: LayoutDashboard },
-    { id: 'recruitment', label: 'Portal de Recrutamento', icon: UserPlus, roles: ['admin'] },
-    { id: 'monitors', label: 'Monitores de Campo', icon: Activity, roles: ['admin', 'operator', 'contabilista'] },
+    { id: 'recruitment', label: 'Portal de Recrutamento', icon: UserPlus, roles: ['admin', 'operator', 'mecanico'] },
+    { id: 'monitors', label: 'Monitores de Campo', icon: Activity, roles: ['admin', 'operator', 'contabilista', 'mecanico'] },
     { id: 'revenue', label: 'Validação de Rendas', icon: Wallet, roles: ['operator'] },
     { id: 'driver_preview', label: 'Mobile App Simulator', icon: Smartphone, roles: ['admin'] },
     { id: 'fleet', label: 'Frota & Escalas 24h', icon: Truck, roles: ['admin', 'operator', 'mecanico', 'contabilista'] },
-    { id: 'psm_phones', label: 'Canais de Rádio/GSM', icon: Smartphone, roles: ['admin', 'operator'] },
     { id: 'maintenance', label: 'Gestão de Oficinas', icon: Wrench, roles: ['admin', 'operator', 'mecanico', 'contabilista'] },
-    { id: 'warehouse', label: 'Stocks & Logística', icon: Package, roles: ['admin', 'operator', 'mecanico'] },
     { id: 'accounting', label: 'Hub Contabilidade', icon: Calculator, roles: ['admin', 'contabilista'] },
     { id: 'messages', label: 'Hub de Comunicações', icon: MessageSquare, roles: ['admin', 'operator'] },
-    { id: 'map', label: 'Geolocalização Live', icon: MapIcon, roles: ['admin', 'operator', 'mecanico'] },
-    { id: 'gps_timeline', label: 'Auditoria GPS', icon: HistoryIcon, roles: ['admin', 'operator'] },
     { id: 'settings', label: 'Configurações', icon: SettingsIcon, roles: ['admin'] },
     { id: 'manual', label: 'Manual & Guia', icon: BookOpen, roles: ['admin', 'operator', 'contabilista', 'mecanico'] },
   ];

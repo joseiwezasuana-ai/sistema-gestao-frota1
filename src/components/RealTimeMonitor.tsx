@@ -18,7 +18,14 @@ import {
   AlertCircle,
   RefreshCcw,
   Download,
-  Calendar
+  Calendar,
+  Map as MapIcon,
+  History as HistoryIcon,
+  ShieldAlert,
+  Shield,
+  PhoneCall,
+  AlertTriangle,
+  Send
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -31,13 +38,18 @@ import {
   doc,
   where,
   getDocs,
-  writeBatch
+  writeBatch,
+  addDoc,
+  updateDoc,
+  serverTimestamp
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { format } from 'date-fns';
 import { cn } from '../lib/utils';
+import RealTimeMap from './RealTimeMap';
+import GPSTimeline from './GPSTimeline';
 
-type MonitorTab = 'psm' | 'unitel';
+type MonitorTab = 'psm' | 'unitel' | 'map' | 'gps_timeline' | 'sos';
 
 interface RealTimeMonitorProps {
   user?: any;
@@ -54,7 +66,42 @@ export default function RealTimeMonitor({ user }: RealTimeMonitorProps) {
   const [pageSize, setPageSize] = useState(50);
   const [loading, setLoading] = useState(true);
 
+  // S.O.S Alerts monitoring states
+  const [panicAlerts, setPanicAlerts] = useState<any[]>([]);
+  const [panicSearch, setPanicSearch] = useState('');
+  const [panicStatusFilter, setPanicStatusFilter] = useState<'todos' | 'active' | 'resolved'>('todos');
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
+  const [resolutionNotes, setResolutionNotes] = useState('');
+  const [resolvingActionLoading, setResolvingActionLoading] = useState(false);
+  const [dispatchSmsId, setDispatchSmsId] = useState<string | null>(null);
+  const [dispatchContent, setDispatchContent] = useState('');
+  const [sendingDispatch, setSendingDispatch] = useState(false);
+  const [simulationLoading, setSimulationLoading] = useState(false);
+
   const isAdmin = user?.role === 'admin';
+
+  // Set first permissible subtab based on user's role
+  useEffect(() => {
+    if (!user) return;
+    const tabsList = [
+      { id: 'psm', roles: ['admin', 'operator', 'contabilista', 'mecanico'] },
+      { id: 'unitel', roles: ['admin', 'operator', 'contabilista', 'mecanico'] },
+      { id: 'map', roles: ['admin', 'operator', 'mecanico'] },
+      { id: 'gps_timeline', roles: ['admin', 'operator'] },
+      { id: 'sos', roles: ['admin', 'operator'] },
+    ];
+    const isMasterAdmin = user?.email?.toLowerCase() === 'joseiwezasuana@gmail.com';
+    const hasPermission = isMasterAdmin || tabsList.find(t => t.id === activeSubTab)?.roles.includes(user?.role);
+    if (!hasPermission) {
+      const allowed = tabsList.filter(tab => {
+        if (isMasterAdmin) return true;
+        return tab.roles.includes(user?.role);
+      });
+      if (allowed.length > 0) {
+        setActiveSubTab(allowed[0].id as any);
+      }
+    }
+  }, [user, activeSubTab]);
 
   useEffect(() => {
     setLoading(true);
@@ -91,11 +138,18 @@ export default function RealTimeMonitor({ user }: RealTimeMonitorProps) {
       setMasterDrivers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     }, (error) => handleFirestoreError(error, OperationType.GET, 'drivers_master'));
 
+    // 5. Listen for Panic Alerts (S.O.S Auditoria)
+    const qPanic = query(collection(db, 'panic_alerts'), orderBy('timestamp', 'desc'), limit(150));
+    const unsubPanic = onSnapshot(qPanic, (snapshot) => {
+      setPanicAlerts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'panic_alerts'));
+
     return () => {
       unsubCalls();
       unsubSms();
       unsubDrivers();
       unsubMaster();
+      unsubPanic();
     };
   }, [statusFilter, pageSize, activeSubTab]);
 
@@ -109,12 +163,30 @@ export default function RealTimeMonitor({ user }: RealTimeMonitorProps) {
   };
 
   const clearHistory = async () => {
-    const targetCollection = activeSubTab === 'psm' ? 'calls' : 'sms_logs';
-    if (!window.confirm(`ATENÇÃO: Deseja apagar TODO o histórico visível de ${targetCollection === 'calls' ? 'Chamadas' : 'SMS'}? Esta ação é irreversível.`)) return;
+    let targetCollection = '';
+    let items: any[] = [];
+    let namePt = '';
+
+    if (activeSubTab === 'psm') {
+      targetCollection = 'calls';
+      items = filteredCalls;
+      namePt = 'Chamadas';
+    } else if (activeSubTab === 'unitel') {
+      targetCollection = 'sms_logs';
+      items = filteredSms;
+      namePt = 'SMS';
+    } else if (activeSubTab === 'sos') {
+      targetCollection = 'panic_alerts';
+      items = filteredPanics;
+      namePt = 'Alertas S.O.S';
+    } else {
+      return;
+    }
+
+    if (!window.confirm(`ATENÇÃO: Deseja apagar TODO o histórico visível de ${namePt}? Esta ação é irreversível.`)) return;
     
     try {
       const batch = writeBatch(db);
-      const items = activeSubTab === 'psm' ? filteredCalls : filteredSms;
       items.forEach(item => {
         batch.delete(doc(db, targetCollection, item.id));
       });
@@ -124,6 +196,93 @@ export default function RealTimeMonitor({ user }: RealTimeMonitorProps) {
       handleFirestoreError(error, OperationType.DELETE, targetCollection);
     }
   };
+
+  const simulePanicAlert = async () => {
+    setSimulationLoading(true);
+    try {
+      const mockDrivers = [
+        { name: "Joaquim Suana", phone: "+244923456789", prefix: "TX-104" },
+        { name: "Francisco Kilamba", phone: "+244912998877", prefix: "TX-402" },
+        { name: "Bartolomeu Moxico", phone: "+244933554411", prefix: "TX-087" },
+        { name: "Mateus Iweza", phone: "+244994223311", prefix: "TX-211" }
+      ];
+      const picked = mockDrivers[Math.floor(Math.random() * mockDrivers.length)];
+      
+      await addDoc(collection(db, "panic_alerts"), {
+        driverId: `sim-id-${Math.floor(Math.random() * 1000)}`,
+        driverName: picked.name,
+        driverPhone: picked.phone,
+        vehiclePrefix: picked.prefix,
+        timestamp: new Date(),
+        status: "active",
+        resolvedAt: null,
+        resolvedBy: null,
+        notes: "",
+        location: { latitude: -11.78 + (Math.random() * 0.04 - 0.02), longitude: 19.90 + (Math.random() * 0.04 - 0.02) }
+      });
+      alert(`S.O.S Simulado para ${picked.name} (${picked.prefix})!`);
+    } catch (e: any) {
+      handleFirestoreError(e, OperationType.CREATE, "panic_alerts");
+    } finally {
+      setSimulationLoading(false);
+    }
+  };
+
+  const resolveAlert = async (id: string) => {
+    setResolvingActionLoading(true);
+    try {
+      await updateDoc(doc(db, 'panic_alerts', id), {
+        status: 'resolved',
+        resolvedAt: new Date(),
+        resolvedBy: user?.name || user?.email || 'Administrador Central',
+        notes: resolutionNotes || 'Ocorrência atendida e resolvida com êxito na central.'
+      });
+      setResolvingId(null);
+      setResolutionNotes('');
+      alert('Alerta S.O.S marcado como resolvido e auditado!');
+    } catch (e: any) {
+      handleFirestoreError(e, OperationType.UPDATE, 'panic_alerts');
+    } finally {
+      setResolvingActionLoading(false);
+    }
+  };
+
+  const sendDispatchCommand = async (driverPhone: string, driverName: string, prefix: string) => {
+    if (!dispatchContent.trim()) {
+      alert("Por favor escreva o comando de socorro / despacho.");
+      return;
+    }
+    setSendingDispatch(true);
+    try {
+      await addDoc(collection(db, 'sms_logs'), {
+        from: 'PSM CENTRAL DISPATCH',
+        driverName: driverName,
+        vehiclePrefix: prefix,
+        content: `[CENTRAL PSM S.O.S] ${dispatchContent}`,
+        timestamp: new Date(),
+        status: 'dispatch_sent',
+        toPhone: driverPhone
+      });
+      setDispatchSmsId(null);
+      setDispatchContent('');
+      alert(`Comando de auxílio despachado para ${driverName}!`);
+    } catch (e: any) {
+      handleFirestoreError(e, OperationType.CREATE, 'sms_logs');
+    } finally {
+      setSendingDispatch(false);
+    }
+  };
+
+  const filteredPanics = panicAlerts.filter(p => {
+    const term = panicSearch.toLowerCase();
+    const matchesSearch = (p.driverName || '').toLowerCase().includes(term) || 
+                          (p.vehiclePrefix || '').toLowerCase().includes(term) ||
+                          (p.driverPhone || '').includes(term) ||
+                          (p.notes || '').toLowerCase().includes(term);
+    
+    if (panicStatusFilter === 'todos') return matchesSearch;
+    return p.status === panicStatusFilter && matchesSearch;
+  });
 
   const getVehicleByPhone = (phone?: string) => {
     if (!phone) return null;
@@ -190,83 +349,91 @@ export default function RealTimeMonitor({ user }: RealTimeMonitorProps) {
             </div>
           </div>
 
-          <div className="flex bg-slate-800/50 p-1.5 rounded-xl border border-slate-700/50">
-             <button 
-               onClick={() => { setActiveSubTab('psm'); setStatusFilter('todos'); }}
-               className={cn(
-                 "px-6 py-2.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2",
-                 activeSubTab === 'psm' ? "bg-brand-primary text-white shadow-lg" : "text-slate-400 hover:text-slate-200"
-               )}
-             >
-               <Phone size={14} /> Histórico PSM COMERCIAL
-             </button>
-             <button 
-               onClick={() => { setActiveSubTab('unitel'); setStatusFilter('todos'); }}
-               className={cn(
-                 "px-6 py-2.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2",
-                 activeSubTab === 'unitel' ? "bg-amber-500 text-white shadow-lg" : "text-slate-400 hover:text-slate-200"
-               )}
-             >
-               <Wifi size={14} /> Monitoria Unitel
-             </button>
+          <div className="flex flex-wrap bg-slate-800/50 p-1.5 rounded-xl border border-slate-700/50 gap-1.5">
+             {[
+               { id: 'psm', label: 'Histórico PSM COMERCIAL', icon: Phone, color: 'bg-brand-primary', roles: ['admin', 'operator', 'contabilista', 'mecanico'] },
+               { id: 'unitel', label: 'Monitoria Unitel', icon: Wifi, color: 'bg-amber-500', roles: ['admin', 'operator', 'contabilista', 'mecanico'] },
+               { id: 'map', label: 'Geolocalização Live', icon: MapIcon, color: 'bg-indigo-600', roles: ['admin', 'operator', 'mecanico'] },
+               { id: 'gps_timeline', label: 'Auditoria GPS', icon: HistoryIcon, color: 'bg-teal-600', roles: ['admin', 'operator'] },
+               { id: 'sos', label: 'Gestão de S.O.S 🚨', icon: ShieldAlert, color: 'bg-rose-700', roles: ['admin', 'operator'] },
+             ]
+             .filter(tab => {
+               const isMasterAdmin = user?.email?.toLowerCase() === 'joseiwezasuana@gmail.com';
+               if (isMasterAdmin) return true;
+               return tab.roles.includes(user?.role);
+             })
+             .map((tab) => (
+               <button 
+                 key={tab.id}
+                 onClick={() => { setActiveSubTab(tab.id as any); setStatusFilter('todos'); }}
+                 className={cn(
+                   "px-4 py-2.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2",
+                   activeSubTab === tab.id ? `${tab.color} text-white shadow-lg` : "text-slate-400 hover:text-slate-200"
+                 )}
+               >
+                 <tab.icon size={14} /> {tab.label}
+               </button>
+             ))}
           </div>
         </div>
       </div>
 
       {/* Control Bar */}
-      <div className="flex flex-col gap-4">
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row gap-4 items-center">
-            <div className="relative flex-1 group">
-                <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-brand-primary transition-colors" />
-                <input 
-                    type="text" 
-                    placeholder={activeSubTab === 'psm' ? "Pesquisar por cliente, telefone..." : "Pesquisar por conteúdo SMS..."}
-                    className="w-full pl-11 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary transition-all outline-none"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                />
-            </div>
-            
-            <div className="flex items-center gap-2">
-               {isAdmin && (
-                 <button 
-                   onClick={clearHistory}
-                   className="flex items-center gap-2 px-4 py-2.5 text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all"
-                 >
-                   <Trash2 size={14} /> Limpar Histórico
+      {(activeSubTab === 'psm' || activeSubTab === 'unitel') && (
+        <div className="flex flex-col gap-4">
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row gap-4 items-center">
+              <div className="relative flex-1 group">
+                  <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-brand-primary transition-colors" />
+                  <input 
+                      type="text" 
+                      placeholder={activeSubTab === 'psm' ? "Pesquisar por cliente, telefone..." : "Pesquisar por conteúdo SMS..."}
+                      className="w-full pl-11 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary transition-all outline-none"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+              </div>
+              
+              <div className="flex items-center gap-2">
+                 {isAdmin && (
+                   <button 
+                     onClick={clearHistory}
+                     className="flex items-center gap-2 px-4 py-2.5 text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all"
+                   >
+                     <Trash2 size={14} /> Limpar Histórico
+                   </button>
+                 )}
+                 <button className="p-2.5 bg-slate-50 text-slate-400 border border-slate-200 rounded-lg hover:text-brand-primary transition-all">
+                    <Download size={18} />
                  </button>
-               )}
-               <button className="p-2.5 bg-slate-50 text-slate-400 border border-slate-200 rounded-lg hover:text-brand-primary transition-all">
-                  <Download size={18} />
-               </button>
-            </div>
-        </div>
+              </div>
+          </div>
 
-        {/* Dynamic Filters */}
-        {activeSubTab === 'psm' && (
-           <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
-              {psmStatuses.map((s) => (
-                <button
-                  key={s.id}
-                  onClick={() => setStatusFilter(s.id)}
-                  className={cn(
-                    "flex items-center gap-2 px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all whitespace-nowrap",
-                    statusFilter === s.id 
-                      ? "bg-brand-primary text-white border-brand-primary shadow-md" 
-                      : "bg-white text-slate-500 border-slate-200 hover:border-brand-primary/30"
-                  )}
-                >
-                  <s.icon size={12} />
-                  {s.label}
-                </button>
-              ))}
-           </div>
-        )}
-      </div>
+          {/* Dynamic Filters */}
+          {activeSubTab === 'psm' && (
+             <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
+                {psmStatuses.map((s) => (
+                  <button
+                    key={s.id}
+                    onClick={() => setStatusFilter(s.id)}
+                    className={cn(
+                      "flex items-center gap-2 px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all whitespace-nowrap",
+                      statusFilter === s.id 
+                        ? "bg-brand-primary text-white border-brand-primary shadow-md" 
+                        : "bg-white text-slate-500 border-slate-200 hover:border-brand-primary/30"
+                    )}
+                  >
+                    <s.icon size={12} />
+                    {s.label}
+                  </button>
+                ))}
+             </div>
+          )}
+        </div>
+      )}
 
       <div className="flex-1 overflow-hidden min-h-0">
         <AnimatePresence mode="wait">
-          {activeSubTab === 'psm' ? (
+          {activeSubTab === 'psm' && (
             <motion.div 
               key="psm"
               initial={{ opacity: 0 }}
@@ -349,7 +516,9 @@ export default function RealTimeMonitor({ user }: RealTimeMonitorProps) {
                 )}
               </div>
             </motion.div>
-          ) : (
+          )}
+
+          {activeSubTab === 'unitel' && (
             <motion.div 
               key="unitel"
               initial={{ opacity: 0 }}
@@ -411,6 +580,415 @@ export default function RealTimeMonitor({ user }: RealTimeMonitorProps) {
                    </div>
                 )}
               </div>
+            </motion.div>
+          )}
+
+          {activeSubTab === 'map' && (
+            <motion.div 
+              key="map"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="h-full flex flex-col"
+            >
+              <RealTimeMap />
+            </motion.div>
+          )}
+
+          {activeSubTab === 'gps_timeline' && (
+            <motion.div 
+              key="gps_timeline"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="h-full flex flex-col"
+            >
+              <GPSTimeline />
+            </motion.div>
+          )}
+
+          {activeSubTab === 'sos' && (
+            <motion.div 
+              key="sos"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="h-full flex flex-col space-y-4"
+            >
+              {/* Upper Section with stats & action */}
+              <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 text-left">
+                {/* Stats */}
+                <div className="bg-red-50 border border-red-200 p-4 rounded-2xl flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-red-500 tracking-widest leading-none">Status Ativo</span>
+                    <h4 className="text-2xl font-black text-red-700 leading-none mt-1.5">
+                      {panicAlerts.filter(p => p.status === 'active').length}
+                    </h4>
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-red-600/10 text-red-600 flex items-center justify-center animate-pulse">
+                    <ShieldAlert size={20} />
+                  </div>
+                </div>
+
+                <div className="bg-green-50 border border-green-200 p-4 rounded-2xl flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-green-500 tracking-widest leading-none">Resolvidos</span>
+                    <h4 className="text-2xl font-black text-green-700 leading-none mt-1.5">
+                      {panicAlerts.filter(p => p.status === 'resolved').length}
+                    </h4>
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-green-500/10 text-green-600 flex items-center justify-center">
+                    <CheckCircle2 size={20} />
+                  </div>
+                </div>
+
+                <div className="bg-slate-50 border border-slate-200 p-4 rounded-2xl flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest leading-none">Total Registados</span>
+                    <h4 className="text-2xl font-black text-slate-700 leading-none mt-1.5">{panicAlerts.length}</h4>
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-slate-200 text-slate-600 flex items-center justify-center">
+                    <HistoryIcon size={20} />
+                  </div>
+                </div>
+
+                {/* Simulation button */}
+                <button
+                  onClick={simulePanicAlert}
+                  disabled={simulationLoading}
+                  className="bg-red-600 hover:bg-red-700 active:scale-[0.98] text-white px-4 py-3 rounded-2xl text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2.5 transition-all shadow-lg shadow-red-200/50"
+                >
+                  {simulationLoading ? <RefreshCcw size={16} className="animate-spin" /> : <ShieldAlert size={16} className="animate-bounce" />}
+                  Simular Alerta S.O.S (Testes)
+                </button>
+              </div>
+
+              {/* Action and search filters bar */}
+              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row gap-4 justify-between items-center text-left">
+                <div className="relative flex-1 w-full group">
+                  <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-red-500 transition-colors" />
+                  <input 
+                    type="text" 
+                    placeholder="Pesquisar por motorista, viatura prefixo, notas..."
+                    className="w-full pl-11 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium focus:ring-2 focus:ring-red-500/10 focus:border-red-500 transition-all outline-none"
+                    value={panicSearch}
+                    onChange={(e) => setPanicSearch(e.target.value)}
+                  />
+                </div>
+
+                <div className="flex gap-2 w-full sm:w-auto overflow-x-auto no-scrollbar pb-1 sm:pb-0 items-center">
+                  {(['todos', 'active', 'resolved'] as const).map((status) => (
+                    <button
+                      key={status}
+                      onClick={() => setPanicStatusFilter(status)}
+                      className={cn(
+                        "px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all whitespace-nowrap",
+                        panicStatusFilter === status 
+                          ? "bg-red-700 text-white border-red-700 shadow-md" 
+                          : "bg-white text-slate-500 border-slate-200 hover:border-red-700/30"
+                      )}
+                    >
+                      {status === 'todos' && 'Todos os Alertas'}
+                      {status === 'active' && '🚨 Ativos'}
+                      {status === 'resolved' && '✅ Resolvidos'}
+                    </button>
+                  ))}
+
+                  {isAdmin && (
+                    <button 
+                      onClick={clearHistory}
+                      className="flex items-center gap-2 px-4 py-2 text-red-650 bg-red-50 hover:bg-red-100 border border-red-200 rounded-full text-[10px] font-black uppercase tracking-widest transition-all shrink-0"
+                      title="Apagar todo o histórico de S.O.S filtrado"
+                    >
+                      <Trash2 size={12} /> Limpar Tudo
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Panic Alerts list */}
+              <div className="flex-1 overflow-y-auto pr-1 pb-10 space-y-4 max-h-[700px]">
+                {filteredPanics.map((alertItem) => {
+                  const isActive = alertItem.status === 'active';
+                  return (
+                    <div 
+                      key={alertItem.id} 
+                      className={cn(
+                        "bg-white rounded-2xl border p-5 shadow-sm transition-all relative overflow-hidden flex flex-col md:flex-row gap-6 justify-between items-start md:items-center text-left",
+                        isActive ? "border-red-300 bg-red-50/20 shadow-lg shadow-red-100/30 animate-[pulse_3s_infinite]" : "border-slate-200 hover:border-brand-primary/20"
+                      )}
+                    >
+                      {isActive && (
+                        <div className="absolute top-0 bottom-0 left-0 w-1.5 bg-red-600 animate-pulse" />
+                      )}
+
+                      <div className="space-y-3 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={cn(
+                            "px-2.5 py-1 rounded text-[10px] font-black uppercase tracking-widest border flex items-center gap-1.5",
+                            isActive ? "bg-red-600 text-white border-red-600 font-mono text-[9px]" : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          )}>
+                            {isActive ? (
+                              <>
+                                <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+                                PERIGO • DESTAQUE S.O.S
+                              </>
+                            ) : (
+                              'RESOLVIDO & AUDITADO'
+                            )}
+                          </span>
+
+                          <span className="text-[11px] text-slate-400 font-mono">
+                            ID: #{(alertItem.id || '').toUpperCase().slice(-5)}
+                          </span>
+
+                          <span className="text-[11px] text-slate-400 font-bold flex items-center gap-1.5">
+                            <Clock size={12} />
+                            {alertItem.timestamp?.toDate ? format(alertItem.timestamp.toDate(), 'dd/MM/yy HH:mm:ss') : 'Data não informada'}
+                          </span>
+                        </div>
+
+                        {/* Driver credentials & Taxi Info */}
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-8">
+                          <div>
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Motorista em perigo</p>
+                            <p className="text-base font-black text-slate-800 leading-tight uppercase mt-0.5">{alertItem.driverName}</p>
+                            <a 
+                              href={`tel:${alertItem.driverPhone}`} 
+                              className="text-xs font-bold text-brand-primary flex items-center gap-1 mt-1 hover:underline"
+                            >
+                              <PhoneCall size={12} /> {alertItem.driverPhone}
+                            </a>
+                          </div>
+
+                          <div className="border-l border-slate-200 pl-4 h-9 hidden sm:block" />
+
+                          <div>
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Viatura / Prefixo</p>
+                            <span className="inline-block mt-0.5 px-3 py-1 bg-slate-100 border border-slate-200 rounded-lg text-xs font-black text-slate-700">
+                              {alertItem.vehiclePrefix || "TX-XXX"}
+                            </span>
+                          </div>
+
+                          <div className="border-l border-slate-200 pl-4 h-9 hidden sm:block" />
+
+                          <div>
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Localização aproximada</p>
+                            <div className="flex items-center gap-1.5 text-xs font-bold mt-1 text-slate-600">
+                              <MapPin size={13} className="text-brand-primary" />
+                              <span>Luena, Moxico</span>
+                              {alertItem.location && (
+                                <span className="text-[10px] text-slate-400 font-mono">
+                                  ({alertItem.location.latitude?.toFixed(4)}, {alertItem.location.longitude?.toFixed(4)})
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Resolution notes trail if resolved */}
+                        {!isActive && alertItem.resolvedBy && (
+                          <div className="bg-slate-50 border border-slate-200/50 rounded-xl p-3 text-left">
+                            <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Relatório da Resolução:</p>
+                            <p className="text-xs font-medium text-slate-700 mt-1 italic leading-relaxed">
+                              "{alertItem.notes || 'Sem comentários adicionais.'}"
+                            </p>
+                            <div className="flex items-center gap-1.5 mt-2 text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                              <span>Processado por: {alertItem.resolvedBy}</span>
+                              {alertItem.resolvedAt?.toDate && (
+                                <>
+                                  <span className="w-1 h-1 rounded-full bg-slate-300" />
+                                  <span>Concluído em: {format(alertItem.resolvedAt.toDate(), 'dd/MM/yy HH:mm:ss')}</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Quick Actions Panel */}
+                      <div className="flex flex-wrap md:flex-col gap-2 w-full md:w-auto md:min-w-[200px] pt-4 md:pt-0 border-t md:border-t-0 md:border-l border-slate-200 md:pl-6">
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest w-full text-left md:text-right hidden md:block">
+                          Ações de Resgate
+                        </p>
+
+                        <a
+                          href={`tel:${alertItem.driverPhone}`}
+                          className="flex-1 md:flex-none py-2.5 px-4 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-800 transition-all flex items-center justify-center gap-2 text-center"
+                        >
+                          <Phone size={12} /> Chamar GSM
+                        </a>
+
+                        {isActive ? (
+                          <>
+                            <button
+                              onClick={() => {
+                                setDispatchSmsId(alertItem.id);
+                                setDispatchContent(`Mestre ${alertItem.driverName}, recebemos o seu pedido de S.O.S na central PSM e equipe de emergência está a caminho.`);
+                              }}
+                              className="flex-[2] md:flex-none py-2.5 px-4 bg-[#b45309] text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-[#92400e] transition-all flex items-center justify-center gap-2"
+                            >
+                              <Send size={12} /> Despachar Socorro
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                setResolvingId(alertItem.id);
+                                setResolutionNotes('Problema solucionado com sucesso pela central operativa PSM.');
+                              }}
+                              className="flex-1 md:flex-none py-2.5 px-4 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 transition-all flex items-center justify-center gap-2"
+                            >
+                              <CheckCircle2 size={12} /> Marcar Resolvido
+                            </button>
+                          </>
+                        ) : (
+                          <div className="flex items-center gap-1 text-emerald-600 text-[10px] font-black uppercase tracking-widest justify-center">
+                            <CheckCircle2 size={14} /> Resolvido e Seguro
+                          </div>
+                        )}
+
+                        {isAdmin && (
+                          <button
+                            onClick={() => deleteLog('panic_alerts', alertItem.id)}
+                            className="w-full py-2 bg-red-50 hover:bg-red-100 text-red-650 rounded-xl text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-colors mt-1 border border-red-100"
+                            title="Eliminar este alerta do histórico permanentemente"
+                          >
+                            <Trash2 size={11} /> Excluir Registro
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {filteredPanics.length === 0 && (
+                  <div className="py-20 bg-white rounded-2xl border border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-400">
+                    <Shield size={48} className="mb-4 opacity-10" />
+                    <p className="font-black uppercase tracking-widest text-xs">Sem registos S.O.S pendentes nesta auditoria</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Resolution Input Slide Dialog */}
+              <AnimatePresence>
+                {resolvingId && (
+                  <motion.div 
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+                  >
+                    <motion.div 
+                      initial={{ scale: 0.95 }}
+                      animate={{ scale: 1 }}
+                      exit={{ scale: 0.95 }}
+                      className="bg-white rounded-3xl p-6 max-w-md w-full border border-slate-100 shadow-2xl space-y-4"
+                    >
+                      <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                        <div className="w-10 h-10 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center">
+                          <CheckCircle2 size={20} />
+                        </div>
+                        <div className="text-left">
+                          <h4 className="text-sm font-black text-slate-800 uppercase">Tratar Alerta de Emergência</h4>
+                          <p className="text-[10px] text-slate-400 uppercase tracking-widest">Insira os detalhes e notas da intervenção</p>
+                        </div>
+                      </div>
+
+                      <div className="text-left">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">Notas de Auditoria da Resolução</label>
+                        <textarea
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-medium focus:ring-2 focus:ring-brand-primary/10 focus:border-brand-primary outline-none"
+                          rows={4}
+                          placeholder="Ex: Motorista teve um pneu furado em zona sem sinal, assistência foi despachada para o local e viatura já regressou ao serviço com segurança."
+                          value={resolutionNotes}
+                          onChange={(e) => setResolutionNotes(e.target.value)}
+                        />
+                      </div>
+
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setResolvingId(null)}
+                          className="flex-1 py-2 rounded-xl text-xs font-black uppercase tracking-widest text-slate-500 hover:bg-slate-50 transition-colors"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          onClick={() => resolveAlert(resolvingId)}
+                          disabled={resolvingActionLoading}
+                          className="flex-1 py-2 bg-emerald-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2"
+                        >
+                          {resolvingActionLoading ? <RefreshCcw size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
+                          Salvar Resolução
+                        </button>
+                      </div>
+                    </motion.div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Dispatch Command dialog */}
+              <AnimatePresence>
+                {dispatchSmsId && (
+                  <motion.div 
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+                  >
+                    <motion.div 
+                      initial={{ scale: 0.95 }}
+                      animate={{ scale: 1 }}
+                      exit={{ scale: 0.95 }}
+                      className="bg-white rounded-3xl p-6 max-w-md w-full border border-slate-100 shadow-2xl space-y-4"
+                    >
+                      {(() => {
+                        const alertObj = panicAlerts.find(a => a.id === dispatchSmsId);
+                        if (!alertObj) return null;
+                        return (
+                          <>
+                            <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                              <div className="w-10 h-10 rounded-xl bg-red-100 text-red-600 flex items-center justify-center">
+                                <Send size={20} />
+                              </div>
+                              <div className="text-left">
+                                <h4 className="text-sm font-black text-slate-800 uppercase">Comando de Socorro Recíproco</h4>
+                                <p className="text-[10px] text-slate-400 uppercase tracking-widest">Enviar Instruções para {alertObj.driverName}</p>
+                              </div>
+                            </div>
+
+                            <div className="text-left">
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">SMS / Mensagem a Enviar para o Motorista</label>
+                              <textarea
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-medium focus:ring-2 focus:ring-brand-primary/10 focus:border-brand-primary outline-none"
+                                rows={4}
+                                value={dispatchContent}
+                                onChange={(e) => setDispatchContent(e.target.value)}
+                              />
+                            </div>
+
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => setDispatchSmsId(null)}
+                                className="flex-1 py-2 rounded-xl text-xs font-black uppercase tracking-widest text-slate-500 hover:bg-slate-50 transition-colors"
+                              >
+                                Cancelar
+                              </button>
+                              <button
+                                onClick={() => sendDispatchCommand(alertObj.driverPhone, alertObj.driverName, alertObj.vehiclePrefix)}
+                                disabled={sendingDispatch}
+                                className="flex-1 py-2 bg-brand-primary text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-brand-primary-hover transition-colors flex items-center justify-center gap-2"
+                              >
+                                {sendingDispatch ? <RefreshCcw size={12} className="animate-spin" /> : <Send size={12} />}
+                                Enviar Comando S.O.S
+                              </button>
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </motion.div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </motion.div>
           )}
         </AnimatePresence>

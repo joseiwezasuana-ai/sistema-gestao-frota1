@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LogIn, Car, User, Key, ArrowRight, Shield, AlertCircle, Loader2, CheckCircle2, ShieldCheck, ChevronRight, MessageSquare } from 'lucide-react';
+import { LogIn, Car, User, Key, ArrowRight, Shield, AlertCircle, Loader2, CheckCircle2, ShieldCheck, ChevronRight, MessageSquare, MoreVertical, X, Globe, Lock } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, signInWithRedirect } from 'firebase/auth';
 import { db, auth, googleProvider, withTimeout } from '../lib/firebase';
@@ -10,7 +10,8 @@ interface LoginProps {
 }
 
 export default function Login({ onGoogleLogin }: LoginProps) {
-  const [loginMethod, setLoginMethod] = useState<'google' | 'credentials' | 'register'>('google');
+  const [loginMethod, setLoginMethod] = useState<'cover' | 'google' | 'credentials' | 'register'>('cover');
+  const [showMenu, setShowMenu] = useState(false);
   const [id, setId] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
@@ -40,8 +41,9 @@ export default function Login({ onGoogleLogin }: LoginProps) {
     fetchSettings();
   }, []);
 
-  const handleMethodChange = (method: 'google' | 'credentials' | 'register') => {
+  const handleMethodChange = (method: 'cover' | 'google' | 'credentials' | 'register') => {
     setLoginMethod(method);
+    setShowMenu(false);
     setIsCodeValidated(false);
     setValidationRole(null);
     setCollaborators([]);
@@ -291,40 +293,86 @@ export default function Login({ onGoogleLogin }: LoginProps) {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4 font-sans antialiased text-slate-900 notranslate">
+    <div className="flex min-h-screen items-center justify-center bg-slate-900 px-4 font-sans antialiased text-slate-900 notranslate selection:bg-brand-primary/30">
+      {/* Background Decorative Elements */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-brand-primary/10 blur-[120px] rounded-full animate-pulse" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-emerald-500/5 blur-[120px] rounded-full" />
+      </div>
+
       <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md overflow-hidden rounded-[2.5rem] bg-white shadow-[0_32px_64px_-16px_rgba(0,0,0,0.15)] border border-slate-200/50"
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="w-full max-w-[440px] overflow-hidden rounded-[3rem] bg-white shadow-[0_40px_80px_-15px_rgba(0,0,0,0.5)] border border-white/10 relative z-10"
       >
-        <div className="bg-[#0f172a] p-10 text-center text-white relative overflow-hidden">
+        {/* Top Control Bar with 3 dots menu */}
+        <div className="absolute top-8 right-8 z-50">
+          <div className="relative">
+            <button 
+              onClick={() => setShowMenu(!showMenu)}
+              className="p-3 bg-white/10 hover:bg-white/20 dark:bg-white/5 dark:hover:bg-white/10 backdrop-blur-md rounded-2xl transition-all active:scale-95 text-white"
+            >
+              {showMenu ? <X size={20} /> : <MoreVertical size={20} />}
+            </button>
+
+            <AnimatePresence>
+              {showMenu && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.9, y: 10 }}
+                  className="absolute right-0 mt-3 w-52 bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden p-2"
+                >
+                   <button 
+                    onClick={() => handleMethodChange('google')}
+                    className="w-full flex items-center gap-3 p-3 hover:bg-slate-50 rounded-2xl transition-colors group"
+                  >
+                    <div className="p-2 bg-slate-100 rounded-xl group-hover:bg-brand-primary/10 group-hover:text-brand-primary transition-colors">
+                      <Globe size={16} />
+                    </div>
+                    <span className="text-xs font-bold text-slate-700">Google Cloud</span>
+                  </button>
+                  <button 
+                    onClick={() => handleMethodChange('credentials')}
+                    className="w-full flex items-center gap-3 p-3 hover:bg-slate-50 rounded-2xl transition-colors group"
+                  >
+                    <div className="p-2 bg-slate-100 rounded-xl group-hover:bg-brand-primary/10 group-hover:text-brand-primary transition-colors">
+                      <LogIn size={16} />
+                    </div>
+                    <span className="text-xs font-bold text-slate-700">ID Central</span>
+                  </button>
+                  <button 
+                    onClick={() => handleMethodChange('register')}
+                    className="w-full flex items-center gap-3 p-3 hover:bg-slate-50 rounded-2xl transition-colors group"
+                  >
+                    <div className="p-2 bg-slate-100 rounded-xl group-hover:bg-brand-primary/10 group-hover:text-brand-primary transition-colors">
+                      <ShieldCheck size={16} />
+                    </div>
+                    <span className="text-xs font-bold text-slate-700">Ativar ID</span>
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+
+        <div className="bg-[#0f172a] p-12 text-center text-white relative overflow-hidden h-[340px] flex flex-col justify-center">
           {/* Technical Grid Pattern */}
           <div className="absolute inset-0 opacity-10 pointer-events-none" 
-               style={{ backgroundImage: 'radial-gradient(#94a3b8 1px, transparent 1px)', backgroundSize: '20px 20px' }}></div>
-          <div className="absolute inset-0 opacity-20 pointer-events-none"
-               style={{ backgroundImage: 'linear-gradient(#1e293b 1px, transparent 1px), linear-gradient(90deg, #1e293b 1px, transparent 1px)', backgroundSize: '100px 100px' }}></div>
+               style={{ backgroundImage: 'radial-gradient(#94a3b8 1px, transparent 1px)', backgroundSize: '24px 24px' }}></div>
           
-          <div className="absolute top-0 right-0 w-64 h-64 bg-brand-primary/10 blur-[100px] rounded-full -mr-32 -mt-32 animate-pulse" />
-          <div className="absolute bottom-0 left-0 w-48 h-48 bg-emerald-500/5 blur-[80px] rounded-full -ml-24 -mb-24" />
+          <div className="absolute top-0 right-0 w-80 h-80 bg-brand-primary/10 blur-[120px] rounded-full -mr-40 -mt-40 animate-pulse" />
           
           <motion.div 
-            initial={{ scale: 0.8, rotate: -5 }}
-            animate={{ scale: 1, rotate: 0 }}
-            transition={{ type: 'spring', damping: 12 }}
-            className="mx-auto flex h-24 w-24 items-center justify-center relative z-10 mb-6 group bg-white/5 rounded-[2.5rem] p-4 border border-white/10 shadow-2xl overflow-hidden"
+            initial={{ scale: 0.8, y: 20 }}
+            animate={{ scale: 1, y: 0 }}
+            className="mx-auto flex h-28 w-28 items-center justify-center relative z-10 mb-8 group bg-white/5 rounded-[2.5rem] p-5 border border-white/10 shadow-2xl overflow-hidden"
           >
             <img 
               src="/logo.svg" 
               alt="SUPER Taxi" 
-              className="w-full h-full object-contain relative z-10 drop-shadow-[0_0_15px_rgba(59,130,246,0.3)] transition-transform group-hover:scale-110 duration-500"
+              className="w-full h-full object-contain relative z-10 drop-shadow-[0_0_20px_rgba(59,130,246,0.5)]"
             />
-            <div className="absolute inset-0 bg-brand-primary/20 blur-[30px] rounded-full pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity" />
-            
-            <div className="absolute -bottom-1 -right-1 z-20">
-              <div className="w-5 h-5 bg-emerald-500 rounded-full border-4 border-[#0f172a] flex items-center justify-center">
-                 <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
-              </div>
-            </div>
           </motion.div>
           
           <h1 className="text-4xl font-black tracking-tighter uppercase italic relative z-10 leading-none">
@@ -332,340 +380,194 @@ export default function Login({ onGoogleLogin }: LoginProps) {
           </h1>
           
           <div className="mt-4 flex items-center justify-center gap-3 relative z-10 px-4">
-             <div className="h-0.5 w-6 bg-brand-primary/30" />
-             <p className="text-[10px] text-slate-400 font-black uppercase tracking-[0.4em] whitespace-nowrap">PSM COMERCIAL LUENA MOXICO</p>
-             <div className="h-0.5 w-6 bg-brand-primary/30" />
-          </div>
-
-          <div className="mt-8 flex flex-wrap items-center justify-center gap-4 relative z-10">
-             <div className="flex flex-col items-center px-4 py-2 bg-white/5 rounded-xl border border-white/5 backdrop-blur-sm">
-                <span className="text-[10px] font-mono font-bold text-white tracking-widest">{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                <span className="text-[7px] font-black text-slate-500 uppercase tracking-widest">Tempo Real</span>
-             </div>
-             
-             <div className="flex flex-col items-center px-4 py-2 bg-white/5 rounded-xl border border-white/5 backdrop-blur-sm">
-                <div className="flex items-center gap-1.5">
-                   <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-                   <span className="text-[10px] font-mono font-bold text-white uppercase tracking-tight">Active</span>
-                </div>
-                <span className="text-[7px] font-black text-slate-500 uppercase tracking-widest">Servidor</span>
-             </div>
-
-             <div className="flex flex-col items-center px-4 py-2 bg-white/5 rounded-xl border border-white/5 backdrop-blur-sm">
-                <span className="text-[10px] font-mono font-bold text-brand-primary">SECURED</span>
-                <span className="text-[7px] font-black text-slate-500 uppercase tracking-widest">SSL / FIREWALL</span>
-             </div>
-          </div>
-          
-          <div className="absolute bottom-4 left-0 right-0 px-8 opacity-20 pointer-events-none">
-             <div className="flex justify-between items-center font-mono text-[8px] text-slate-500 tracking-tighter">
-                <span>0xFF_SUPER_TAXI_LUA_CORE</span>
-                <div className="flex gap-4">
-                  <span>LAT: -11.78</span>
-                  <span>LON: 19.91</span>
-                </div>
-             </div>
+             <div className="h-0.5 w-6 bg-brand-primary/40" />
+             <p className="text-[10px] text-slate-400 font-black uppercase tracking-[0.4em] whitespace-nowrap">PSM COMERCIAL LUENA</p>
+             <div className="h-0.5 w-6 bg-brand-primary/40" />
           </div>
         </div>
         
-        <div className="p-8">
-          <div className="flex bg-slate-100 p-1 rounded-xl mb-8 overflow-x-auto scroller-hidden">
-            <button 
-              onClick={() => handleMethodChange('google')}
-              className={`flex-1 min-w-[70px] flex items-center justify-center gap-2 py-2.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
-                loginMethod === 'google' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'
-              }`}
-            >
-              Google
-            </button>
-            <button 
-              onClick={() => handleMethodChange('credentials')}
-              className={`flex-1 min-w-[70px] flex items-center justify-center gap-2 py-2.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
-                loginMethod === 'credentials' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'
-              }`}
-            >
-              ID Central
-            </button>
-            <button 
-              onClick={() => handleMethodChange('register')}
-              className={`flex-1 min-w-[70px] flex items-center justify-center gap-2 py-2.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
-                loginMethod === 'register' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'
-              }`}
-            >
-              Ativar ID
-            </button>
-          </div>
+        <div className="p-10 min-h-[460px] flex flex-col items-center justify-center relative">
+          <AnimatePresence mode="wait">
+            {loginMethod === 'cover' ? (
+              <motion.div 
+                key="cover"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="text-center space-y-8"
+              >
+                <div className="space-y-4">
+                  <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter italic">Bem-vindo, José</h2>
+                  <p className="text-[11px] text-slate-400 font-bold uppercase tracking-[0.2em] leading-relaxed max-w-[280px] mx-auto">
+                    Aceda ao Hub de Controlo Operacional de Frota PS Moreira Luena. Sessão Protegida.
+                  </p>
+                </div>
 
-          {success && (
-            <div className="p-3 bg-green-50 border border-green-100 text-green-600 text-[11px] font-bold rounded-lg flex items-center gap-2 mb-6">
-              <CheckCircle2 size={14} />
-              {success}
-            </div>
-          )}
+                <div className="pt-6">
+                  <button 
+                    onClick={() => setShowMenu(true)}
+                    className="group relative inline-flex items-center gap-4 px-10 py-5 bg-slate-900 text-white rounded-3xl font-black text-[11px] uppercase tracking-widest hover:bg-black transition-all shadow-2xl shadow-slate-900/30 active:scale-95"
+                  >
+                    Entrar no Sistema
+                    <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+                  </button>
+                  
+                  <p className="mt-8 text-[9px] text-slate-400 font-bold uppercase tracking-[0.3em] flex items-center justify-center gap-2">
+                    <Lock size={10} className="text-emerald-500" />
+                    PROTOCOLO DE SEGURANÇA ATIVO
+                  </p>
+                </div>
+              </motion.div>
+            ) : (
+              <motion.div 
+                key={`form-${loginMethod}`}
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="w-full"
+              >
+                <div className="mb-8 flex items-center justify-between">
+                  <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter italic">
+                    {loginMethod === 'google' ? 'Google Cloud' : loginMethod === 'credentials' ? 'ID Central' : 'Ativação ID'}
+                  </h3>
+                  <button 
+                    onClick={() => handleMethodChange('cover')}
+                    className="p-2 hover:bg-slate-100 rounded-xl transition-colors text-slate-400"
+                  >
+                    <ArrowRight className="rotate-180" size={18} />
+                  </button>
+                </div>
 
-          <div className="min-h-[300px]" key={`login-container-${loginMethod}`}>
-            {loginMethod === 'google' && (
-              <div className="space-y-6">
-                {error && (
-                  <div className="p-3 bg-red-50 border border-red-100 text-red-600 text-xs font-bold rounded-lg flex flex-col gap-2 mb-2 transition-all">
-                    <div className="flex items-center gap-2">
-                      <AlertCircle size={14} />
-                      {error}
-                    </div>
-                    {showPopupTip && (
-                      <div className="pl-6 space-y-2 mt-2">
-                        <p className="text-[10px] text-red-500 font-medium leading-tight">
-                          O seu navegador impediu a abertura da janela de login. Escolha uma alternativa:
-                        </p>
-                        <div className="flex flex-wrap gap-2">
-                          <button 
-                            type="button"
-                            onClick={handleGoogleRedirect}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-brand-primary text-white rounded-lg text-[9px] font-black uppercase tracking-wider hover:bg-brand-secondary transition-all shadow-sm"
-                          >
-                            Entrar via Redirecionamento
-                            <LogIn size={10} />
-                          </button>
-                          <a 
-                            href={window.location.href} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-700 rounded-lg text-[9px] font-black uppercase tracking-wider hover:bg-slate-200 transition-all border border-slate-200"
-                          >
-                            Abrir noutra aba
-                            <ArrowRight size={10} />
-                          </a>
-                        </div>
+                {/* Forms Section */}
+                {loginMethod === 'google' && (
+                  <div className="space-y-6">
+                    {error && (
+                      <div className="p-3 bg-red-50 border border-red-100 text-red-600 text-xs font-bold rounded-lg flex items-center gap-2 mb-2">
+                        <AlertCircle size={14} />
+                        {error}
                       </div>
                     )}
-                  </div>
-                )}
-                
-                <p className="text-center text-slate-500 text-sm font-medium">
-                  Acesse o painel administrativo utilizando a sua conta Google autorizada.
-                </p>
-                <button
-                  onClick={handleGoogleLoginClick}
-                  disabled={loading}
-                  className="flex w-full items-center justify-center gap-3 rounded-xl bg-slate-900 py-3.5 font-bold text-white transition-all hover:bg-slate-800 active:scale-[0.98] shadow-lg shadow-slate-900/20 disabled:opacity-50"
-                >
-                  {loading ? <Loader2 className="animate-spin" size={20} /> : (
-                    <>
-                      <LogIn size={20} />
-                      Entrar com Google
-                    </>
-                  )}
-                </button>
-              </div>
-            )}
-
-
-            {loginMethod === 'credentials' && (
-              <form onSubmit={handleCredentialsLogin} className="space-y-4">
-                {error && (
-                  <div className="p-3 bg-red-50 border border-red-100 text-red-600 text-xs font-bold rounded-lg flex items-center gap-2 mb-2">
-                    <AlertCircle size={14} />
-                    {error}
-                  </div>
-                )}
-                
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">ID do Operador / Motorista</label>
-                  <div className="relative group">
-                    <User size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-brand-primary transition-colors" />
-                    <input 
-                      required
-                      type="text" 
-                      placeholder="Ex: OP-123"
-                      value={id}
-                      onChange={(e) => setId(e.target.value)}
-                      className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:bg-white focus:border-brand-primary outline-none transition-all"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Palavra-passe</label>
-                  <div className="relative group">
-                    <Key size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-brand-primary transition-colors" />
-                    <input 
-                      required
-                      type="password" 
-                      placeholder="••••••••"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:bg-white focus:border-brand-primary outline-none transition-all"
-                    />
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full bg-brand-primary text-white flex items-center justify-center gap-2 py-3.5 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-brand-secondary transition-all hover:shadow-lg hover:shadow-brand-primary/20 disabled:opacity-50 mt-4 h-[52px]"
-                >
-                  {loading ? <Loader2 className="animate-spin" size={20} /> : (
-                    <>
-                      AUTENTICAR NO SISTEMA
-                      <ArrowRight size={18} />
-                    </>
-                  )}
-                </button>
-              </form>
-            )}
-
-            {loginMethod === 'register' && (
-              <div className="space-y-4">
-                {error && (
-                  <div className="p-3 bg-red-50 border border-red-100 text-red-600 text-xs font-bold rounded-lg flex items-center gap-2 animate-in fade-in zoom-in duration-200">
-                    <AlertCircle size={14} />
-                    {error}
-                  </div>
-                )}
-                
-                {success && !isCodeValidated && (
-                  <div className="p-3 bg-green-50 border border-green-100 text-green-700 text-xs font-bold rounded-lg flex items-center gap-2 animate-in fade-in zoom-in duration-200">
-                    <CheckCircle2 size={14} />
-                    {success}
-                  </div>
-                )}
-                
-                {!isCodeValidated ? (
-                  <div className="space-y-4 animate-in fade-in duration-300" key="verify-step">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">ID Atribuído</label>
-                        <input 
-                          required
-                          type="text" 
-                          placeholder="Ex: MOT-01"
-                          value={id}
-                          onChange={(e) => setId(e.target.value.toUpperCase())}
-                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:bg-white focus:border-brand-primary outline-none transition-all"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Cód. Ativação</label>
-                        <input 
-                          required
-                          type="text" 
-                          placeholder="XXXX-XXXX"
-                          value={code}
-                          onChange={(e) => setCode(e.target.value.toUpperCase())}
-                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:bg-white focus:border-brand-primary font-mono outline-none transition-all"
-                        />
-                      </div>
-                    </div>
-
+                    <p className="text-center text-slate-500 text-sm font-medium">Acesse o painel utilizando a sua conta Google autorizada.</p>
                     <button
-                      type="button"
-                      onClick={handleVerifyCode}
-                      disabled={isValidatingCode}
-                      className="w-full bg-slate-900 text-white flex items-center justify-center gap-2 py-4 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-slate-800 transition-all shadow-lg shadow-slate-900/20 disabled:opacity-50"
-                    >
-                      {isValidatingCode ? <Loader2 className="animate-spin" size={20} /> : (
-                        <>
-                          VERIFICAR DADOS DE ACESSO
-                          <ShieldCheck size={18} />
-                        </>
-                      )}
-                    </button>
-
-                    <div className="pt-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const link = whatsAppLink || 'https://wa.me/244921644781';
-                          window.open(link, '_blank');
-                        }}
-                        className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-dashed border-slate-200 text-slate-400 hover:text-brand-primary hover:border-brand-primary hover:bg-slate-50 transition-all group"
-                      >
-                        <MessageSquare size={14} className="group-hover:scale-110 transition-transform" />
-                        <span className="text-[10px] font-black uppercase tracking-widest italic">Solicite o seu código à central</span>
-                      </button>
-                    </div>
-
-                    <p className="text-[9px] text-center text-slate-400 font-bold uppercase mt-4 tracking-widest leading-relaxed">
-                      BLOQUEIO DE SEGURANÇA ATIVADO<br/>
-                      A LISTA DE COLABORADORES SÓ SERÁ EXIBIDA APÓS A VALIDAÇÃO
-                    </p>
-                  </div>
-                ) : (
-                  <form onSubmit={handleRegister} className="space-y-4 pt-2 border-t border-slate-100 animate-in fade-in slide-in-from-top-4 duration-500" key="register-step">
-                    <div className="bg-emerald-50 border border-emerald-100 p-3.5 rounded-xl flex items-center gap-3 text-emerald-700 text-[10px] font-black uppercase tracking-tight mb-4 shadow-sm">
-                      <div className="bg-emerald-500 p-1.5 rounded-lg">
-                        <ShieldCheck size={16} className="text-white" />
-                      </div>
-                      <div>
-                        <p className="text-emerald-900 leading-none mb-1">Acesso Validado pela Central</p>
-                        <p className="text-[8px] opacity-70">Perfil Autorizado: {validationRole === 'driver' ? 'MOTORISTA OPERACIONAL' : 'STAFF ADMINISTRATIVO'}</p>
-                      </div>
-                    </div>
-                    
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Confirmar Nome Registado</label>
-                      <div className="relative group">
-                        <User size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-brand-primary transition-colors pointer-events-none z-10" />
-                        <select 
-                          required
-                          value={name}
-                          onChange={(e) => setName(e.target.value)}
-                          className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:bg-white focus:border-brand-primary outline-none transition-all appearance-none"
-                        >
-                          <option value="">Selecione o seu nome...</option>
-                          {collaboratorsLoading ? (
-                            <option disabled>A carregar lista...</option>
-                          ) : collaborators.length === 0 ? (
-                            <option disabled>Nenhum colaborador registado</option>
-                          ) : (
-                            collaborators.map(c => (
-                              <option key={c.id} value={c.name}>{c.name}</option>
-                            ))
-                          )}
-                        </select>
-                        <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none">
-                          <ChevronRight size={14} className="rotate-90" />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Definir Palavra-passe</label>
-                      <input 
-                        required
-                        type="password" 
-                        placeholder="Mínimo 6 caracteres"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:bg-white focus:border-brand-primary outline-none transition-all"
-                      />
-                    </div>
-
-                    <button
-                      type="submit"
+                      onClick={handleGoogleLoginClick}
                       disabled={loading}
-                      className="w-full bg-brand-primary text-white flex items-center justify-center gap-2 py-3.5 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-brand-secondary transition-all shadow-lg shadow-brand-primary/20 disabled:opacity-50 mt-4 h-[52px]"
+                      className="flex w-full items-center justify-center gap-3 rounded-2xl bg-slate-900 py-4.5 font-black text-white text-[11px] uppercase tracking-widest transition-all hover:bg-black active:scale-[0.98] shadow-2xl shadow-slate-900/40 disabled:opacity-50"
                     >
                       {loading ? <Loader2 className="animate-spin" size={20} /> : (
                         <>
-                          ATIVAR MINHA CONTA AGORA
-                          <CheckCircle2 size={18} />
+                          <Globe size={20} />
+                          Entrar com Google
                         </>
                       )}
                     </button>
+                  </div>
+                )}
+
+                {loginMethod === 'credentials' && (
+                  <form onSubmit={handleCredentialsLogin} className="space-y-4">
+                    {error && (
+                      <div className="p-4 bg-red-50 border border-red-100 text-red-600 text-xs font-bold rounded-2xl flex items-center gap-3">
+                        <AlertCircle size={16} />
+                        {error}
+                      </div>
+                    )}
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">ID Operador</label>
+                      <input 
+                        required
+                        type="text" 
+                        placeholder="Ex: OP-123"
+                        value={id}
+                        onChange={(e) => setId(e.target.value)}
+                        className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:bg-white focus:border-brand-primary outline-none transition-all"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Senha</label>
+                      <input 
+                        required
+                        type="password" 
+                        placeholder="••••••••"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:bg-white focus:border-brand-primary outline-none transition-all"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="w-full bg-brand-primary text-white flex items-center justify-center gap-3 py-5 rounded-2xl font-black text-[11px] uppercase tracking-widest hover:bg-brand-secondary transition-all shadow-xl shadow-brand-primary/30 disabled:opacity-50 mt-6 h-[60px]"
+                    >
+                      {loading ? <Loader2 className="animate-spin" size={20} /> : <>ENTRAR AGORA <ArrowRight size={18}/></>}
+                    </button>
                   </form>
                 )}
-              </div>
+
+                {loginMethod === 'register' && (
+                  <div className="space-y-4">
+                    {error && (
+                      <div className="p-4 bg-red-50 border border-red-100 text-red-600 text-xs font-bold rounded-2xl flex items-center gap-3">
+                        <AlertCircle size={16} />
+                        {error}
+                      </div>
+                    )}
+                    {!isCodeValidated ? (
+                       <div className="space-y-4">
+                          <input 
+                            placeholder="ID"
+                            value={id}
+                            onChange={(e) => setId(e.target.value.toUpperCase())}
+                            className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:bg-white focus:border-brand-primary outline-none transition-all"
+                          />
+                          <input 
+                            placeholder="CÓDIGO DE ATIVAÇÃO"
+                            value={code}
+                            onChange={(e) => setCode(e.target.value.toUpperCase())}
+                            className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:bg-white focus:border-brand-primary font-mono outline-none transition-all"
+                          />
+                          <button
+                            onClick={handleVerifyCode}
+                            className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black text-[11px] uppercase tracking-widest hover:bg-black transition-all"
+                          >
+                            VALIDAR CÓDIGO
+                          </button>
+                       </div>
+                    ) : (
+                       <form onSubmit={handleRegister} className="space-y-4">
+                          <select 
+                            value={name}
+                            onChange={(e) => setName(e.target.value)}
+                            className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:bg-white focus:border-brand-primary outline-none transition-all"
+                          >
+                            <option value="">Selecione o seu nome...</option>
+                            {collaborators.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                          </select>
+                          <input 
+                            required
+                            type="password" 
+                            placeholder="PALAVRA-PASSE"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:bg-white focus:border-brand-primary outline-none transition-all"
+                          />
+                          <button
+                            type="submit"
+                            className="w-full bg-brand-primary text-white py-5 rounded-2xl font-black text-[11px] uppercase tracking-widest hover:bg-brand-secondary transition-all"
+                          >
+                            ATIVAR CONTA AGORA
+                          </button>
+                       </form>
+                    )}
+                  </div>
+                )}
+              </motion.div>
             )}
-          </div>
-          
-          <div className="mt-10 pt-6 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400 font-bold uppercase tracking-tighter">
-            <span className="flex items-center gap-1.5">
-               <Shield size={10} className="text-brand-primary" />
-               Acesso Seguro
-            </span>
-            <span>v4.5 • TaxiControl AO</span>
-          </div>
+          </AnimatePresence>
+        </div>
+        
+        <div className="px-10 py-6 bg-slate-50/50 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400 font-black uppercase tracking-widest italic">
+          <span>v4.5 • LUENA</span>
+          <span className="opacity-50">SISTEMA AUDITADO</span>
         </div>
       </motion.div>
     </div>

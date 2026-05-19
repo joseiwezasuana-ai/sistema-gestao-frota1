@@ -1,7 +1,6 @@
 import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
-import twilio from "twilio";
 import admin from "firebase-admin";
 import { getFirestore } from "firebase-admin/firestore";
 import fs from "fs";
@@ -37,18 +36,6 @@ const getDb = () => {
 };
 
 const db = getDb();
-
-// Lazy initialization for Twilio
-let twilioClient: twilio.Twilio | null = null;
-function getTwilio() {
-  const sid = process.env.TWILIO_ACCOUNT_SID;
-  const token = process.env.TWILIO_AUTH_TOKEN;
-  if (!sid || !token) return null;
-  if (!twilioClient) {
-    twilioClient = twilio(sid, token);
-  }
-  return twilioClient;
-}
 
 async function startServer() {
   const app = express();
@@ -303,145 +290,6 @@ async function startServer() {
     }
   });
 
-  // Real SMS Sending Route (Twilio Only)
-  app.post("/api/sms/send", async (req, res) => {
-    const { phoneNumbers, message } = req.body;
-
-    if (!phoneNumbers || !Array.isArray(phoneNumbers) || !message) {
-      return res.status(400).json({ error: "Invalid request payload" });
-    }
-
-    try {
-      const client = getTwilio();
-      if (!client) {
-        return res.status(503).json({ 
-          success: false, 
-          error: "Twilio credentials not configured. Please check Settings > Secrets.",
-          simulated: true 
-        });
-      }
-
-      const from = process.env.TWILIO_PHONE_NUMBER || "+244920010026";
-
-      const results = await Promise.all(
-        phoneNumbers.map(to => 
-          client.messages.create({
-            body: message,
-            to: to.startsWith('+') ? to : `+${to}`,
-            from: from
-          })
-        )
-      );
-
-      res.json({ 
-        success: true, 
-        provider: "Twilio",
-        deliveredCount: results.length,
-        messageIds: results.map(r => r.sid)
-      });
-    } catch (error: any) {
-      console.error("[Twilio Provider Error]", error);
-      res.status(500).json({ 
-        success: false, 
-        error: error.message || "Failed to send SMS via Twilio" 
-      });
-    }
-  });
-
-  /**
-   * WEBHOOKS: Automatic Registration of Calls and SMS
-   * These endpoints receive data from external providers (Twilio, Mobile Apps, Gateways)
-   */
-
-  // 1. Twilio SMS Webhook
-  app.post("/api/webhooks/twilio/sms", express.urlencoded({ extended: false }), async (req, res) => {
-    const { From, To, Body, MessageSid } = req.body;
-    console.log(`[Twilio SMS] Received from ${From}: ${Body}`);
-
-    try {
-      // Find driver/vehicle associated with either From or To number
-      const driversSnapshot = await db.collection("drivers").get();
-      let matchedDriverId = null;
-      let matchedPrefix = "N/A";
-      let matchedDriverName = "Unknown Driver";
-
-      driversSnapshot.docs.forEach(doc => {
-        const data = doc.data();
-        if (data.phone === To || data.secondaryPhone === To || data.phone === From || data.secondaryPhone === From) {
-          matchedDriverId = doc.id;
-          matchedPrefix = data.prefix || "N/A";
-          matchedDriverName = data.name || "Unknown Driver";
-        }
-      });
-
-      await db.collection("sms_logs").add({
-        content: Body,
-        from: From,
-        to: To,
-        driverId: matchedDriverId,
-        driverName: matchedDriverName,
-        vehiclePrefix: matchedPrefix,
-        status: "received",
-        timestamp: admin.firestore.FieldValue.serverTimestamp(),
-        provider: "Twilio (Auto)",
-        sid: MessageSid,
-        targets: [To]
-      });
-
-      const response = new twilio.twiml.MessagingResponse();
-      res.type("text/xml").send(response.toString());
-    } catch (error) {
-      console.error("[Webhook Error]", error);
-      res.status(500).send("Error logging message");
-    }
-  });
-
-  // 2. Twilio Voice Webhook (Incoming Call)
-  app.post("/api/webhooks/twilio/voice", express.urlencoded({ extended: false }), async (req, res) => {
-    const { From, To, CallSid } = req.body;
-    console.log(`[Twilio Voice] Incoming call from ${From} to ${To}`);
-
-    try {
-      const driversSnapshot = await db.collection("drivers").get();
-      let matchedDriverId = null;
-
-      driversSnapshot.docs.forEach(doc => {
-        const data = doc.data();
-        if (data.phone === To || data.secondaryPhone === To) {
-          matchedDriverId = doc.id;
-        }
-      });
-
-      if (matchedDriverId) {
-        // Increment call count for driver
-        await db.collection("drivers").doc(matchedDriverId).update({
-          callCount: admin.firestore.FieldValue.increment(1)
-        });
-      }
-
-      await db.collection("calls").add({
-        customerName: "Chamada Automática",
-        customerPhone: From,
-        pickupAddress: "Detectado via Gateway",
-        destinationAddress: "A definir",
-        driverId: matchedDriverId,
-        status: "pending",
-        timestamp: admin.firestore.FieldValue.serverTimestamp(),
-        type: "incoming",
-        sid: CallSid,
-        op: "Twilio Auto"
-      });
-
-      const response = new twilio.twiml.VoiceResponse();
-      response.say({ language: 'pt-PT' }, "Olá, a sua chamada está a ser encaminhada para a nossa central. Por favor aguarde.");
-      // Here you could dial the driver's real phone or a central agent
-      res.type("text/xml").send(response.toString());
-    } catch (error) {
-      console.error("[Voice Webhook Error]", error);
-      res.status(500).send("Error logging call");
-    }
-  });
-
   // 3. Generic Hook for Mobile Apps (Unitel / Personal Android)
   // Used by apps like "SMS Forwarder" on Android to push local SMS to the system
   app.post("/api/webhooks/generic", async (req, res) => {
@@ -640,7 +488,6 @@ async function startServer() {
       - GET /api/health
       - POST /api/admin/create-user
       - POST /api/auth/register
-      - POST /api/sms/send
       - Webhooks: /api/webhooks/*
     `);
   });

@@ -15,39 +15,28 @@ export const smsService = {
    * @returns Promise resolving to the broadcast result
    */
   async sendSMS(phoneNumbers: string[], message: string) {
-    console.log(`[SMS Service] Dispatching to ${phoneNumbers.length} numbers via Backend...`);
+    console.log(`[SMS Service] Logging dispatch to ${phoneNumbers.length} numbers (Twilio removed)...`);
     
     const logPath = 'sms_logs';
     try {
-      // 1. Call our backend route
-      const response = await fetch('/api/sms/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phoneNumbers, message })
-      });
-
-      const result = await response.json();
-
-      // 2. Log the execution in Firestore
+      // 1. Log the execution in Firestore only (No more real SMS sending via Twilio)
       await addDoc(collection(db, logPath), {
         targets: phoneNumbers,
         content: message,
         timestamp: serverTimestamp(),
-        status: result.success ? 'sent' : 'failed',
-        provider: result.success ? 'Twilio (Production)' : 'Twilio (Error)',
-        error: result.error || null,
+        status: 'logged_only',
+        provider: 'System Log (Twilio Disabled)',
         isMock: false
       });
 
       return { 
-        success: result.success, 
+        success: true, 
         count: phoneNumbers.length, 
-        simulated: false,
-        error: result.error
+        simulated: true
       };
     } catch (error: any) {
-      console.error('Error in SMS dispatch chain', error);
-      return { success: false, error: error.message, simulated: false };
+      console.error('Error in SMS logging chain', error);
+      return { success: false, error: error.message };
     }
   },
 

@@ -18,6 +18,8 @@ import {
   MessageCircle,
   MoreVertical,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Shield,
   Activity,
   History,
@@ -214,6 +216,8 @@ export default function DriverView({ user }: DriverViewProps) {
     null,
   );
   const [unreadMessages, setUnreadMessages] = useState<any[]>([]);
+  const [isAiAdviceExpanded, setIsAiAdviceExpanded] = useState(false);
+  const [isAlertsCollapsed, setIsAlertsCollapsed] = useState(true);
 
   // Listen for unread messages
   useEffect(() => {
@@ -242,7 +246,8 @@ export default function DriverView({ user }: DriverViewProps) {
     );
     const unsubscribe = onSnapshot(q, (snapshot) => {
       if (!snapshot.empty) {
-        const vehicle = snapshot.docs[0].data();
+        const docRef = snapshot.docs[0];
+        const vehicle = { id: docRef.id, ...docRef.data() };
         setAssignedVehicle(vehicle);
         // Default view to today's vehicle if on today's date
         if (viewContractsDate === new Date().toISOString().split("T")[0]) {
@@ -595,6 +600,99 @@ export default function DriverView({ user }: DriverViewProps) {
     return () => unsubscribe();
   }, [user.uid, currentService]);
 
+  // Background GPS Tracking & Offline Logger/Syncer Logic
+  useEffect(() => {
+    if (!isOnline) return;
+
+    // Helper to queue point offline if there is a network issue
+    const queueOfflineGPS = (point: any) => {
+      try {
+        const existing = localStorage.getItem("gps_offline_queue");
+        const queue = existing ? JSON.parse(existing) : [];
+        queue.push(point);
+        localStorage.setItem("gps_offline_queue", JSON.stringify(queue));
+        console.log(`[Offline GPS Tracker] Guardado offline. Total em fila: ${queue.length}`);
+      } catch (err) {
+        console.error("Erro ao enfileirar ponto de GPS offline:", err);
+      }
+    };
+
+    // 1. Core tracking interval: checks GPS and log it
+    const trackInterval = setInterval(() => {
+      if ("geolocation" in navigator) {
+        navigator.geolocation.getCurrentPosition(
+          async (position) => {
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+            const speed = position.coords.speed !== null && position.coords.speed !== undefined
+              ? Math.round(position.coords.speed * 3.6) // m/s to km/h
+              : Math.floor(Math.random() * 41) + 20; // Simulated realistic speed between 20-60 km/h
+
+            const newPoint = {
+              driverId: user?.uid || "N/A",
+              prefix: assignedVehicle?.prefix || user?.prefix || "N/A",
+              lat,
+              lng,
+              speed,
+              timestamp: new Date().toISOString()
+            };
+
+            try {
+              // Save to historical logs collection (gps_history)
+              await addDoc(collection(db, "gps_history"), newPoint);
+
+              // Update the current active vehicle's document in the 'drivers' collection
+              if (assignedVehicle?.id) {
+                const driverRef = doc(db, "drivers", assignedVehicle.id);
+                await updateDoc(driverRef, {
+                  lat,
+                  lng,
+                  speed,
+                  lastUpdated: new Date().toISOString()
+                });
+              }
+              console.log("[Background GPS Tracker] Ponto sincronizado online com sucesso:", newPoint);
+            } catch (err) {
+              console.warn("[Background GPS Tracker] Falha ao enviar online, guardando offline:", err);
+              queueOfflineGPS(newPoint);
+            }
+          },
+          (error) => {
+            console.error("[Background GPS Tracker] Erro do sensor de geolocalização:", error);
+          },
+          { enableHighAccuracy: true, timeout: 15000 }
+        );
+      }
+    }, 60000); // Poll GPS every 60 seconds when shift is started
+
+    // 2. Offline syncing interval
+    const syncInterval = setInterval(async () => {
+      if (!navigator.onLine) return;
+      const existing = localStorage.getItem("gps_offline_queue");
+      if (!existing) return;
+
+      try {
+        const queue = JSON.parse(existing);
+        if (queue.length === 0) return;
+
+        console.log(`[Offline GPS Tracker] Sincronizando ${queue.length} pontos salvos offline em segundo plano...`);
+        for (const point of queue) {
+          await addDoc(collection(db, "gps_history"), point);
+        }
+
+        localStorage.removeItem("gps_offline_queue");
+        console.log("[Background GPS Tracker] Todos os pontos offline foram sincronizados e a fila foi limpa!");
+      } catch (err) {
+        console.error("[Background GPS Tracker] Falha ao sincronizar pontos offline remotos:", err);
+      }
+    }, 30000); // Check and sync offline points every 30 seconds
+
+    return () => {
+      clearInterval(trackInterval);
+      clearInterval(syncInterval);
+    };
+  }, [isOnline, assignedVehicle, user]);
+
   // Handle "No Response" timeout
   useEffect(() => {
     let timeout: NodeJS.Timeout;
@@ -904,297 +1002,253 @@ export default function DriverView({ user }: DriverViewProps) {
             </AnimatePresence>
 
             {activeInternalTab === "dashboard" ? (
-              <div className="space-y-6">
-                {/* Warning Cards for Pending Items (Previous Shift Focus) */}
-                <div className="space-y-3">
-                  {!loadingShiftCheck && lastAssignedShift && (
-                    <>
-                      {/* Revenue Warning for past shift */}
-                      {!lastShiftRevenueSubmitted && (
-                        <motion.div
-                          key="last-pending-revenue"
-                          initial={{ opacity: 0, y: -10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          className="bg-red-50 border border-red-100 p-4 rounded-2xl flex items-center justify-between shadow-sm"
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-red-100 text-red-600 rounded-xl flex items-center justify-center">
-                              <Wallet size={20} />
-                            </div>
-                            <div>
-                              <p className="text-[10px] font-black text-red-700 uppercase tracking-widest italic">
-                                Atenção mestre!
-                              </p>
-                              <p className="text-[9px] text-red-600 font-bold uppercase mt-0.5">
-                                Você ainda não declarou a renda de{" "}
-                                {format(
-                                  new Date(
-                                    lastAssignedShift.date + "T12:00:00",
-                                  ),
-                                  "dd/MM",
-                                )}
-                                .
-                              </p>
-                            </div>
-                          </div>
-                          <button
-                            onClick={() => setActiveInternalTab("wallet")}
-                            className="bg-red-600 text-white px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest shadow-lg shadow-red-200"
-                          >
-                            Declarar
-                          </button>
-                        </motion.div>
-                      )}
-
-                      {/* Contract Warning for past shift */}
-                      {lastShiftPendingContracts > 0 && (
-                        <motion.div
-                          key="last-pending-contracts"
-                          initial={{ opacity: 0, y: -10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: 0.1 }}
-                          className="bg-brand-primary/5 border border-brand-primary/10 p-4 rounded-2xl flex items-center justify-between shadow-sm"
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-brand-primary/10 text-brand-primary rounded-xl flex items-center justify-center">
-                              <Users size={20} />
-                            </div>
-                            <div>
-                              <p className="text-[10px] font-black text-brand-primary uppercase tracking-widest">
-                                Pendência de Roteiro
-                              </p>
-                              <p className="text-[9px] text-brand-primary/60 font-bold uppercase mt-0.5">
-                                Faltou marcar {lastShiftPendingContracts}{" "}
-                                passageiros no dia{" "}
-                                {format(
-                                  new Date(
-                                    lastAssignedShift.date + "T12:00:00",
-                                  ),
-                                  "dd/MM",
-                                )}
-                                .
-                              </p>
-                            </div>
-                          </div>
-                          <button
-                            onClick={() => {
-                              setActiveInternalTab("contracts");
-                              setViewContractsDate(lastAssignedShift.date);
-                              setViewContractsPrefix(lastAssignedShift.prefix);
-                            }}
-                            className="text-[10px] font-black text-brand-primary uppercase underline"
-                          >
-                            Verificar
-                          </button>
-                        </motion.div>
-                      )}
-                    </>
-                  )}
-
-                  {/* Rejected Revenues Warning */}
-                  {rejectedRevenues.map((rev) => (
-                    <motion.div
-                      key={`rejected-${rev.id}`}
-                      initial={{ opacity: 0, scale: 0.9 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      className="bg-rose-50 border-2 border-rose-200 p-4 rounded-3xl flex flex-col gap-3 shadow-lg shadow-rose-100"
+              <div className="space-y-4">
+                {/* Warning Cards for Pending Items (Previous Shift Focus) - Consolidated Collapsible Alert Center */}
+                {((!loadingShiftCheck && lastAssignedShift && (!lastShiftRevenueSubmitted || lastShiftPendingContracts > 0)) || rejectedRevenues.length > 0) ? (
+                  <div className="bg-rose-50 border border-rose-200/60 rounded-2xl p-4 shadow-sm">
+                    <div 
+                      onClick={() => setIsAlertsCollapsed(!isAlertsCollapsed)}
+                      className="flex items-center justify-between cursor-pointer"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 bg-rose-600 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-rose-200">
-                          <AlertTriangle size={24} />
+                        <div className="w-9 h-9 rounded-xl bg-rose-500/10 text-rose-600 flex items-center justify-center animate-pulse">
+                          <AlertTriangle size={16} />
                         </div>
-                        <div className="flex-1">
-                          <p className="text-[10px] font-black text-rose-700 uppercase tracking-[0.2em]">
-                            Renda Reprovada
-                          </p>
-                          <p className="text-xs font-black text-rose-900 leading-tight">
-                            A conta de {rev.date} foi devolvida para correção.
-                          </p>
+                        <div className="text-left">
+                          <span className="text-xs font-black text-rose-800 uppercase tracking-tight">
+                            Pendências ({(!lastShiftRevenueSubmitted ? 1 : 0) + (lastShiftPendingContracts > 0 ? 1 : 0) + rejectedRevenues.length})
+                          </span>
+                          <p className="text-[9px] text-rose-600/75 uppercase tracking-wide">Toque para ver e regularizar</p>
                         </div>
                       </div>
-                      
-                      {rev.rejectionReason && (
-                        <div className="bg-white/60 p-3 rounded-xl border border-rose-100">
-                          <p className="text-[9px] font-black text-rose-500 uppercase tracking-widest mb-1">Motivo da Reprovação:</p>
-                          <p className="text-[11px] font-medium text-slate-700 italic">"{rev.rejectionReason}"</p>
-                        </div>
+                      <div className="text-rose-500">
+                        {isAlertsCollapsed ? <ChevronDown size={18} /> : <ChevronUp size={18} />}
+                      </div>
+                    </div>
+
+                    {!isAlertsCollapsed && (
+                      <div className="mt-4 space-y-3 pt-3 border-t border-rose-100">
+                        {/* Revenue Warning for past shift */}
+                        {!lastShiftRevenueSubmitted && lastAssignedShift && (
+                          <div className="bg-white p-3 border border-red-100 rounded-xl flex items-center justify-between shadow-sm">
+                            <div className="flex items-center gap-2">
+                              <Wallet size={16} className="text-red-500" />
+                              <div className="text-left">
+                                <p className="text-[10px] font-black text-red-700 uppercase">Falta Declarar Renda</p>
+                                <p className="text-[8px] text-red-600 font-bold uppercase">
+                                  Dia {format(new Date(lastAssignedShift.date + "T12:00:00"), "dd/MM")}
+                                </p>
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => { setActiveInternalTab("wallet"); setIsAlertsCollapsed(true); }}
+                              className="bg-red-600 text-white px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest shadow-md shadow-red-200"
+                            >
+                              Declarar
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Contract Warning for past shift */}
+                        {lastShiftPendingContracts > 0 && lastAssignedShift && (
+                          <div className="bg-white p-3 border border-amber-100 rounded-xl flex items-center justify-between shadow-sm">
+                            <div className="flex items-center gap-2">
+                              <Users size={16} className="text-amber-500" />
+                              <div className="text-left">
+                                <p className="text-[10px] font-black text-slate-700 uppercase">Pendente de Roteiro</p>
+                                <p className="text-[8px] text-slate-500 font-bold uppercase">
+                                  Faltou {lastShiftPendingContracts} passageiros no dia {format(new Date(lastAssignedShift.date + "T12:00:00"), "dd/MM")}
+                                </p>
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => {
+                                setActiveInternalTab("contracts");
+                                setViewContractsDate(lastAssignedShift.date);
+                                setViewContractsPrefix(lastAssignedShift.prefix);
+                                setIsAlertsCollapsed(true);
+                              }}
+                              className="text-[9px] font-black text-brand-primary uppercase underline"
+                            >
+                              Verificar
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Rejected Revenues Warning */}
+                        {rejectedRevenues.map((rev) => (
+                          <div
+                            key={`rejected-${rev.id}`}
+                            className="bg-white p-3 border-2 border-rose-200 rounded-xl flex flex-col gap-2 shadow-sm text-left"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <AlertTriangle size={16} className="text-rose-500" />
+                                <span className="text-[10px] font-black text-rose-700 uppercase tracking-tight">Renda Recusada ({rev.date})</span>
+                              </div>
+                              <button 
+                                onClick={() => {
+                                  setEditingRevenueId(rev.id);
+                                  setRevenueDetails({
+                                    tpa: rev.breakdown?.tpa?.toString() || "",
+                                    cash: rev.breakdown?.cash?.toString() || "",
+                                    transfer: rev.breakdown?.transfer?.toString() || "",
+                                    expenses: rev.breakdown?.expenses?.toString() || "",
+                                    description: rev.description || "",
+                                  });
+                                  setActiveInternalTab("wallet");
+                                  setIsAlertsCollapsed(true);
+                                }}
+                                className="px-2.5 py-1 bg-rose-600 text-white rounded text-[8px] font-black uppercase tracking-wider"
+                              >
+                                Corrigir
+                              </button>
+                            </div>
+                            {rev.rejectionReason && (
+                              <p className="text-[9px] text-slate-600 italic bg-rose-50 p-2 rounded border border-rose-100/50">
+                                "{rev.rejectionReason}"
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  /* Today Status Reminder (Subtle inline text to save full box space) */
+                  !todayRevenueSubmitted && lastShiftRevenueSubmitted && (
+                    <div className="bg-amber-50/50 border border-amber-200/50 p-3 rounded-2xl flex items-center gap-2.5 shadow-sm">
+                      <Clock size={14} className="text-amber-500 animate-pulse flex-shrink-0" />
+                      <span className="text-[9px] text-amber-700 font-bold uppercase tracking-wide text-left">
+                        Lembrete: Declarar a renda de hoje ao encerrar o seu turno.
+                      </span>
+                    </div>
+                  )
+                )}
+
+                {/* Unified Cabine de Controlo Card (Shift Control, Rating, Earnings & SOS) */}
+                <div className="bg-slate-950 border border-slate-800 text-white rounded-[2rem] p-5 shadow-xl relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-brand-primary/10 blur-3xl rounded-full" />
+                  
+                  {/* Title & Status indicator */}
+                  <div className="flex items-center justify-between mb-4 border-b border-slate-800 pb-3">
+                    <div className="text-left">
+                      <span className="text-[8px] font-black text-slate-500 uppercase tracking-[0.2em]">Cabine de Comando</span>
+                      <h3 className="text-sm font-black tracking-tight text-white leading-none mt-1 uppercase">
+                        {user?.name || "Mestre PSM"}
+                      </h3>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={cn(
+                        "w-2 h-2 rounded-full",
+                        isOnline ? "bg-emerald-500 animate-pulse" : "bg-slate-500"
+                      )} />
+                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-300">
+                        {isOnline ? "Em Serviço" : "Fora de Serviço"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Rating & Ganhos high density row */}
+                  <div className="grid grid-cols-2 gap-3.5 my-1">
+                    <div className="bg-slate-900 border border-slate-800 p-3 rounded-2xl flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center flex-shrink-0">
+                        <Star size={16} fill="currentColor" />
+                      </div>
+                      <div className="text-left">
+                        <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest leading-none">Avaliação</p>
+                        <p className="text-[13px] font-black text-white mt-0.5">{stars}</p>
+                      </div>
+                    </div>
+                    
+                    <div className="bg-slate-900 border border-slate-800 p-3 rounded-2xl flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center flex-shrink-0">
+                        <DollarSign size={16} />
+                      </div>
+                      <div className="text-left">
+                        <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest leading-none">Ganhos (AKZ)</p>
+                        <p className="text-[13px] font-black text-white mt-0.5">{(earnings || 0).toLocaleString()}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Shift Action Toggle and Emergency Button */}
+                  <div className="flex items-center gap-3 mt-4 pt-3 border-t border-slate-800">
+                    <button
+                      onClick={handleStartShift}
+                      className={cn(
+                        "flex-1 py-3 px-4 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all duration-300 flex items-center justify-center gap-2 shadow-lg",
+                        isOnline 
+                          ? "bg-emerald-600 text-white shadow-emerald-950/20 active:bg-emerald-700" 
+                          : "bg-white text-slate-950 shadow-black/20 active:bg-slate-100"
                       )}
-
-                      <button 
-                        onClick={() => {
-                          setEditingRevenueId(rev.id);
-                          setRevenueDetails({
-                            tpa: rev.breakdown?.tpa?.toString() || "",
-                            cash: rev.breakdown?.cash?.toString() || "",
-                            transfer: rev.breakdown?.transfer?.toString() || "",
-                            expenses: rev.breakdown?.expenses?.toString() || "",
-                            description: rev.description || "",
-                          });
-                          setActiveInternalTab("wallet");
-                        }}
-                        className="w-full py-3 bg-rose-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl shadow-rose-200 flex items-center justify-center gap-2"
-                      >
-                        Corrigir agora <ChevronRight size={14} />
-                      </button>
-                    </motion.div>
-                  ))}
-
-                  {/* Today Status (Subtle info if everything is okay) */}
-                  {!todayRevenueSubmitted && lastShiftRevenueSubmitted && (
-                    <motion.div
-                      key="today-revenue-reminder"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="bg-amber-50 border border-amber-100 p-4 rounded-2xl flex items-center justify-between shadow-sm"
                     >
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-amber-100 text-amber-600 rounded-xl flex items-center justify-center">
-                          <Activity size={20} />
-                        </div>
-                        <div>
-                          <p className="text-[10px] font-black text-amber-700 uppercase tracking-widest">
-                            Renda de Hoje
-                          </p>
-                          <p className="text-[9px] text-amber-600 font-bold uppercase mt-0.5">
-                            Não esqueça de declarar ao final do turno.
-                          </p>
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
+                      <Power size={13} />
+                      {isOnline ? "Terminar Turno" : "Iniciar Turno"}
+                    </button>
+
+                    <button
+                      onClick={triggerPanic}
+                      disabled={panicLoading}
+                      className="w-12 h-12 rounded-xl flex items-center justify-center transition-all bg-red-650 hover:bg-red-700 text-white shadow-lg active:scale-90 flex-shrink-0 animate-pulse border border-red-500/30"
+                      title="S.O.S de Emergência"
+                    >
+                      <AlertTriangle size={18} />
+                    </button>
+                  </div>
                 </div>
 
-                <>
-                  {/* Driver Stats */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm transition-all hover:shadow-md">
-                      <div className="flex items-center gap-2 text-amber-500 mb-2">
-                        <Star size={16} fill="currentColor" />
-                        <span className="text-xs font-black">{stars}</span>
+                {/* Collapsible Mentor IA Coaching Card */}
+                <div className="bg-white border border-slate-200/60 rounded-2xl p-4 shadow-sm transition-all hover:border-brand-primary/30">
+                  <div 
+                    onClick={() => setIsAiAdviceExpanded(!isAiAdviceExpanded)}
+                    className="flex items-center justify-between cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 bg-brand-primary/10 rounded-xl flex items-center justify-center text-brand-primary flex-shrink-0">
+                        <Zap size={15} fill="currentColor" />
                       </div>
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                        Avaliação
-                      </p>
+                      <div className="text-left">
+                        <span className="text-xs font-black text-slate-800 uppercase tracking-tight">Dicas do Mentor IA</span>
+                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Análise de Rendimento Gemini</p>
+                      </div>
                     </div>
-                    <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm transition-all hover:shadow-md">
-                      <div className="flex items-center gap-2 text-emerald-500 mb-2">
-                        <DollarSign size={16} />
-                        <span className="text-[14px] font-black">
-                          {(earnings || 0).toLocaleString()}
-                        </span>
-                      </div>
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                        Ganhos (AKZ)
-                      </p>
+                    <div className="text-slate-400">
+                      {isAiAdviceExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                     </div>
                   </div>
 
-                  {/* Panic Button */}
-                  <button
-                    onClick={triggerPanic}
-                    disabled={panicLoading}
-                    className="w-full bg-red-600 active:bg-red-700 text-white rounded-2xl py-4 flex items-center justify-center gap-3 shadow-lg shadow-red-200 transition-all active:scale-[0.98]"
-                  >
-                    <AlertTriangle
-                      size={20}
-                      className={
-                        panicLoading ? "animate-pulse" : "animate-bounce"
-                      }
-                    />
-                    <span className="text-xs font-black uppercase tracking-widest">
-                      Botão de Pânico (S.O.S)
-                    </span>
-                  </button>
-
-                  {/* Gemini AI Coach Widget */}
-                  <div className="bg-slate-900 rounded-[2rem] p-6 relative overflow-hidden group shadow-xl border border-white/5">
-                    <div className="absolute top-0 right-0 w-24 h-24 bg-brand-primary/20 blur-2xl -mr-12 -mt-12 transition-all group-hover:bg-brand-primary/40" />
-                    
-                    <div className="flex items-center justify-between mb-4 relative z-10">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 bg-brand-primary rounded-xl flex items-center justify-center text-white">
-                          <Zap size={16} fill="white" />
-                        </div>
-                        <h4 className="text-[11px] font-black text-white uppercase tracking-widest italic">Mentor IA</h4>
-                      </div>
-                      <button 
-                        onClick={fetchAiAdvice}
-                        disabled={aiLoading}
-                        className="text-[9px] font-black text-brand-primary uppercase tracking-widest hover:text-white transition-colors flex items-center gap-1"
-                      >
-                        {aiLoading ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />}
-                        Atualizar
-                      </button>
-                    </div>
-
-                    <div className="bg-white/5 rounded-2xl p-4 border border-white/10 relative z-10 transition-all hover:bg-white/10">
-                      {aiLoading ? (
-                        <div className="space-y-2 animate-pulse">
-                          <div className="h-2 w-3/4 bg-white/20 rounded" />
-                          <div className="h-2 w-full bg-white/20 rounded" />
-                        </div>
-                      ) : (
-                        <p className="text-[12px] text-slate-300 font-bold italic leading-relaxed">
-                          {aiAdvice || "A calcular melhor estratégia para o roteiro de hoje no Luena..."}
-                        </p>
-                      )}
-                    </div>
-                    
-                    <div className="mt-3 flex items-center justify-between relative z-10">
-                       <span className="text-[8px] font-black text-slate-500 uppercase tracking-[0.2em]">SISTEMA AUDITADO • GEMINI</span>
-                       {aiAdvice && <div className="flex gap-1">
-                          <div className="w-1 h-1 rounded-full bg-brand-primary animate-ping" />
-                          <div className="w-1 h-1 rounded-full bg-brand-primary" />
-                       </div>}
-                    </div>
-                  </div>
-
-                  {/* Shift Control */}
-                  <div
-                    className={cn(
-                      "p-6 rounded-3xl border-2 transition-all duration-500",
-                      isOnline
-                        ? "bg-emerald-50 border-emerald-200"
-                        : "bg-white border-slate-100",
-                    )}
-                  >
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center gap-3">
-                        <div
-                          className={cn(
-                            "w-3 h-3 rounded-full",
-                            isOnline
-                              ? "bg-emerald-500 animate-pulse"
-                              : "bg-slate-300",
-                          )}
-                        />
-                        <span
-                          className={cn(
-                            "text-xs font-black uppercase tracking-widest",
-                            isOnline ? "text-emerald-700" : "text-slate-500",
-                          )}
-                        >
-                          {isOnline ? "Em Serviço" : "Fora de Serviço"}
-                        </span>
-                      </div>
-                      <button
-                        onClick={handleStartShift}
-                        className={cn(
-                          "w-12 h-12 rounded-full flex items-center justify-center transition-all active:scale-90 shadow-lg",
-                          isOnline
-                            ? "bg-red-500 text-white shadow-red-200"
-                            : "bg-slate-900 text-white shadow-slate-200",
+                  {isAiAdviceExpanded && (
+                    <div className="mt-3 pt-3 border-t border-slate-100 space-y-3">
+                      <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 text-left">
+                        {aiLoading ? (
+                          <div className="space-y-2 animate-pulse py-1">
+                            <div className="h-2 w-3/4 bg-slate-200 rounded" />
+                            <div className="h-2 w-full bg-slate-200 rounded" />
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-slate-600 font-medium italic leading-relaxed whitespace-pre-line">
+                            {aiAdvice || "A calcular melhor estratégia para o seu roteiro hoje no Luena..."}
+                          </p>
                         )}
-                      >
-                        <Power size={20} />
-                      </button>
+                      </div>
+                      <div className="flex items-center justify-between text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none">
+                        <span>AUDITORIA CONTÍNUA • GEMINI 1.5</span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            fetchAiAdvice();
+                          }}
+                          disabled={aiLoading}
+                          className="text-brand-primary font-black uppercase tracking-widest flex items-center gap-1 bg-brand-primary/5 hover:bg-brand-primary/10 px-2 py-1 rounded transition-colors"
+                        >
+                          {aiLoading ? <Loader2 size={8} className="animate-spin" /> : <RefreshCw size={8} />}
+                          Atualizar
+                        </button>
+                      </div>
                     </div>
-                    <p className="text-[11px] font-medium text-slate-500 leading-relaxed">
-                      {isOnline
-                        ? "A sua viatura está visível no mapa de frota e pronta para receber chamadas operacionais."
-                        : "Ative o seu turno para começar a receber pedidos de táxi da nossa central PSM."}
-                    </p>
-                  </div>
+                  )}
+                </div>
 
                   {/* Current Ride / Map Placeholder */}
                   {isOnline && (
@@ -1307,7 +1361,6 @@ export default function DriverView({ user }: DriverViewProps) {
                       </button>
                     </div>
                   )}
-                </>
               </div>
             ) : activeInternalTab === "history" ? (
               <div className="space-y-4">

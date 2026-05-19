@@ -26,8 +26,12 @@ import VehicleRegistry from './VehicleRegistry';
 import { 
   Car,
   CarFront,
-  Users as UsersIcon
+  Users as UsersIcon,
+  Smartphone,
+  Package
 } from 'lucide-react';
+import CompanyPhones from './CompanyPhones';
+import WarehouseManager from './WarehouseManager';
 import { 
   collection, 
   addDoc, 
@@ -49,7 +53,7 @@ const ROLES = [
   { id: 'driver', label: 'Motorista', icon: User, color: 'text-teal-500', bg: 'bg-teal-50' },
 ];
 
-type SubTab = 'access' | 'drivers_master' | 'admin_staff' | 'rent_a_car' | 'internal_clients' | 'vehicles';
+type SubTab = 'access' | 'drivers_master' | 'admin_staff' | 'rent_a_car' | 'internal_clients' | 'vehicles' | 'psm_phones' | 'warehouse';
 
 export default function RecruitmentHub({ user }: { user?: any }) {
   const [activeSubTab, setActiveSubTab] = useState<SubTab>('access');
@@ -106,6 +110,32 @@ export default function RecruitmentHub({ user }: { user?: any }) {
       unsubDrivers();
     };
   }, []);
+
+  // Set first permissible subtab based on user's role
+  useEffect(() => {
+    if (!user) return;
+    const subTabsList = [
+      { id: 'access', roles: ['admin'] },
+      { id: 'drivers_master', roles: ['admin'] },
+      { id: 'admin_staff', roles: ['admin'] },
+      { id: 'vehicles', roles: ['admin'] },
+      { id: 'rent_a_car', roles: ['admin'] },
+      { id: 'internal_clients', roles: ['admin'] },
+      { id: 'psm_phones', roles: ['admin', 'operator'] },
+      { id: 'warehouse', roles: ['admin', 'operator', 'mecanico'] },
+    ];
+    const isMasterAdmin = user?.email?.toLowerCase() === 'joseiwezasuana@gmail.com';
+    const hasPermission = isMasterAdmin || subTabsList.find(t => t.id === activeSubTab)?.roles.includes(user?.role);
+    if (!hasPermission) {
+      const allowed = subTabsList.filter(tab => {
+        if (isMasterAdmin) return true;
+        return tab.roles.includes(user?.role);
+      });
+      if (allowed.length > 0) {
+        setActiveSubTab(allowed[0].id as any);
+      }
+    }
+  }, [user, activeSubTab]);
 
   const handleCreateStaff = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -314,15 +344,24 @@ export default function RecruitmentHub({ user }: { user?: any }) {
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-4 p-1.5 bg-white border border-slate-200 rounded-[1.5rem] w-fit shadow-sm">
+      <div className="flex flex-wrap gap-4 p-1.5 bg-white border border-slate-200 rounded-[1.5rem] w-full max-w-[1400px] shadow-sm">
         {[
-          { id: 'access', label: 'Gestão de Acessos', icon: Key },
-          { id: 'drivers_master', label: 'Banco de Motoristas', icon: User },
-          { id: 'admin_staff', label: 'Staff Administrativo', icon: Briefcase },
-          { id: 'vehicles', label: 'Master de Viaturas', icon: Car },
-          { id: 'rent_a_car', label: 'Rent-a-Car', icon: CarFront },
-          { id: 'internal_clients', label: 'Clientes de Contrato', icon: UsersIcon },
-        ].map((tab) => (
+          { id: 'access', label: 'Gestão de Acessos', icon: Key, roles: ['admin'] },
+          { id: 'drivers_master', label: 'Banco de Motoristas', icon: User, roles: ['admin'] },
+          { id: 'admin_staff', label: 'Staff Administrativo', icon: Briefcase, roles: ['admin'] },
+          { id: 'vehicles', label: 'Master de Viaturas', icon: Car, roles: ['admin'] },
+          { id: 'rent_a_car', label: 'Rent-a-Car', icon: CarFront, roles: ['admin'] },
+          { id: 'internal_clients', label: 'Clientes de Contrato', icon: UsersIcon, roles: ['admin'] },
+          { id: 'psm_phones', label: 'Canais de Rádio/GSM', icon: Smartphone, roles: ['admin', 'operator'] },
+          { id: 'warehouse', label: 'Stocks & Logística', icon: Package, roles: ['admin', 'operator', 'mecanico'] },
+        ]
+        .filter(tab => {
+          if (!tab.roles) return true;
+          const isMasterAdmin = user?.email?.toLowerCase() === 'joseiwezasuana@gmail.com';
+          if (isMasterAdmin) return true;
+          return tab.roles.includes(user?.role);
+        })
+        .map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveSubTab(tab.id as any)}
@@ -653,6 +692,30 @@ export default function RecruitmentHub({ user }: { user?: any }) {
             transition={{ duration: 0.2 }}
           >
             <InternalClients user={user} />
+          </motion.div>
+        )}
+
+        {activeSubTab === 'psm_phones' && (
+          <motion.div
+            key="psm_phones"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.2 }}
+          >
+            <CompanyPhones />
+          </motion.div>
+        )}
+
+        {activeSubTab === 'warehouse' && (
+          <motion.div
+            key="warehouse"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.2 }}
+          >
+            <WarehouseManager user={user} />
           </motion.div>
         )}
       </AnimatePresence>
