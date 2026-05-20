@@ -7,9 +7,19 @@ import fs from "fs";
 import { GoogleGenAI } from "@google/genai";
 
 // Load Firebase Config
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const configPath = path.join(__dirname, "firebase-applet-config.json");
+// Safe ESM/CJS path resolution
+const getAppPaths = () => {
+  const isCJS = typeof __filename !== "undefined" && typeof __dirname !== "undefined";
+  if (isCJS) {
+    return { filename: __filename, dirname: __dirname };
+  }
+  const filename = fileURLToPath(import.meta.url);
+  const dirname = path.dirname(filename);
+  return { filename, dirname };
+};
+
+const { filename: __filenameResolved, dirname: __dirnameResolved } = getAppPaths();
+const configPath = path.join(__dirnameResolved, "firebase-applet-config.json");
 const firebaseConfig = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, "utf8")) : null;
 
 // Initialize Firebase Admin safely
@@ -949,8 +959,10 @@ async function startServer() {
   });
 
   // Vite middleware for development
-  const isProduction = process.env.NODE_ENV === "production";
-  const distPath = path.resolve(__dirname, "dist");
+  const isProduction = __filenameResolved.endsWith(".cjs") || (process.env.NODE_ENV === "production" && !fs.existsSync(path.resolve(__dirnameResolved, "server.ts")));
+  const distPath = isProduction 
+    ? path.resolve(__dirnameResolved) 
+    : path.resolve(__dirnameResolved, "dist");
 
   console.log(`[Server] PID: ${process.pid}`);
   console.log(`[Server] Environment: ${process.env.NODE_ENV || "development"}`);
@@ -961,7 +973,7 @@ async function startServer() {
     console.log(`[Server] MODE: Development (Vite Middleware)`);
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
-      server: { 
+      server: {  
         middlewareMode: true,
         hmr: false,
         ws: false 
@@ -976,7 +988,7 @@ async function startServer() {
       
       try {
         const url = req.originalUrl;
-        const htmlPath = path.resolve(__dirname, "index.html");
+        const htmlPath = path.resolve(__dirnameResolved, "index.html");
         if (fs.existsSync(htmlPath)) {
           let template = fs.readFileSync(htmlPath, "utf-8");
           template = await vite.transformIndexHtml(url, template);

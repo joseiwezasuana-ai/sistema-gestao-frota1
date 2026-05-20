@@ -134,6 +134,30 @@ export function WhatsAppMonitor() {
   const [webhookUrl, setWebhookUrl] = useState(() => {
     return localStorage.getItem('taxi_wa_webhook') || 'https://api.taxicontrol.ao/v1/whatsapp/webhook';
   });
+  const [backendApiUrl, setBackendApiUrl] = useState(() => {
+    return localStorage.getItem('taxi_wa_backend_api_url') || '';
+  });
+
+  const getApiUrl = (endpoint: string) => {
+    const customUrl = backendApiUrl.trim();
+    if (customUrl) {
+      const base = customUrl.endsWith('/') ? customUrl.slice(0, -1) : customUrl;
+      const cleanPath = endpoint.startsWith('/') ? endpoint : '/' + endpoint;
+      return `${base}${cleanPath}`;
+    }
+    return endpoint;
+  };
+
+  // Auto detect static Firebase hosting (.web.app) and set default backend API URL
+  useEffect(() => {
+    if (!localStorage.getItem('taxi_wa_backend_api_url')) {
+      if (window.location.hostname.endsWith('.web.app') || window.location.hostname.endsWith('.firebaseapp.com')) {
+        const defaultBackend = "https://ais-pre-x7ae5zjwislnpda2b3a6l6-214885335133.europe-west3.run.app";
+        setBackendApiUrl(defaultBackend);
+        localStorage.setItem('taxi_wa_backend_api_url', defaultBackend);
+      }
+    }
+  }, []);
 
   // Novos Estados Reais do Servidor Baileys
   const [baileysServerState, setBaileysServerState] = useState({
@@ -160,10 +184,16 @@ export function WhatsAppMonitor() {
   useEffect(() => {
     const fetchStatus = async () => {
       try {
-        const res = await fetch("/api/whatsapp/baileys/status");
+        const urlToFetch = getApiUrl("/api/whatsapp/baileys/status");
+        const res = await fetch(urlToFetch);
         if (res.ok) {
-          const data = await res.json();
-          setBaileysServerState(data);
+          const contentType = res.headers.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            const data = await res.json();
+            setBaileysServerState(data);
+          } else {
+            console.warn("[Baileys Tracker] Resposta não-JSON (re-direcionado pelo host estático)");
+          }
         }
       } catch (err) {
         console.error("Erro ao buscar log centralizado do Baileys:", err);
@@ -173,7 +203,7 @@ export function WhatsAppMonitor() {
     fetchStatus();
     const interval = setInterval(fetchStatus, 2000);
     return () => clearInterval(interval);
-  }, []);
+  }, [backendApiUrl]);
 
   // Sync virtual list real-time via Firestore (whatsapp_messages)
   useEffect(() => {
@@ -233,7 +263,7 @@ export function WhatsAppMonitor() {
     const targetGroup = activeTab === 'drivers' ? driversGroupLink : whatsappNumber;
 
     try {
-      const res = await fetch("/api/whatsapp/baileys/send", {
+      const res = await fetch(getApiUrl("/api/whatsapp/baileys/send"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -315,7 +345,7 @@ export function WhatsAppMonitor() {
   // Actions da Gateway do Baileys
   const startBaileysConnection = async () => {
     try {
-      const res = await fetch("/api/whatsapp/baileys/connect", {
+      const res = await fetch(getApiUrl("/api/whatsapp/baileys/connect"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ number: whatsappNumber })
@@ -330,7 +360,7 @@ export function WhatsAppMonitor() {
 
   const disconnectBaileys = async () => {
     try {
-      await fetch("/api/whatsapp/baileys/disconnect", { method: "POST" });
+      await fetch(getApiUrl("/api/whatsapp/baileys/disconnect"), { method: "POST" });
     } catch (err) {
       console.error("Erro ao mandar comando desconectar Baileys:", err);
     }
@@ -338,7 +368,7 @@ export function WhatsAppMonitor() {
 
   const simulateBaileysScan = async () => {
     try {
-      await fetch("/api/whatsapp/baileys/simulate-scan", { method: "POST" });
+      await fetch(getApiUrl("/api/whatsapp/baileys/simulate-scan"), { method: "POST" });
     } catch (err) {
       console.error("Erro ao mandar comando simular scan Baileys:", err);
     }
@@ -346,7 +376,7 @@ export function WhatsAppMonitor() {
 
   const injectIncomingMessage = async (text: string, sender: string, from: string, channel: 'drivers' | 'clients') => {
     try {
-      const res = await fetch("/api/whatsapp/baileys/simulate-incoming", {
+      const res = await fetch(getApiUrl("/api/whatsapp/baileys/simulate-incoming"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ from, sender, text, channel })
@@ -699,6 +729,46 @@ export function WhatsAppMonitor() {
         </div>
       ) : activeTab === 'baileys' ? (
         <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-900 text-slate-100">
+          
+          {/* Configuração Dinâmica de API do Servidor */}
+          <div className="p-3 bg-slate-800 border border-slate-700/50 rounded-xl space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] uppercase font-black text-slate-350 tracking-wider flex items-center gap-1">
+                <Globe size={11} className="text-blue-400" />
+                Configuração do Servidor API (Backend)
+              </span>
+              <span className="text-[9px] font-black text-amber-400 bg-amber-950/40 border border-amber-900/30 px-2 py-0.5 rounded-full">
+                {backendApiUrl ? "Ligado à API" : "Deteção Automática"}
+              </span>
+            </div>
+            <p className="text-[10.5px] text-slate-400 leading-normal">
+              José, como o <strong>siatema-auditado.web.app</strong> corre no Firebase Hosting estático, precisamos de ligar este ecrã do monitor ao seu servidor operativo de backend ativo (Cloud Run).
+            </p>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input 
+                type="text"
+                placeholder="Endereço do Backend (ex: https://ais-pre-...run.app)"
+                className="flex-1 min-w-0 px-3 py-1.5 bg-black/50 border border-slate-700 rounded-lg text-xs font-mono text-emerald-400 outline-none focus:ring-1 focus:ring-emerald-500 placeholder-slate-600"
+                value={backendApiUrl}
+                onChange={(e) => {
+                  setBackendApiUrl(e.target.value);
+                  localStorage.setItem('taxi_wa_backend_api_url', e.target.value);
+                }}
+              />
+              <button 
+                type="button"
+                onClick={() => {
+                  const defaultBackend = "https://ais-pre-x7ae5zjwislnpda2b3a6l6-214885335133.europe-west3.run.app";
+                  setBackendApiUrl(defaultBackend);
+                  localStorage.setItem('taxi_wa_backend_api_url', defaultBackend);
+                }}
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-xs font-bold text-white uppercase rounded-lg transition-all whitespace-nowrap"
+              >
+                Carregar Padrão 🚀
+              </button>
+            </div>
+          </div>
+
           {/* Status Box */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {/* Connection Information */}
