@@ -233,7 +233,7 @@ export default function ProfileSetup({ user, onComplete }: ProfileSetupProps) {
                    <Shield size={10} className="text-brand-primary" />
                    <span className="text-[10px] font-mono font-bold text-white uppercase tracking-tight">SECURE</span>
                 </div>
-                <span className="text-[7px] font-black text-brand-primary uppercase tracking-widest">SISTEMA V4.5</span>
+                <span className="text-[7px] font-black text-brand-primary uppercase tracking-widest">SISTEMA V5.1</span>
              </div>
           </div>
 

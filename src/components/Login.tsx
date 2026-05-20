@@ -700,7 +700,7 @@ export default function Login({ onGoogleLogin }: LoginProps) {
         </div>
         
         <div className="px-10 py-6 bg-slate-50/50 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400 font-black uppercase tracking-widest italic">
-          <span>v4.5 • LUENA</span>
+          <span>v5.1 • LUENA</span>
           <span className="opacity-50">SISTEMA AUDITADO</span>
         </div>
       </motion.div>

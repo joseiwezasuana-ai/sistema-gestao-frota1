@@ -91,7 +91,7 @@ export default function Layout({ children, user, globalSettings, activeTab, onTa
             <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest mt-1.5 opacity-60">COMERCIAL • MOXICO</p>
             <div className="mt-4 flex items-center justify-center gap-1.5">
                <span className="px-2 py-0.5 bg-brand-primary/10 text-brand-primary text-[8px] font-black rounded-full uppercase tracking-tighter border border-brand-primary/20">
-                 VERSÃO 4.5
+                 VERSÃO 5.1
                </span>
             </div>
           </div>
