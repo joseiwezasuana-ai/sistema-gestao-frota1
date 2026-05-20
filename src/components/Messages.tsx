@@ -293,7 +293,7 @@ export default function Messages() {
                 </div>
                 <div className="p-6 bg-slate-50 border-t border-slate-100">
                    <p className="text-[10px] text-slate-500 font-bold leading-relaxed italic text-center">
-                     "José, este monitor centraliza as mensagens dos grupos de motoristas. Pode ver reportes de localização e status sem precisar de abrir o telemóvel."
+                     "Este monitor centraliza as mensagens dos grupos de motoristas. Pode acompanhar os reportes de localização e status sem precisar de abrir o telemóvel."
                    </p>
                 </div>
               </div>

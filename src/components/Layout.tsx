@@ -10,6 +10,7 @@ import {
   Bell,
   Search,
   MessageSquare,
+  MessageCircle,
   User as UserIcon,
   Camera,
   Activity,
@@ -54,6 +55,7 @@ export default function Layout({ children, user, globalSettings, activeTab, onTa
     { id: 'maintenance', label: 'Gestão de Oficinas', icon: Wrench, roles: ['admin', 'operator', 'mecanico', 'contabilista'] },
     { id: 'accounting', label: 'Hub Contabilidade', icon: Calculator, roles: ['admin', 'contabilista'] },
     { id: 'messages', label: 'Hub de Comunicações', icon: MessageSquare, roles: ['admin', 'operator'] },
+    { id: 'baileys_gateway', label: 'Gateway Baileys', icon: MessageCircle, roles: ['admin', 'operator'] },
     { id: 'settings', label: 'Configurações', icon: SettingsIcon, roles: ['admin'] },
     { id: 'manual', label: 'Manual & Guia', icon: BookOpen, roles: ['admin', 'operator', 'contabilista', 'mecanico'] },
   ];

@@ -91,7 +91,7 @@ export default function UserManual() {
           </div>
           
           <p className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed max-w-2xl font-medium">
-            Bem-vindo ao centro de operações da PSM COMERCIAL LUENA MOXICO. Este guia foi desenhado para ajudar José e sua equipa a maximizar a eficiência da frota e segurança dos motoristas.
+            Bem-vindo ao centro de operações da PSM COMERCIAL. (SU), LDA LUENA-MOXICO. Este guia foi desenhado para ajudar os operadores e a sua equipa a maximizar a eficiência da frota e segurança dos motoristas.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 mt-8 print:hidden">

@@ -27,6 +27,7 @@ import RealTimeMap from './components/RealTimeMap';
 import History from './components/History';
 import Settings from './components/Settings';
 import Messages from './components/Messages';
+import { WhatsAppMonitor } from './components/WhatsAppMonitor';
 import RealTimeMonitor from './components/RealTimeMonitor';
 import GPSTimeline from './components/GPSTimeline';
 import DriverView from './components/DriverView';
@@ -379,6 +380,7 @@ export default function App() {
           {activeTab === 'manual' && <UserManual />}
           {activeTab === 'settings' && (isAdmin ? <Settings /> : <Dashboard user={userProfile} />)}
           {activeTab === 'messages' && (isAdmin || isOperator ? <Messages /> : <Dashboard user={userProfile} />)}
+          {activeTab === 'baileys_gateway' && (isAdmin || isOperator ? <WhatsAppMonitor /> : <Dashboard user={userProfile} />)}
         </Layout>
       </div>
     </ThemeProvider>

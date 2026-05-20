@@ -441,7 +441,7 @@ export default function Login({ onGoogleLogin }: LoginProps) {
                 className="text-center space-y-8"
               >
                 <div className="space-y-4">
-                  <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter italic">Bem-vindo, José</h2>
+                  <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter italic">Bem-vindo ao TaxiControl</h2>
                   <p className="text-[11px] text-slate-400 font-bold uppercase tracking-[0.2em] leading-relaxed max-w-[280px] mx-auto">
                     Aceda ao Hub de Controlo Operacional de Frota PS Moreira Luena. Sessão Protegida.
                   </p>
@@ -567,7 +567,7 @@ export default function Login({ onGoogleLogin }: LoginProps) {
                 {loginMethod === 'recover' && (
                   <form onSubmit={handleRecover} className="space-y-4">
                     <p className="text-[11px] text-slate-500 font-medium mb-4 leading-relaxed bg-brand-primary/5 p-3.5 rounded-2xl border border-brand-primary/10">
-                      José e a gerência geraram um <strong>Código de Ativação</strong> quando criaram a sua conta. Introduza esse código junto ao seu ID para atualizar a palavra-passe diretamente na central.
+                      A administração gerou um <strong>Código de Ativação</strong> quando criou a sua conta. Introduza esse código junto ao seu ID para atualizar a palavra-passe diretamente na central.
                     </p>
 
                     {error && (
