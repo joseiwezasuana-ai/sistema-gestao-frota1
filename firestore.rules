@@ -221,7 +221,7 @@ service cloud.firestore {
     }
 
     match /internal_contracts/{contractId} {
-      allow read: if isSignedIn() && isValidId(contractId);
+      allow read: if isSignedIn();
       allow create: if (isStaff() || isDriver()) && isValidId(contractId) && isValidContract(incoming());
       allow update: if isValidId(contractId) && (isStaff() || (isDriver() && existing().driverId == request.auth.uid));
       allow delete: if isAdmin() && isValidId(contractId);

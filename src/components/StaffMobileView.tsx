@@ -110,15 +110,15 @@ export default function StaffMobileView({ user, onLogout, onExitMobile }: StaffM
   };
 
   return (
-    <div className="flex flex-col h-screen bg-slate-50 overflow-hidden font-sans">
+    <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden font-sans">
       {/* Mobile Top Header */}
-      <header className="bg-[#0f172a] px-6 py-5 flex items-center justify-between shadow-lg relative z-20">
+      <header className="bg-slate-900 border-b border-slate-800 px-6 py-5 flex items-center justify-between shadow-lg relative z-20">
         <div className="flex items-center gap-4">
-          <div className="w-10 h-10 bg-brand-primary rounded-xl flex items-center justify-center text-white shadow-lg rotate-3">
+          <div className="w-10 h-10 bg-brand-primary rounded-xl flex items-center justify-center text-white shadow-lg rotate-3 shadow-brand-primary/25">
              <span className="text-xl font-black italic">PS</span>
           </div>
           <div>
-            <h1 className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Módulo Mobile</h1>
+            <h1 className="text-[10px] font-black text-slate-500 uppercase tracking-widest leading-none mb-1">Módulo Mobile</h1>
             <p className="text-xs font-black text-white uppercase tracking-tight italic">
               {user.role === 'admin' ? 'Administrador Geral' : user.role === 'contabilista' ? 'Hub Contabilidade' : 'Operador de Campo'}
             </p>
@@ -137,12 +137,12 @@ export default function StaffMobileView({ user, onLogout, onExitMobile }: StaffM
           <div className="relative">
             <Bell size={20} className="text-slate-400" />
             {(stats.missedCalls > 0 || stats.panicAlerts > 0) && (
-              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-[#0f172a]" />
+              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-slate-900" />
             )}
           </div>
           <button 
             onClick={() => setIsMenuOpen(true)}
-            className="w-10 h-10 bg-white/5 rounded-lg flex items-center justify-center text-white"
+            className="w-10 h-10 bg-slate-800/80 rounded-lg flex items-center justify-center text-white border border-slate-700/50"
           >
             <Menu size={24} />
           </button>
@@ -150,7 +150,7 @@ export default function StaffMobileView({ user, onLogout, onExitMobile }: StaffM
       </header>
 
       {/* Content Area */}
-      <main className="flex-1 overflow-y-auto p-5 custom-scrollbar pb-24">
+      <main className="flex-1 overflow-y-auto p-5 custom-scrollbar pb-24 bg-slate-950">
         {activeTab === 'dashboard' && (
           <div className="space-y-6">
             {/* Critical Alert Banner if Panic */}
@@ -172,19 +172,19 @@ export default function StaffMobileView({ user, onLogout, onExitMobile }: StaffM
 
             {/* Quick Summary Grid */}
             <div className="grid grid-cols-2 gap-4">
-              <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm">
-                <div className="w-10 h-10 bg-blue-50 text-brand-primary rounded-xl flex items-center justify-center mb-4">
+              <div className="bg-slate-900 p-5 rounded-[2rem] border border-slate-800 shadow-sm shadow-black/20">
+                <div className="w-10 h-10 bg-brand-primary/10 text-brand-primary rounded-xl flex items-center justify-center mb-4 border border-brand-primary/20">
                   <Truck size={20} />
                 </div>
-                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-tight">Frota em<br/>Operação</p>
-                <p className="text-2xl font-black text-slate-900 mt-1">{stats.activeVehicles}</p>
+                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest leading-tight">Frota em<br/>Operação</p>
+                <p className="text-2xl font-black text-white mt-1">{stats.activeVehicles}</p>
               </div>
-              <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm relative overflow-hidden">
-                <div className="w-10 h-10 bg-rose-50 text-rose-500 rounded-xl flex items-center justify-center mb-4">
+              <div className="bg-slate-900 p-5 rounded-[2rem] border border-slate-800 shadow-sm shadow-black/20 relative overflow-hidden">
+                <div className="w-10 h-10 bg-rose-500/10 text-rose-500 rounded-xl flex items-center justify-center mb-4 border border-rose-500/20">
                   <Phone size={20} />
                 </div>
-                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-tight">Chamadas<br/>Perdidas</p>
-                <p className="text-2xl font-black text-slate-900 mt-1">{stats.missedCalls}</p>
+                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest leading-tight">Chamadas<br/>Perdidas</p>
+                <p className="text-2xl font-black text-white mt-1">{stats.missedCalls}</p>
               </div>
             </div>
 
@@ -217,27 +217,27 @@ export default function StaffMobileView({ user, onLogout, onExitMobile }: StaffM
             {/* Recent Calls List */}
             <div>
               <div className="flex items-center justify-between mb-4 px-1">
-                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic">Últimas Chamadas</h3>
+                <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest italic tracking-wide">Últimas Chamadas</h3>
                 <button className="text-[9px] font-black text-brand-primary uppercase underline">Ver Histórico</button>
               </div>
               <div className="space-y-3">
                 {(calls || []).slice(0, 5).map((call: any, idx: number) => {
                   if (!call) return null;
                   return (
-                    <div key={idx} className="bg-white p-4 rounded-2xl border border-slate-100 flex items-center justify-between shadow-sm">
+                    <div key={idx} className="bg-slate-900 p-4 rounded-2xl border border-slate-800 flex items-center justify-between shadow-sm shadow-black/10">
                       <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400">
+                        <div className="w-10 h-10 bg-slate-950 rounded-xl flex items-center justify-center text-slate-500 border border-slate-800">
                           <Users size={18} />
                         </div>
                         <div>
-                          <p className="text-[11px] font-black text-slate-900 uppercase tracking-tight">{call.customerName || 'Cliente Direto'}</p>
-                          <p className="text-[9px] text-slate-400 font-black uppercase tracking-tighter">{call.customerPhone || 'N/A'}</p>
+                          <p className="text-[11px] font-black text-white uppercase tracking-tight">{call.customerName || 'Cliente Direto'}</p>
+                          <p className="text-[9px] text-slate-500 font-black uppercase tracking-tighter">{call.customerPhone || 'N/A'}</p>
                         </div>
                       </div>
                       <div className="text-right">
                          <span className={cn(
                            "px-2.5 py-1 rounded-full text-[8px] font-black uppercase tracking-widest",
-                           call.status === 'completed' ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600 animate-pulse"
+                           call.status === 'completed' ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-amber-500/10 text-amber-400 border border-amber-500/20 animate-pulse"
                          )}>
                            {call.status || 'Pendente'}
                          </span>
@@ -253,16 +253,16 @@ export default function StaffMobileView({ user, onLogout, onExitMobile }: StaffM
         {activeTab === 'fleet' && (
           <div className="space-y-6">
              <div className="flex items-center justify-between px-1">
-                <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter italic italic">Estado da Frota</h2>
-                <div className="text-[10px] font-black text-brand-primary bg-blue-50 px-3 py-1 rounded-full border border-blue-100 uppercase tracking-widest italic">Live Tracking</div>
+                <h2 className="text-2xl font-black text-white uppercase tracking-tighter italic">Estado da Frota</h2>
+                <div className="text-[10px] font-black text-brand-primary bg-brand-primary/10 px-3 py-1 rounded-full border border-brand-primary/25 uppercase tracking-widest italic">Live Tracking</div>
              </div>
 
              <div className="relative">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
                 <input 
                   type="text" 
                   placeholder="PROCURAR VIATURA OU MOTORISTA..."
-                  className="w-full pl-12 pr-4 py-4 bg-white border border-slate-100 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-sm outline-none focus:border-brand-primary"
+                  className="w-full pl-12 pr-4 py-4 bg-slate-900 border border-slate-800 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-sm outline-none focus:border-brand-primary text-white placeholder:text-slate-500"
                 />
              </div>
 
@@ -270,36 +270,36 @@ export default function StaffMobileView({ user, onLogout, onExitMobile }: StaffM
                 {(vehicles || []).map((v, idx) => {
                   if (!v) return null;
                   return (
-                    <div key={idx} className="bg-white p-5 rounded-[1.5rem] border border-slate-100 shadow-sm relative overflow-hidden">
+                    <div key={idx} className="bg-slate-900 p-5 rounded-[1.5rem] border border-slate-800 shadow-sm relative overflow-hidden text-white">
                        <div className="flex items-center justify-between mb-4">
                           <div className="flex items-center gap-3">
-                             <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center border-2 border-white shadow-sm font-black text-slate-900 italic">
+                             <div className="w-12 h-12 bg-slate-950 rounded-2xl flex items-center justify-center border border-slate-800 shadow-sm font-black text-brand-primary italic">
                                {v.prefix || '---'}
                              </div>
                              <div>
-                                <p className="text-[11px] font-black text-slate-900 uppercase tracking-tight leading-none mb-1">{v.name || 'Motorista'}</p>
+                                <p className="text-[11px] font-black text-white uppercase tracking-tight leading-none mb-1">{v.name || 'Motorista'}</p>
                                 <div className="flex items-center gap-2">
                                    <div className={cn("w-2 h-2 rounded-full", getStatusColor(v.status))} />
                                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">{v.status || 'Inativo'}</p>
-                                   <span className="text-[8px] text-slate-300">•</span>
+                                   <span className="text-[8px] text-slate-600">•</span>
                                    <span className="text-[9px] text-slate-400 font-bold uppercase">{v.fuelLevel || 0}% FUEL</span>
                                 </div>
                              </div>
                           </div>
                           <div className="text-right">
-                             <p className="text-[10px] font-black text-slate-900 tracking-tight">{v.plate || v.licensePlate || '---'}</p>
-                             <p className="text-[9px] text-slate-400 font-bold uppercase">{v.phone || '---'}</p>
+                             <p className="text-[10px] font-black text-white tracking-tight">{v.plate || v.licensePlate || '---'}</p>
+                             <p className="text-[9px] text-slate-500 font-bold uppercase">{v.phone || '---'}</p>
                           </div>
                        </div>
                        
-                       <div className="grid grid-cols-2 gap-4 pt-3 border-t border-slate-50">
+                       <div className="grid grid-cols-2 gap-4 pt-3 border-t border-slate-800/60">
                           <div className="flex items-center gap-2">
-                             <Activity size={14} className="text-slate-400" />
-                             <span className="text-[10px] font-black text-slate-600 uppercase tracking-tight">{v.speed || 0} KM/H</span>
+                             <Activity size={14} className="text-slate-500" />
+                             <span className="text-[10px] font-black text-slate-300 uppercase tracking-tight">{v.speed || 0} KM/H</span>
                           </div>
                           <div className="flex items-center gap-2 justify-end">
-                             <Clock size={14} className="text-slate-400" />
-                             <span className="text-[10px] font-black text-slate-600 uppercase tracking-tight italic">Auditado 24h</span>
+                             <Clock size={14} className="text-slate-500" />
+                             <span className="text-[10px] font-black text-slate-400 uppercase tracking-tight italic">Auditado 24h</span>
                           </div>
                        </div>
                     </div>
@@ -320,38 +320,38 @@ export default function StaffMobileView({ user, onLogout, onExitMobile }: StaffM
              </div>
 
              <div className="space-y-4">
-                <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-4">
+                <div className="bg-slate-900 p-6 rounded-[2rem] border border-slate-800 shadow-sm space-y-4">
                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-blue-50 text-brand-primary rounded-xl flex items-center justify-center">
+                      <div className="w-10 h-10 bg-slate-950 text-brand-primary rounded-xl flex items-center justify-center border border-slate-800">
                          <Activity size={20} />
                       </div>
-                      <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight">Canais Gateway Ativos</h4>
+                      <h4 className="text-xs font-black text-white uppercase tracking-tight">Canais Gateway Ativos</h4>
                    </div>
                    <div className="grid grid-cols-3 gap-2">
                       {[1,2,3].map(i => (
-                        <div key={i} className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-center">
-                           <p className="text-[10px] font-black text-emerald-500 mb-1">ON</p>
-                           <p className="text-[8px] font-bold text-slate-400 uppercase">Port {i}</p>
-                        </div>
+                         <div key={i} className="bg-slate-950 p-3 rounded-xl border border-slate-800 text-center">
+                            <p className="text-[10px] font-black text-emerald-400 mb-1">ON</p>
+                            <p className="text-[8px] font-bold text-slate-500 uppercase">Port {i}</p>
+                         </div>
                       ))}
                    </div>
                 </div>
 
-                <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-4">
+                <div className="bg-slate-900 p-6 rounded-[2rem] border border-slate-800 shadow-sm space-y-4">
                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-amber-50 text-amber-500 rounded-xl flex items-center justify-center">
+                      <div className="w-10 h-10 bg-slate-950 text-amber-500 rounded-xl flex items-center justify-center border border-slate-800">
                          <MessageSquare size={20} />
                       </div>
-                      <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight">Log de Mensagens Mobile</h4>
+                      <h4 className="text-xs font-black text-white uppercase tracking-tight">Log de Mensagens Mobile</h4>
                    </div>
                    <div className="space-y-2">
-                      <p className="text-[10px] text-slate-500 italic leading-relaxed text-center py-10 border border-dashed border-slate-200 rounded-xl bg-slate-50">
+                      <p className="text-[10px] text-slate-450 italic leading-relaxed text-center py-10 border border-dashed border-slate-800 rounded-xl bg-slate-950 text-slate-400">
                         Os logs de SMS detalhados estão disponíveis no painel desktop para auditoria completa.
                       </p>
                    </div>
                 </div>
 
-                <div className="bg-slate-900 p-6 rounded-[2rem] shadow-xl space-y-4">
+                <div className="bg-slate-900 p-6 rounded-[2rem] border border-slate-800 shadow-xl space-y-4">
                    <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
                          <div className="w-10 h-10 bg-brand-primary rounded-xl flex items-center justify-center text-white">
@@ -359,14 +359,14 @@ export default function StaffMobileView({ user, onLogout, onExitMobile }: StaffM
                          </div>
                          <h4 className="text-xs font-black text-white uppercase tracking-tight">Gateway Integrado (Alpha)</h4>
                       </div>
-                      <div className="flex items-center gap-1.5 bg-emerald-500/10 px-2 py-1 rounded-full border border-emerald-500/20">
-                         <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-                         <span className="text-[8px] font-bold text-emerald-500 uppercase">Vínculo Ativo</span>
+                      <div className="flex items-center gap-1.5 bg-emerald-500/15 px-2.5 py-1 rounded-full border border-emerald-500/25">
+                         <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
+                         <span className="text-[8px] font-bold text-emerald-450 uppercase">Vínculo Ativo</span>
                       </div>
                    </div>
                    <div className="space-y-4">
                       <p className="text-[10px] text-slate-400 italic leading-relaxed">
-                        Este módulo sincroniza chamadas automaticamente. Apenas veículos registados na base de dados (PSM COMERCIAL) são monitorizados.
+                         Este módulo sincroniza chamadas automaticamente. Apenas veículos registados na base de dados (PSM COMERCIAL) são monitorizados.
                       </p>
                       <div className="flex gap-2">
                         <button 
@@ -380,7 +380,7 @@ export default function StaffMobileView({ user, onLogout, onExitMobile }: StaffM
                               alert(`Erro: ${result.error}. Garanta que ${prefixToUse} existe no Master Viatura.`);
                             }
                           }}
-                          className="flex-1 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl text-[9px] font-black uppercase tracking-widest border border-white/10 transition-all"
+                          className="flex-1 py-3 bg-slate-950 hover:bg-slate-850 text-white rounded-xl text-[9px] font-black uppercase tracking-widest border border-slate-800 transition-all shadow-md active:scale-95"
                         >
                            Simular Chamada
                         </button>
@@ -393,29 +393,29 @@ export default function StaffMobileView({ user, onLogout, onExitMobile }: StaffM
 
         {activeTab === 'wallet' && (
           <div className="space-y-6">
-             <div className="bg-[#0f172a] rounded-[2.5rem] p-8 text-center text-white shadow-2xl relative overflow-hidden">
+             <div className="bg-slate-900 border border-slate-800 rounded-[2.5rem] p-8 text-center text-white shadow-2xl relative overflow-hidden">
                 <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-brand-primary/20 to-transparent pointer-events-none" />
-                <p className="text-[10px] font-black text-white/50 uppercase tracking-[0.3em] mb-3 relative">Total Recebido (Mês)</p>
-                <h3 className="text-4xl font-black tracking-tighter mb-2 relative italic">1.250.000 <span className="text-lg">Kz</span></h3>
-                <div className="inline-flex items-center gap-2 bg-emerald-500 text-white px-4 py-1.5 rounded-full relative text-[9px] font-black uppercase tracking-widest shadow-xl">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-3 relative">Total Recebido (Mês)</p>
+                <h3 className="text-4xl font-black tracking-tighter mb-2 relative italic text-white">1.250.000 <span className="text-lg">Kz</span></h3>
+                <div className="inline-flex items-center gap-2 bg-emerald-500/15 border border-emerald-500/25 text-emerald-400 px-4 py-1.5 rounded-full relative text-[9px] font-black uppercase tracking-widest shadow-xl">
                    <TrendingUp size={12} />
                    +12.4% vs Mês Anterior
                 </div>
              </div>
 
              <div className="space-y-4">
-                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 italic">Fluxo de Rendas PSM</h3>
-                <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-xl">
+                <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1 italic">Fluxo de Rendas PSM</h3>
+                <div className="bg-slate-900 rounded-3xl border border-slate-800 overflow-hidden shadow-xl text-white">
                    {[
                      { label: 'Hoje (Luena)', value: '125.000 Kz', trend: 'positive' },
                      { label: 'Pendente Acerto', value: '45.750 Kz', trend: 'warning' },
                      { label: 'Rendas em Atraso', value: '12.000 Kz', trend: 'danger' },
                      { label: 'Base de Caixa', value: 'Estável', trend: 'neutral' }
                    ].map((row, idx) => (
-                     <div key={idx} className={cn("px-6 py-5 flex items-center justify-between", idx !== 3 && "border-b border-slate-50")}>
+                     <div key={idx} className={cn("px-6 py-5 flex items-center justify-between", idx !== 3 && "border-b border-slate-800")}>
                         <span className="text-[11px] font-black text-slate-400 uppercase tracking-tight">{row.label}</span>
                         <div className="flex items-center gap-2">
-                           <span className="text-[12px] font-black text-slate-900 uppercase tracking-tight">{row.value}</span>
+                           <span className="text-[12px] font-black text-white uppercase tracking-tight">{row.value}</span>
                            <div className={cn(
                              "w-1.5 h-1.5 rounded-full animate-pulse",
                              row.trend === 'positive' ? "bg-emerald-500" : row.trend === 'warning' ? "bg-amber-500" : row.trend === 'danger' ? "bg-red-500" : "bg-slate-400"
@@ -425,7 +425,7 @@ export default function StaffMobileView({ user, onLogout, onExitMobile }: StaffM
                    ))}
                 </div>
                 
-                <button className="w-full bg-slate-900 text-white py-5 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-3 shadow-2xl active:scale-95 transition-all">
+                <button className="w-full bg-[#0f172a] hover:bg-[#1e293b] border border-slate-800 text-white py-5 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-3 shadow-2xl active:scale-95 transition-all">
                    <Calculator size={16} className="text-brand-primary" />
                    Ver Relatórios Financeiros
                 </button>
@@ -435,31 +435,31 @@ export default function StaffMobileView({ user, onLogout, onExitMobile }: StaffM
       </main>
 
       {/* Mobile Sticky Tab Bar */}
-      <footer className="h-20 bg-white border-t border-slate-100 flex items-center justify-around px-2 flex-shrink-0 relative z-50">
+      <footer className="h-20 bg-slate-900 border-t border-slate-800 flex items-center justify-around px-2 flex-shrink-0 relative z-50">
         <button 
           onClick={() => setActiveTab('dashboard')}
-          className={cn("flex flex-col items-center gap-1 transition-all duration-300", activeTab === 'dashboard' ? "text-brand-primary scale-110" : "text-slate-300")}
+          className={cn("flex flex-col items-center gap-1 transition-all duration-300", activeTab === 'dashboard' ? "text-brand-primary scale-110" : "text-slate-500")}
         >
           <LayoutDashboard size={22} strokeWidth={activeTab === 'dashboard' ? 3 : 2} />
           <span className="text-[8px] font-black uppercase tracking-widest">Painel</span>
         </button>
         <button 
           onClick={() => setActiveTab('fleet')}
-          className={cn("flex flex-col items-center gap-1 transition-all duration-300", activeTab === 'fleet' ? "text-brand-primary scale-110" : "text-slate-300")}
+          className={cn("flex flex-col items-center gap-1 transition-all duration-300", activeTab === 'fleet' ? "text-brand-primary scale-110" : "text-slate-500")}
         >
           <Truck size={22} strokeWidth={activeTab === 'fleet' ? 3 : 2} />
           <span className="text-[8px] font-black uppercase tracking-widest">Frota</span>
         </button>
         <button 
           onClick={() => setActiveTab('ops')}
-          className={cn("flex flex-col items-center gap-1 transition-all duration-300", activeTab === 'ops' ? "text-brand-primary scale-110" : "text-slate-300")}
+          className={cn("flex flex-col items-center gap-1 transition-all duration-300", activeTab === 'ops' ? "text-brand-primary scale-110" : "text-slate-500")}
         >
           <Activity size={22} strokeWidth={activeTab === 'ops' ? 3 : 2} />
           <span className="text-[8px] font-black uppercase tracking-widest">Monitores</span>
         </button>
         <button 
           onClick={() => setActiveTab('wallet')}
-          className={cn("flex flex-col items-center gap-1 transition-all duration-300", activeTab === 'wallet' ? "text-brand-primary scale-110" : "text-slate-300")}
+          className={cn("flex flex-col items-center gap-1 transition-all duration-300", activeTab === 'wallet' ? "text-brand-primary scale-110" : "text-slate-500")}
         >
           <Wallet size={22} strokeWidth={activeTab === 'wallet' ? 3 : 2} />
           <span className="text-[8px] font-black uppercase tracking-widest">Contas</span>
@@ -475,17 +475,17 @@ export default function StaffMobileView({ user, onLogout, onExitMobile }: StaffM
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsMenuOpen(false)}
-              className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[60]"
+              className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[60]"
             />
             <motion.div 
               initial={{ x: 300 }}
               animate={{ x: 0 }}
               exit={{ x: 300 }}
-              className="fixed top-0 right-0 h-full w-4/5 max-w-[320px] bg-white z-[70] shadow-2xl p-8 flex flex-col"
+              className="fixed top-0 right-0 h-full w-4/5 max-w-[320px] bg-slate-900 z-[70] shadow-2xl p-8 flex flex-col border-l border-slate-800 text-white"
             >
               <div className="flex items-center justify-between mb-10">
-                 <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter italic">Definições</h3>
-                 <button onClick={() => setIsMenuOpen(false)} className="p-2 bg-slate-100 rounded-full">
+                 <h3 className="text-xl font-black text-white uppercase tracking-tighter italic">Definições</h3>
+                 <button onClick={() => setIsMenuOpen(false)} className="p-2 bg-slate-800 rounded-full text-white">
                    <X size={18} />
                  </button>
               </div>
@@ -499,22 +499,22 @@ export default function StaffMobileView({ user, onLogout, onExitMobile }: StaffM
                       setIsMenuOpen(false);
                     }}
                     className={cn(
-                      "w-full flex items-center justify-between p-4 rounded-2xl hover:bg-slate-50 transition-all active:scale-95 border border-transparent hover:border-slate-100",
-                      item.color || "text-slate-900"
+                      "w-full flex items-center justify-between p-4 rounded-2xl hover:bg-slate-850 transition-all active:scale-95 border border-transparent hover:border-slate-800",
+                      item.color || "text-slate-200"
                     )}
                   >
                     <div className="flex items-center gap-4">
                        <item.icon size={20} />
                        <span className="text-xs font-black uppercase tracking-widest">{item.label}</span>
                     </div>
-                    <ChevronRight size={16} className="opacity-30" />
+                    <ChevronRight size={16} className="opacity-35" />
                   </button>
                 ))}
               </div>
               
-              <div className="mt-auto pt-8 border-t border-slate-100 text-center">
-                 <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em]">PSM COMERCIAL LUENA</p>
-                 <p className="text-[9px] font-medium text-slate-400 mt-1 uppercase">TaxiControl Mobile Interface</p>
+              <div className="mt-auto pt-8 border-t border-slate-800 text-center">
+                 <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">PSM COMERCIAL LUENA</p>
+                 <p className="text-[9px] font-medium text-slate-500 mt-1 uppercase">TaxiControl Mobile Interface</p>
               </div>
             </motion.div>
           </>

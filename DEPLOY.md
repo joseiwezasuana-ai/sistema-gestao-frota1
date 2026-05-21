@@ -19,7 +19,7 @@ set VITE_GOOGLE_MAPS_API_KEY=
 No **Linux/Mac/PowerShell**:
 ```bash
 export GEMINI_API_KEY=
-export VITE_GOOGLE_MAPS_API_KEY
+export VITE_GOOGLE_MAPS_API_
 ```
 
 Depois disso, execute o `npm run build` e o `firebase deploy` normalmente.

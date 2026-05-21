@@ -39,6 +39,7 @@ export default function InternalClients({ user }: { user?: any }) {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [editingContract, setEditingContract] = useState<any | null>(null);
   
   const [formData, setFormData] = useState({
     clientName: '',
@@ -47,6 +48,11 @@ export default function InternalClients({ user }: { user?: any }) {
     period: 'Manhã (07:00 - 09:00)',
     phone: '',
     vehicleId: '',
+    entryVehicleId: '',
+    exitVehicleId: '',
+    entryTime: '07:30',
+    exitTime: '17:30',
+    occupants: 1,
     notes: '',
     monthlyValue: 0,
     weeklyDays: ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta'],
@@ -55,6 +61,51 @@ export default function InternalClients({ user }: { user?: any }) {
   });
 
   const DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
+
+  const resetForm = () => {
+    setFormData({
+      clientName: '',
+      neighborhood: '',
+      destination: '',
+      period: 'Manhã (07:00 - 09:00)',
+      phone: '',
+      vehicleId: '',
+      entryVehicleId: '',
+      exitVehicleId: '',
+      entryTime: '07:30',
+      exitTime: '17:30',
+      occupants: 1,
+      notes: '',
+      monthlyValue: 0,
+      weeklyDays: ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta'],
+      paymentStatus: 'Pendente',
+      status: 'Pendente Ativação'
+    });
+    setEditingContract(null);
+  };
+
+  const startEdit = (contract: any) => {
+    setEditingContract(contract);
+    setFormData({
+      clientName: contract.clientName || '',
+      neighborhood: contract.neighborhood || '',
+      destination: contract.destination || '',
+      period: contract.period || 'Manhã (07:00 - 09:00)',
+      phone: contract.phone || '',
+      vehicleId: contract.vehicleId || '',
+      entryVehicleId: contract.entryVehicleId || '',
+      exitVehicleId: contract.exitVehicleId || '',
+      entryTime: contract.entryTime || '07:30',
+      exitTime: contract.exitTime || '17:30',
+      occupants: contract.occupants || 1,
+      notes: contract.notes || '',
+      monthlyValue: contract.monthlyValue || 0,
+      weeklyDays: contract.weeklyDays || ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta'],
+      paymentStatus: contract.paymentStatus || 'Pendente',
+      status: contract.status || 'Pendente Ativação'
+    });
+    setIsModalOpen(true);
+  };
 
   useEffect(() => {
     const q = query(collection(db, 'internal_contracts'), orderBy('createdAt', 'desc'));
@@ -66,9 +117,11 @@ export default function InternalClients({ user }: { user?: any }) {
       setLoading(false);
     });
 
-    const vQ = query(collection(db, 'drivers'), where('status', 'in', ['available', 'ativo', 'disponível']));
+    const vQ = query(collection(db, 'master_vehicles'), orderBy('prefix', 'asc'));
     const unsubVehicles = onSnapshot(vQ, (snapshot) => {
       setVehicles(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'master_vehicles');
     });
 
     return () => {
@@ -77,33 +130,36 @@ export default function InternalClients({ user }: { user?: any }) {
     };
   }, []);
 
-  const handleCreate = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
       if (formData.clientName.length < 3) throw new Error("Insira o nome do cliente.");
       if (formData.phone.length < 9) throw new Error("Insira um contacto válido.");
 
-      await addDoc(collection(db, 'internal_contracts'), {
+      let finalPhone = formData.phone.trim();
+      if (!finalPhone.startsWith('+244')) {
+        const cleanDigits = finalPhone.replace(/^\+?244/, '').replace(/^0+/, '');
+        finalPhone = `+244 ${cleanDigits}`;
+      }
+
+      const submissionData = {
         ...formData,
-        createdAt: new Date().toISOString()
-      });
+        phone: finalPhone,
+      };
+
+      if (editingContract) {
+        await updateDoc(doc(db, 'internal_contracts', editingContract.id), submissionData);
+      } else {
+        await addDoc(collection(db, 'internal_contracts'), {
+          ...submissionData,
+          createdAt: new Date().toISOString()
+        });
+      }
       setIsModalOpen(false);
-      setFormData({
-        clientName: '',
-        neighborhood: '',
-        destination: '',
-        period: 'Manhã (07:00 - 09:00)',
-        phone: '',
-        vehicleId: '',
-        notes: '',
-        monthlyValue: 0,
-        weeklyDays: ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta'],
-        paymentStatus: 'Pendente',
-        status: 'Pendente Ativação'
-      });
+      resetForm();
     } catch (err: any) {
-      alert(err.message || "Erro ao criar contrato");
+      alert(err.message || "Erro ao salvar contrato");
     } finally {
       setLoading(false);
     }
@@ -163,7 +219,7 @@ export default function InternalClients({ user }: { user?: any }) {
         </div>
         
         <button 
-          onClick={() => setIsModalOpen(true)}
+          onClick={() => { resetForm(); setIsModalOpen(true); }}
           className="bg-slate-900 text-white px-8 py-4 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-black transition-all shadow-xl shadow-slate-900/20 flex items-center gap-3"
         >
           <Plus size={18} />
@@ -205,104 +261,167 @@ export default function InternalClients({ user }: { user?: any }) {
         </div>
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-[2.5rem] overflow-hidden shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-separate border-spacing-0">
-            <thead>
-              <tr className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                <th className="px-8 py-6">Estado Contratual</th>
-                <th className="px-8 py-6">Titular do Contrato / Rota</th>
-                <th className="px-8 py-6">Operação / Dias</th>
-                <th className="px-8 py-6 text-right">Faturação Mensal</th>
-                <th className="px-8 py-6 text-right">Gestão</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {filteredClients.map((client) => (
-                <tr key={client.id} className="group hover:bg-slate-50/50 transition-all duration-300">
-                  <td className="px-8 py-6">
-                    <button 
-                      onClick={() => toggleStatus(client.id, client.status)}
-                      className={cn(
-                        "px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all shadow-sm",
-                        client.status === 'Ativo' 
-                          ? "bg-emerald-500 text-white shadow-emerald-500/20" 
-                          : "bg-slate-200 text-slate-500"
-                      )}
-                    >
-                      {client.status}
-                    </button>
-                    <div className="mt-2 flex items-center gap-2">
-                       <button 
+      {/* Grid of high-density cards for internal contracts */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+        <AnimatePresence mode="popLayout">
+          {filteredClients.map((client) => {
+            const isPaid = client.paymentStatus === 'Pago';
+            const isActive = client.status === 'Ativo';
+            const assignedVehicle = vehicles.find(v => v.id === client.vehicleId);
+
+            return (
+              <motion.div 
+                key={client.id}
+                layout
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="bg-white rounded-2xl border border-slate-200 p-3.5 flex flex-col justify-between hover:border-brand-primary hover:shadow-lg hover:shadow-slate-100/30 transition-all duration-300 relative group overflow-hidden"
+              >
+                <div className={cn(
+                  "absolute top-0 left-0 right-0 h-1.5 transition-all",
+                  isActive ? "bg-emerald-500" : "bg-slate-300"
+                )} />
+
+                <div className="space-y-3">
+                  {/* Card Header: Toggles & Remove Action */}
+                  <div className="flex items-center justify-between gap-2 mt-1">
+                    <div className="flex items-center gap-1">
+                      <button 
+                        onClick={() => toggleStatus(client.id, client.status)}
+                        className={cn(
+                          "px-2 py-1 rounded-[6px] text-[8px] font-black uppercase tracking-wider transition-all shadow-sm w-fit",
+                          isActive 
+                            ? "bg-emerald-500 text-white shadow-emerald-500/15" 
+                            : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                        )}
+                        title="Alternar estado do contrato"
+                      >
+                        {client.status}
+                      </button>
+
+                      <button 
                         onClick={() => togglePaymentStatus(client.id, client.paymentStatus)}
                         className={cn(
-                          "px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-tighter border",
-                          client.paymentStatus === 'Pago' 
+                          "px-2 py-1 rounded-[6px] text-[8px] font-black uppercase tracking-wider border w-fit transition-all",
+                          isPaid 
                             ? "bg-emerald-50 text-emerald-600 border-emerald-100" 
-                            : "bg-rose-50 text-rose-600 border-rose-100 animate-pulse"
+                            : "bg-rose-50 text-rose-600 border-rose-100 hover:bg-rose-100"
                         )}
-                       >
-                         {client.paymentStatus}
-                       </button>
-                    </div>
-                  </td>
-                  <td className="px-8 py-6">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                         <p className="text-sm font-black text-slate-900 uppercase italic tracking-tight">{client.clientName}</p>
-                         <Phone size={10} className="text-brand-primary" />
-                         <span className="text-[10px] font-bold text-slate-400">{client.phone}</span>
-                      </div>
-                      <div className="flex items-center gap-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50 w-fit px-3 py-1 rounded-lg">
-                        <span className="flex items-center gap-1"><MapPin size={10} className="text-brand-primary" /> {client.neighborhood}</span>
-                        <span className="text-slate-300">➜</span>
-                        <span>{client.destination}</span>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-8 py-6">
-                     <div className="space-y-2">
-                        <div className="flex items-center gap-2 text-[10px] font-black text-slate-700 uppercase italic">
-                          <Clock size={12} className="text-brand-primary" />
-                          {client.period}
-                        </div>
-                        <div className="flex flex-wrap gap-1">
-                          {Array.isArray(client.weeklyDays) && client.weeklyDays.map((d: string) => (
-                            <span key={d} className="px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded text-[7px] font-black uppercase">
-                              {d.slice(0, 3)}
-                            </span>
-                          ))}
-                        </div>
-                     </div>
-                  </td>
-                  <td className="px-8 py-6 text-right">
-                    <p className="text-base font-black text-slate-900">{(Number(client.monthlyValue) || 0).toLocaleString()} <span className="text-[9px] opacity-50 uppercase font-bold tracking-normal">AKZ</span></p>
-                    <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest mt-1">Valor Fixo Mensal</p>
-                  </td>
-                  <td className="px-8 py-6 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <button 
-                        onClick={() => handleDelete(client.id, client.clientName)}
-                        className="p-2 text-slate-200 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
-                        title="ELIMINAR CONTRATO"
+                        title="Alternar estado de faturação"
                       >
-                        <Trash2 size={18} />
+                        {client.paymentStatus}
                       </button>
                     </div>
-                  </td>
-                </tr>
-              ))}
-              {filteredClients.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="py-24 text-center">
-                     <FileText size={48} className="text-slate-200 mx-auto mb-4" />
-                     <p className="text-sm font-black text-slate-300 uppercase tracking-widest italic">Nenhum contrato fixado encontrado</p>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+
+                    <button 
+                      onClick={() => handleDelete(client.id, client.clientName)}
+                      className="p-1 px-1.5 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-all"
+                      title="Apagar Contrato"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+
+                  {/* Client Info */}
+                  <div>
+                    <p className="text-[7.5px] font-black text-slate-450 uppercase tracking-widest leading-none mb-0.5">Titular</p>
+                    <h4 className="text-[13px] font-black text-slate-950 uppercase italic tracking-tight leading-tight line-clamp-1">{client.clientName}</h4>
+                    <div className="flex items-center gap-1 mt-0.5 text-slate-500 text-[9.5px]">
+                      <Phone size={10} className="text-brand-primary" />
+                      <span className="font-bold tracking-wider">{client.phone}</span>
+                    </div>
+                  </div>
+
+                  {/* Route Segment */}
+                  <div className="bg-slate-50 p-2 rounded-xl border border-slate-100/80 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1 min-w-0 flex-1">
+                      <div className="w-1.5 h-1.5 rounded-full border border-brand-primary bg-white shrink-0" />
+                      <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide truncate" title={client.neighborhood}>
+                        {client.neighborhood}
+                      </span>
+                    </div>
+                    <span className="text-slate-300 font-black text-[9px] shrink-0">→</span>
+                    <div className="flex items-center gap-1 min-w-0 flex-1 justify-end">
+                      <MapPin size={9} className="text-rose-500 shrink-0" />
+                      <span className="text-[9px] font-black text-slate-800 uppercase tracking-wide truncate text-right" title={client.destination}>
+                        {client.destination}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Operation Data & Days */}
+                  <div className="flex items-center justify-between border-t border-b border-dashed border-slate-100 py-1.5 text-[9px]">
+                    <div className="flex items-center gap-1">
+                      <span className="text-slate-400 font-bold uppercase tracking-widest text-[7.5px]">Período:</span>
+                      <span className="font-extrabold text-slate-700 uppercase">{client.period}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-0.5 max-w-[60%] justify-end">
+                      {Array.isArray(client.weeklyDays) && client.weeklyDays.map((d: string) => (
+                        <span key={d} className="px-1 py-0.5 bg-slate-150 text-slate-600 rounded-[3px] text-[6.5px] font-black uppercase">
+                          {d.slice(0, 3)}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Detailed Transportation Status */}
+                  <div className="space-y-1.5">
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <div className="bg-emerald-50/40 p-1.5 rounded-lg border border-emerald-100/35 flex flex-col">
+                        <div className="flex items-center gap-1 text-[7px] font-black text-emerald-800 uppercase tracking-wide">
+                          <Car size={8} className="text-emerald-600 animate-pulse" /> IDA
+                        </div>
+                        <p className="font-black text-slate-800 text-[9px] truncate mt-0.5">{client.entryVehicleId || "N/A"}</p>
+                        <p className="text-[7.5px] text-slate-400 font-bold">Entr: {client.entryTime || "--:--"}</p>
+                      </div>
+
+                      <div className="bg-rose-50/40 p-1.5 rounded-lg border border-rose-100/35 flex flex-col">
+                        <div className="flex items-center gap-1 text-[7px] font-black text-rose-800 uppercase tracking-wide">
+                          <Car size={8} className="text-rose-600 animate-pulse" /> VOLTA
+                        </div>
+                        <p className="font-black text-slate-800 text-[9px] truncate mt-0.5">{client.exitVehicleId || "N/A"}</p>
+                        <p className="text-[7.5px] text-slate-400 font-bold">Saíd: {client.exitTime || "--:--"}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between text-[9px] bg-slate-50/80 p-1.5 rounded-lg border border-slate-100/80">
+                    <span className="text-[8px] font-black text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                      <Users size={10} className="text-brand-primary" /> Passageiros:
+                    </span>
+                    <span className="font-black text-slate-800">
+                      {client.occupants || 1} Pax
+                    </span>
+                  </div>
+                </div>
+
+                {/* Card Footer: Monthly Value & Action */}
+                <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between">
+                  <div>
+                    <p className="text-[7px] text-slate-400 font-bold uppercase tracking-widest">Valor Fixo</p>
+                    <p className="text-[12px] font-black text-slate-900 tracking-tight leading-none mt-0.5">
+                      {(Number(client.monthlyValue) || 0).toLocaleString()} <span className="text-[7.5px] font-black text-slate-350">AKZ</span>
+                    </p>
+                  </div>
+                  
+                  <button 
+                    onClick={() => startEdit(client)}
+                    className="text-[8px] font-black uppercase tracking-wider bg-slate-950 text-white hover:bg-brand-primary px-3 py-1.5 rounded-lg transition-all shadow-xs active:scale-95"
+                  >
+                    Editar
+                  </button>
+                </div>
+              </motion.div>
+            );
+          })}
+        </AnimatePresence>
+        {filteredClients.length === 0 && (
+          <div className="col-span-1 md:col-span-2 lg:col-span-3 xl:col-span-4 bg-white border border-slate-200 rounded-[2.5rem] py-20 text-center">
+             <FileText size={48} className="text-slate-200 mx-auto mb-4" />
+             <p className="text-sm font-black text-slate-300 uppercase tracking-widest italic animate-pulse">Nenhum contrato fixado encontrado</p>
+          </div>
+        )}
       </div>
 
       <AnimatePresence>
@@ -323,15 +442,15 @@ export default function InternalClients({ user }: { user?: any }) {
             >
               <div className="px-10 py-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                 <div>
-                  <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter italic">Novo Contrato PSM</h3>
-                  <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Registo de Rota Fixa Corporativa</p>
+                  <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter italic">{editingContract ? 'Editar Contrato PSM' : 'Novo Contrato PSM'}</h3>
+                  <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">{editingContract ? 'Atualização de Rota Fixa Corporativa' : 'Registo de Rota Fixa Corporativa'}</p>
                 </div>
                 <button onClick={() => setIsModalOpen(false)} className="w-12 h-12 flex items-center justify-center bg-white rounded-2xl text-slate-400 hover:text-slate-900 shadow-sm border border-slate-100 transition-all">
                   <XCircle size={28} />
                 </button>
               </div>
 
-              <form onSubmit={handleCreate} className="p-10">
+              <form onSubmit={handleSubmit} className="p-10">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   <div className="space-y-6">
                     <div className="space-y-2">
@@ -387,15 +506,27 @@ export default function InternalClients({ user }: { user?: any }) {
                         />
                       </div>
                       <div className="space-y-2">
-                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Mensalidade Acordada (AKZ)</label>
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">N.º Passageiros (Lotação)</label>
                         <input 
                           required
                           type="number" 
-                          value={formData.monthlyValue}
-                          onChange={(e) => setFormData({...formData, monthlyValue: Number(e.target.value)})}
-                          className="w-full px-4 py-4 bg-slate-900 text-brand-primary border-none rounded-2xl text-lg font-black focus:ring-4 ring-brand-primary/20 outline-none transition-all shadow-xl shadow-slate-900/20"
+                          min={1}
+                          value={formData.occupants}
+                          onChange={(e) => setFormData({...formData, occupants: Number(e.target.value)})}
+                          className="w-full px-4 py-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold focus:bg-white focus:border-brand-primary outline-none transition-all shadow-inner"
                         />
                       </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Mensalidade Acordada (AKZ)</label>
+                      <input 
+                        required
+                        type="number" 
+                        value={formData.monthlyValue}
+                        onChange={(e) => setFormData({...formData, monthlyValue: Number(e.target.value)})}
+                        className="w-full px-4 py-4 bg-slate-900 text-brand-primary border-none rounded-2xl text-lg font-black focus:ring-4 ring-brand-primary/20 outline-none transition-all shadow-xl shadow-slate-900/20"
+                      />
                     </div>
                   </div>
 
@@ -436,19 +567,62 @@ export default function InternalClients({ user }: { user?: any }) {
                       </select>
                     </div>
 
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Viatura Designada (Opcional)</label>
-                      <select 
-                        value={formData.vehicleId}
-                        onChange={(e) => setFormData({...formData, vehicleId: e.target.value})}
-                        className="w-full px-4 py-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold outline-none focus:bg-white focus:border-brand-primary"
-                      >
-                        <option value="">Nenhuma Viatura Fixa</option>
-                        {vehicles.map(v => (
-                          <option key={v.id} value={v.id}>{v.prefix} - {v.brand} ({v.licensePlate})</option>
-                        ))}
-                      </select>
+                    {/* Ida (Leva) */}
+                    <div className="grid grid-cols-2 gap-4 bg-emerald-50/20 p-4 rounded-2xl border border-emerald-100/50">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-emerald-800 uppercase tracking-widest ml-1">Viatura que Leva (Ida)</label>
+                        <select 
+                          value={formData.entryVehicleId}
+                          onChange={(e) => setFormData({...formData, entryVehicleId: e.target.value})}
+                          className="w-full px-3 py-3 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-emerald-500"
+                        >
+                          <option value="">Selecionar...</option>
+                          {vehicles.map(v => (
+                            <option key={v.id} value={v.prefix}>{v.prefix} - {v.brand}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-emerald-800 uppercase tracking-widest ml-1">Hora Entrada (Ida)</label>
+                        <input 
+                          type="text"
+                          placeholder="Ex: 07:30"
+                          value={formData.entryTime}
+                          onChange={(e) => setFormData({...formData, entryTime: e.target.value})}
+                          className="w-full px-3 py-3 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-emerald-500"
+                        />
+                      </div>
                     </div>
+
+                    {/* Volta (Busca) */}
+                    <div className="grid grid-cols-2 gap-4 bg-rose-50/20 p-4 rounded-2xl border border-rose-100/50">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-rose-800 uppercase tracking-widest ml-1">Viatura que Busca (Volta)</label>
+                        <select 
+                          value={formData.exitVehicleId}
+                          onChange={(e) => setFormData({...formData, exitVehicleId: e.target.value})}
+                          className="w-full px-3 py-3 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-rose-500"
+                        >
+                          <option value="">Selecionar...</option>
+                          {vehicles.map(v => (
+                            <option key={v.id} value={v.prefix}>{v.prefix} - {v.brand}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-rose-800 uppercase tracking-widest ml-1">Hora Saída (Volta)</label>
+                        <input 
+                          type="text"
+                          placeholder="Ex: 17:30"
+                          value={formData.exitTime}
+                          onChange={(e) => setFormData({...formData, exitTime: e.target.value})}
+                          className="w-full px-3 py-3 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-rose-500"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Hidden default vehicle selector to retain state consistency */}
+                    <input type="hidden" value={formData.vehicleId} />
 
                     <div className="bg-brand-primary/5 p-6 rounded-3xl border border-brand-primary/10 flex gap-4">
                        <AlertCircle className="text-brand-primary flex-shrink-0" size={24} />
@@ -473,7 +647,7 @@ export default function InternalClients({ user }: { user?: any }) {
                     className="bg-brand-primary text-white px-12 py-4 rounded-2xl text-xs font-black uppercase tracking-[0.2em] hover:bg-brand-secondary transition-all shadow-2xl shadow-brand-primary/40 flex items-center gap-3 active:scale-95"
                   >
                     {loading ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle2 size={20} />}
-                    FIDELIZAR CONTRATO
+                    {editingContract ? 'GUARDAR ALTERAÇÕES' : 'FIDELIZAR CONTRATO'}
                   </button>
                 </div>
               </form>

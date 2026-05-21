@@ -1,25 +1,12 @@
 import express from "express";
 import path from "path";
-import { fileURLToPath } from "url";
 import admin from "firebase-admin";
 import { getFirestore } from "firebase-admin/firestore";
 import fs from "fs";
 import { GoogleGenAI } from "@google/genai";
 
 // Load Firebase Config
-// Safe ESM/CJS path resolution
-const getAppPaths = () => {
-  const isCJS = typeof __filename !== "undefined" && typeof __dirname !== "undefined";
-  if (isCJS) {
-    return { filename: __filename, dirname: __dirname };
-  }
-  const filename = fileURLToPath(import.meta.url);
-  const dirname = path.dirname(filename);
-  return { filename, dirname };
-};
-
-const { filename: __filenameResolved, dirname: __dirnameResolved } = getAppPaths();
-const configPath = path.join(__dirnameResolved, "firebase-applet-config.json");
+const configPath = path.join(process.cwd(), "firebase-applet-config.json");
 const firebaseConfig = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, "utf8")) : null;
 
 // Initialize Firebase Admin safely
@@ -53,17 +40,6 @@ async function startServer() {
   const PORT = 3000;
 
   app.use(express.json());
-
-  // Allow CORS for secure cross-origin requests (e.g., from static Firebase Hosting to Cloud Run)
-  app.use((req, res, next) => {
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, x-requested-with");
-    if (req.method === "OPTIONS") {
-      return res.sendStatus(200);
-    }
-    next();
-  });
 
   // Request logging middleware
   app.use((req, res, next) => {
@@ -970,10 +946,8 @@ async function startServer() {
   });
 
   // Vite middleware for development
-  const isProduction = __filenameResolved.endsWith(".cjs") || (process.env.NODE_ENV === "production" && !fs.existsSync(path.resolve(__dirnameResolved, "server.ts")));
-  const distPath = isProduction 
-    ? path.resolve(__dirnameResolved) 
-    : path.resolve(__dirnameResolved, "dist");
+  const isProduction = process.env.NODE_ENV === "production";
+  const distPath = path.resolve(process.cwd(), "dist");
 
   console.log(`[Server] PID: ${process.pid}`);
   console.log(`[Server] Environment: ${process.env.NODE_ENV || "development"}`);
@@ -984,7 +958,7 @@ async function startServer() {
     console.log(`[Server] MODE: Development (Vite Middleware)`);
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
-      server: {  
+      server: { 
         middlewareMode: true,
         hmr: false,
         ws: false 
@@ -999,7 +973,7 @@ async function startServer() {
       
       try {
         const url = req.originalUrl;
-        const htmlPath = path.resolve(__dirnameResolved, "index.html");
+        const htmlPath = path.resolve(process.cwd(), "index.html");
         if (fs.existsSync(htmlPath)) {
           let template = fs.readFileSync(htmlPath, "utf-8");
           template = await vite.transformIndexHtml(url, template);

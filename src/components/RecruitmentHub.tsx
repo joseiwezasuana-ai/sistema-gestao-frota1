@@ -97,9 +97,17 @@ export default function RecruitmentHub({ user }: { user?: any }) {
       setAllCodesHistory(allDocs);
     });
 
-    const qUsers = query(collection(db, 'users'), orderBy('syncedAt', 'desc'));
+    const qUsers = collection(db, 'users');
     const unsubUsers = onSnapshot(qUsers, (snapshot) => {
-      setActiveUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const usersList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      usersList.sort((a: any, b: any) => {
+        const dateA = a.syncedAt || a.createdAt || "";
+        const dateB = b.syncedAt || b.createdAt || "";
+        const timeA = typeof dateA === "object" && dateA?.toDate ? dateA.toDate().getTime() : new Date(dateA || 0).getTime();
+        const timeB = typeof dateB === "object" && dateB?.toDate ? dateB.toDate().getTime() : new Date(dateB || 0).getTime();
+        return timeB - timeA;
+      });
+      setActiveUsers(usersList);
     });
 
     const qAdmin = query(collection(db, 'administrative_staff'), orderBy('name', 'asc'));

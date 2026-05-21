@@ -129,26 +129,26 @@ export default function MechanicView({ user }: MechanicViewProps) {
   ];
 
   return (
-    <div className="flex flex-col h-screen bg-slate-50 overflow-hidden font-sans">
+    <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden font-sans">
       {/* Header Mobile Style */}
-      <header className="bg-white px-6 py-4 flex items-center justify-between border-b border-slate-100 flex-shrink-0">
+      <header className="bg-slate-900 border-b border-slate-800 px-6 py-5 flex items-center justify-between flex-shrink-0 shadow-lg">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center text-white shadow-lg overflow-hidden border-2 border-white">
+          <div className="w-10 h-10 bg-brand-primary rounded-xl flex items-center justify-center text-white shadow-lg overflow-hidden border border-brand-primary/20 shadow-brand-primary/25">
             <Wrench size={20} />
           </div>
           <div>
-            <h1 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] leading-none mb-1">Mecânico Oficial</h1>
-            <p className="text-sm font-black text-slate-900 uppercase tracking-tighter truncate max-w-[150px]">{user?.name || 'Oficina Central'}</p>
+            <h1 className="text-[11px] font-black text-slate-500 uppercase tracking-[0.2em] leading-none mb-1">Mecânico Oficial</h1>
+            <p className="text-sm font-black text-white uppercase tracking-tighter truncate max-w-[150px]">{user?.name || 'Oficina Central'}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <button className="relative p-2 text-slate-400">
             <Bell size={20} />
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white" />
+            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-slate-900" />
           </button>
           <button 
             onClick={() => setIsMenuOpen(true)}
-            className="p-2 text-slate-900 hover:bg-slate-50 rounded-lg transition-colors"
+            className="p-2 text-white hover:bg-slate-800 border border-slate-800 rounded-lg transition-colors"
           >
             <Menu size={24} />
           </button>
@@ -156,28 +156,28 @@ export default function MechanicView({ user }: MechanicViewProps) {
       </header>
 
       {/* Main Content Area */}
-      <main className="flex-1 overflow-y-auto p-5 custom-scrollbar pb-24">
+      <main className="flex-1 overflow-y-auto p-5 custom-scrollbar pb-24 bg-slate-950">
         {activeInternalTab === 'dashboard' && (
           <div className="space-y-6">
             {/* Quick Stats Grid */}
             <div className="grid grid-cols-2 gap-4">
-              <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+              <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-sm">
                 <div className="flex items-center justify-between mb-2">
-                  <div className="w-8 h-8 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center">
+                  <div className="w-8 h-8 bg-blue-500/10 text-blue-400 rounded-lg flex items-center justify-center border border-blue-500/20">
                     <Clock size={16} />
                   </div>
                 </div>
-                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-tight">Manutenções<br/>Pendentes</p>
-                <p className="text-xl font-black text-slate-900 mt-1">{logs.filter(l => l.status === 'planned').length}</p>
+                <p className="text-[9px] font-black text-slate-550 uppercase tracking-widest leading-tight">Manutenções<br/>Pendentes</p>
+                <p className="text-xl font-black text-white mt-1">{logs.filter(l => l.status === 'planned').length}</p>
               </div>
-              <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+              <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-sm">
                 <div className="flex items-center justify-between mb-2">
-                  <div className="w-8 h-8 bg-amber-50 text-amber-600 rounded-lg flex items-center justify-center">
+                  <div className="w-8 h-8 bg-amber-500/10 text-amber-400 rounded-lg flex items-center justify-center border border-amber-500/20">
                     <AlertCircle size={16} />
                   </div>
                 </div>
-                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-tight">Stock<br/>Baixo</p>
-                <p className="text-xl font-black text-slate-900 mt-1">08</p>
+                <p className="text-[9px] font-black text-slate-550 uppercase tracking-widest leading-tight">Stock<br/>Baixo</p>
+                <p className="text-xl font-black text-white mt-1">08</p>
               </div>
             </div>
 
@@ -239,24 +239,24 @@ export default function MechanicView({ user }: MechanicViewProps) {
             {/* Next Maintenance Log Section */}
             <div>
               <div className="flex items-center justify-between mb-4 px-1">
-                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Últimos Registos</h3>
+                <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Últimos Registos</h3>
                 <button onClick={() => setActiveInternalTab('maintenance')} className="text-[9px] font-black text-brand-primary uppercase underline">Ver Tudo</button>
               </div>
               <div className="space-y-3">
                 {logs.slice(0, 3).map((log) => (
-                  <div key={log.id} className="bg-white p-4 rounded-2xl border border-slate-100 flex items-center justify-between shadow-sm">
+                  <div key={log.id} className="bg-slate-900 p-4 rounded-2xl border border-slate-800 flex items-center justify-between shadow-sm shadow-black/15 text-white">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400 font-black text-xs">
+                      <div className="w-10 h-10 bg-slate-950 text-brand-primary rounded-xl flex items-center justify-center text-slate-400 font-black text-xs border border-slate-800 shadow-sm">
                         {log.prefix}
                       </div>
                       <div>
-                        <p className="text-[11px] font-black text-slate-900 uppercase tracking-tight">{log.type}</p>
-                        <p className="text-[9px] text-slate-400 font-bold uppercase">{log.date}</p>
+                        <p className="text-[11px] font-black text-white uppercase tracking-tight">{log.type}</p>
+                        <p className="text-[9px] text-slate-500 font-bold uppercase">{log.date}</p>
                       </div>
                     </div>
                     <span className={cn(
-                      "px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest",
-                      log.status === 'completed' ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600"
+                      "px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest border",
+                      log.status === 'completed' ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/25" : "bg-amber-500/15 text-amber-400 border-amber-500/25 animate-pulse"
                     )}>
                       {log.status === 'completed' ? 'Ok' : 'Pendente'}
                     </span>
@@ -269,11 +269,11 @@ export default function MechanicView({ user }: MechanicViewProps) {
 
         {activeInternalTab === 'map' && (
           <div className="h-full flex flex-col -m-5">
-             <div className="p-4 bg-white border-b border-slate-100 flex items-center justify-between">
-                <h2 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">Mapa de Frota Moxico</h2>
+             <div className="p-4 bg-slate-900 border-b border-slate-800 flex items-center justify-between text-white">
+                <h2 className="text-lg font-black text-white uppercase tracking-tighter italic">Mapa de Frota Moxico</h2>
                 <button 
                   onClick={() => setActiveInternalTab('dashboard')}
-                  className="p-2 transition-all active:scale-95 text-slate-400"
+                  className="p-2 transition-all active:scale-95 text-slate-400 hover:text-white"
                 >
                   <X size={20} />
                 </button>
@@ -287,7 +287,7 @@ export default function MechanicView({ user }: MechanicViewProps) {
         {activeInternalTab === 'maintenance' && (
           <div className="space-y-6">
             <div className="flex items-center justify-between px-1">
-              <h2 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic">Lista de Reparos</h2>
+              <h2 className="text-lg font-black text-white uppercase tracking-tighter italic">Lista de Reparos</h2>
               <button 
                 onClick={() => setIsModalOpen(true)}
                 className="bg-brand-primary text-white p-2 rounded-xl shadow-lg shadow-brand-primary/20"
@@ -297,13 +297,13 @@ export default function MechanicView({ user }: MechanicViewProps) {
             </div>
 
             <div className="relative mb-4">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
               <input 
                 type="text" 
                 placeholder="PROCURAR REPARO..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-12 pr-4 py-4 bg-white border border-slate-100 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-sm outline-none focus:border-brand-primary"
+                className="w-full pl-12 pr-4 py-4 bg-slate-900 border border-slate-800 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-sm outline-none focus:border-brand-primary text-white placeholder:text-slate-500"
               />
             </div>
             
@@ -314,39 +314,39 @@ export default function MechanicView({ user }: MechanicViewProps) {
                 log.description?.toLowerCase().includes(searchTerm.toLowerCase())
               ).map((log) => (
                 <motion.div 
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  key={log.id} 
-                  className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm relative overflow-hidden"
+                   initial={{ opacity: 0, y: 10 }}
+                   animate={{ opacity: 1, y: 0 }}
+                   key={log.id} 
+                   className="bg-slate-900 p-5 rounded-2xl border border-slate-800 shadow-sm relative overflow-hidden"
                 >
                   <div className="flex items-start justify-between mb-3">
                      <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-500 font-black text-sm border-2 border-white shadow-sm">
-                          {log.prefix}
+                        <div className="w-12 h-12 bg-slate-950 rounded-2xl flex items-center justify-center text-brand-primary font-black text-sm border border-slate-800 shadow-sm">
+                           {log.prefix}
                         </div>
                         <div>
-                           <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">{log.type}</p>
-                           <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight">{log.date}</h4>
+                            <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-0.5">{log.type}</p>
+                            <h4 className="text-xs font-black text-white uppercase tracking-tight">{log.date}</h4>
                         </div>
                      </div>
                      <span className={cn(
                         "px-2.5 py-1 rounded-full text-[8px] font-black uppercase tracking-widest border",
-                        log.status === 'completed' ? "bg-emerald-50 text-emerald-600 border-emerald-100" : "bg-amber-50 text-amber-600 border-amber-100"
+                        log.status === 'completed' ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/25" : "bg-amber-500/15 text-amber-400 border-amber-500/25"
                      )}>
                         {log.status === 'completed' ? 'Concluído' : 'Pendente'}
                      </span>
                   </div>
-                  <div className="text-[10px] text-slate-500 font-bold uppercase leading-relaxed mb-4 bg-slate-50 p-3 rounded-xl">
+                  <div className="text-[10px] text-slate-350 font-bold uppercase leading-relaxed mb-4 bg-slate-950 p-3 rounded-xl border border-slate-850">
                     {log.description || 'Nenhum detalhe adicional registado.'}
                   </div>
-                  <div className="flex items-center justify-between border-t border-slate-50 pt-3">
+                  <div className="flex items-center justify-between border-t border-slate-800/60 pt-3">
                      <div className="flex items-center gap-2">
-                        <TrendingUp size={12} className="text-slate-400" />
-                        <span className="text-[10px] font-black text-slate-600 uppercase tracking-tight">{log.cost?.toLocaleString()} Kz</span>
+                        <TrendingUp size={12} className="text-slate-500" />
+                        <span className="text-[10px] font-black text-slate-300 uppercase tracking-tight">{log.cost?.toLocaleString()} Kz</span>
                      </div>
                      <div className="flex items-center gap-2">
-                        <Truck size={12} className="text-slate-400" />
-                        <span className="text-[10px] font-black text-slate-600 uppercase tracking-tight">{log.mileage?.toLocaleString()} KM</span>
+                        <Truck size={12} className="text-slate-500" />
+                        <span className="text-[10px] font-black text-slate-300 uppercase tracking-tight">{log.mileage?.toLocaleString()} KM</span>
                      </div>
                   </div>
                 </motion.div>
@@ -357,36 +357,36 @@ export default function MechanicView({ user }: MechanicViewProps) {
 
         {activeInternalTab === 'warehouse' && (
           <div className="space-y-6">
-            <h2 className="text-lg font-black text-slate-900 uppercase tracking-tighter italic px-1">Peças em Stock</h2>
+            <h2 className="text-lg font-black text-white uppercase tracking-tighter italic px-1">Peças em Stock</h2>
             
             <div className="relative mb-4">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
               <input 
                 type="text" 
                 placeholder="PROCURAR PEÇA..."
-                className="w-full pl-12 pr-4 py-4 bg-white border border-slate-100 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-sm outline-none focus:border-brand-primary"
+                className="w-full pl-12 pr-4 py-4 bg-slate-900 border border-slate-800 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-sm outline-none focus:border-brand-primary text-white placeholder:text-slate-500"
               />
             </div>
 
             <div className="space-y-3">
               {INVENTORY.map((item) => (
-                <div key={item.id} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between">
+                <div key={item.id} className="bg-slate-900 p-5 rounded-2xl border border-slate-800 shadow-sm flex items-center justify-between">
                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 bg-slate-50 text-slate-500 rounded-xl flex items-center justify-center">
+                      <div className="w-10 h-10 bg-slate-950 text-slate-400 rounded-xl flex items-center justify-center border border-slate-800">
                         <Package size={20} />
                       </div>
                       <div>
                         <p className="text-[9px] font-black text-brand-primary uppercase tracking-widest">{item.id}</p>
-                        <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight">{item.name}</h4>
-                        <span className="text-[9px] text-slate-400 font-bold uppercase">{item.category}</span>
+                        <h4 className="text-xs font-black text-white uppercase tracking-tight">{item.name}</h4>
+                        <span className="text-[9px] text-slate-500 font-bold uppercase">{item.category}</span>
                       </div>
                    </div>
                    <div className="text-right">
-                      <p className="text-xs font-black text-slate-900 tracking-tight">{item.stock} {item.unit}</p>
+                      <p className="text-xs font-black text-white tracking-tight">{item.stock} {item.unit}</p>
                       {item.stock <= item.min ? (
                          <span className="text-[8px] font-black text-red-500 uppercase">Repor</span>
                       ) : (
-                         <span className="text-[8px] font-black text-emerald-500 uppercase font-mono tracking-widest">OK</span>
+                         <span className="text-[8px] font-black text-emerald-400 uppercase font-mono tracking-widest">OK</span>
                       )}
                    </div>
                 </div>
@@ -397,28 +397,28 @@ export default function MechanicView({ user }: MechanicViewProps) {
 
         {activeInternalTab === 'wallet' && (
           <div className="space-y-6">
-             <div className="bg-slate-900 rounded-[2.5rem] p-8 text-center text-white shadow-2xl relative overflow-hidden">
+             <div className="bg-slate-900 border border-slate-850 rounded-[2.5rem] p-8 text-center text-white shadow-2xl relative overflow-hidden">
                 <div className="absolute inset-0 bg-gradient-to-br from-brand-primary/20 translate-y-10" />
-                <p className="text-[10px] font-black text-white/50 uppercase tracking-[0.3em] mb-3 relative">Remuneração do Mês</p>
-                <h3 className="text-4xl font-black tracking-tighter mb-2 relative italic">75.000 <span className="text-lg">Kz</span></h3>
-                <div className="inline-flex items-center gap-2 bg-emerald-500/20 px-4 py-1.5 rounded-full relative">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-3 relative">Remuneração do Mês</p>
+                <h3 className="text-4xl font-black tracking-tighter mb-2 relative italic text-white">75.000 <span className="text-lg">Kz</span></h3>
+                <div className="inline-flex items-center gap-2 bg-emerald-500/15 border border-emerald-500/25 text-emerald-400 px-4 py-1.5 rounded-full relative text-[9px] font-black uppercase tracking-widest italic">
                    <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
-                   <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest">Salário Base Ativo</span>
+                   Salário Base Ativo
                 </div>
              </div>
 
              <div className="space-y-4">
-                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Detalhes do Contrato</h3>
-                <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
+                <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Detalhes do Contrato</h3>
+                <div className="bg-slate-900 rounded-3xl border border-slate-800 overflow-hidden shadow-sm">
                    {[
                      { label: 'Subsídio de Risco', value: '15.000 Kz' },
                      { label: 'Bónus Produtividade', value: '10.000 Kz' },
                      { label: 'Refeição Oficina', value: 'Diário' },
                      { label: 'Próximo Pagamento', value: '28 de Abril' }
                    ].map((row, idx) => (
-                     <div key={idx} className={cn("px-6 py-4 flex items-center justify-between", idx !== 3 && "border-b border-slate-50")}>
-                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-tight">{row.label}</span>
-                        <span className="text-[11px] font-black text-slate-900 uppercase tracking-tight">{row.value}</span>
+                     <div key={idx} className={cn("px-6 py-4 flex items-center justify-between", idx !== 3 && "border-b border-slate-800/60")}>
+                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-tight">{row.label}</span>
+                        <span className="text-[11px] font-black text-white uppercase tracking-tight">{row.value}</span>
                      </div>
                    ))}
                 </div>
@@ -428,38 +428,38 @@ export default function MechanicView({ user }: MechanicViewProps) {
       </main>
 
       {/* Tab Bar Mechanic Style */}
-      <footer className="h-20 bg-white border-t border-slate-100 flex items-center justify-around px-4 flex-shrink-0 relative z-50">
+      <footer className="h-20 bg-slate-900 border-t border-slate-800 flex items-center justify-around px-4 flex-shrink-0 relative z-50">
         <button 
           onClick={() => setActiveInternalTab('dashboard')}
-          className={cn("flex flex-col items-center gap-1 transition-all duration-300", activeInternalTab === 'dashboard' ? "text-brand-primary scale-110" : "text-slate-300")}
+          className={cn("flex flex-col items-center gap-1 transition-all duration-300", activeInternalTab === 'dashboard' ? "text-brand-primary scale-110" : "text-slate-500")}
         >
           <Activity size={22} strokeWidth={activeInternalTab === 'dashboard' ? 3 : 2} />
           <span className="text-[8px] font-black uppercase tracking-widest">Início</span>
         </button>
         <button 
           onClick={() => setActiveInternalTab('maintenance')}
-          className={cn("flex flex-col items-center gap-1 transition-all duration-300", activeInternalTab === 'maintenance' ? "text-brand-primary scale-110" : "text-slate-300")}
+          className={cn("flex flex-col items-center gap-1 transition-all duration-300", activeInternalTab === 'maintenance' ? "text-brand-primary scale-110" : "text-slate-500")}
         >
           <History size={22} strokeWidth={activeInternalTab === 'maintenance' ? 3 : 2} />
           <span className="text-[8px] font-black uppercase tracking-widest">Oficina</span>
         </button>
         <button 
           onClick={() => setActiveInternalTab('map')}
-          className={cn("flex flex-col items-center gap-1 transition-all duration-300", activeInternalTab === 'map' ? "text-brand-primary scale-110" : "text-slate-300")}
+          className={cn("flex flex-col items-center gap-1 transition-all duration-300", activeInternalTab === 'map' ? "text-brand-primary scale-110" : "text-slate-500")}
         >
           <Map size={22} strokeWidth={activeInternalTab === 'map' ? 3 : 2} />
           <span className="text-[8px] font-black uppercase tracking-widest">Mapa</span>
         </button>
         <button 
           onClick={() => setActiveInternalTab('warehouse')}
-          className={cn("flex flex-col items-center gap-1 transition-all duration-300", activeInternalTab === 'warehouse' ? "text-brand-primary scale-110" : "text-slate-300")}
+          className={cn("flex flex-col items-center gap-1 transition-all duration-300", activeInternalTab === 'warehouse' ? "text-brand-primary scale-110" : "text-slate-500")}
         >
           <Package size={22} strokeWidth={activeInternalTab === 'warehouse' ? 3 : 2} />
           <span className="text-[8px] font-black uppercase tracking-widest">Peças</span>
         </button>
         <button 
           onClick={() => setActiveInternalTab('wallet')}
-          className={cn("flex flex-col items-center gap-1 transition-all duration-300", activeInternalTab === 'wallet' ? "text-brand-primary scale-110" : "text-slate-300")}
+          className={cn("flex flex-col items-center gap-1 transition-all duration-300", activeInternalTab === 'wallet' ? "text-brand-primary scale-110" : "text-slate-500")}
         >
           <Wallet size={22} strokeWidth={activeInternalTab === 'wallet' ? 3 : 2} />
           <span className="text-[8px] font-black uppercase tracking-widest">Pagos</span>
@@ -481,11 +481,11 @@ export default function MechanicView({ user }: MechanicViewProps) {
               initial={{ x: 300 }}
               animate={{ x: 0 }}
               exit={{ x: 300 }}
-              className="fixed top-0 right-0 h-full w-4/5 max-w-[300px] bg-white z-[70] shadow-2xl p-8 flex flex-col"
+              className="fixed top-0 right-0 h-full w-4/5 max-w-[300px] bg-slate-900 border-l border-slate-800 z-[70] shadow-2xl p-8 flex flex-col text-white"
             >
               <div className="flex items-center justify-between mb-10">
-                 <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter italic italic">Definições</h3>
-                 <button onClick={() => setIsMenuOpen(false)} className="p-2 bg-slate-100 rounded-full">
+                 <h3 className="text-xl font-black text-white uppercase tracking-tighter italic">Definições</h3>
+                 <button onClick={() => setIsMenuOpen(false)} className="p-2 bg-slate-800 text-slate-400 hover:text-white rounded-full">
                    <X size={18} />
                  </button>
               </div>
@@ -495,12 +495,12 @@ export default function MechanicView({ user }: MechanicViewProps) {
                   <button 
                     key={idx}
                     onClick={() => {
-                      item.onClick();
-                      setIsMenuOpen(false);
+                        item.onClick();
+                        setIsMenuOpen(false);
                     }}
                     className={cn(
-                      "w-full flex items-center justify-between p-4 rounded-2xl hover:bg-slate-50 transition-all active:scale-95 border border-transparent hover:border-slate-100",
-                      item.color || "text-slate-900"
+                      "w-full flex items-center justify-between p-4 rounded-2xl hover:bg-slate-800 transition-all active:scale-95 border border-transparent hover:border-slate-800",
+                      item.color || "text-slate-200"
                     )}
                   >
                     <div className="flex items-center gap-4">
@@ -512,9 +512,9 @@ export default function MechanicView({ user }: MechanicViewProps) {
                 ))}
               </div>
               
-              <div className="mt-auto pt-8 border-t border-slate-100 text-center">
-                 <p className="text-[9px] font-black text-slate-300 uppercase tracking-[0.2em]">PSM COMERCIAL LUENA</p>
-                 <p className="text-[9px] font-medium text-slate-300 mt-1 uppercase">TaxiControl Version 2.0</p>
+              <div className="mt-auto pt-8 border-t border-slate-800 text-center">
+                 <p className="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em]">PSM COMERCIAL LUENA</p>
+                 <p className="text-[9px] font-medium text-slate-500 mt-1 uppercase">TaxiControl Version 2.0</p>
               </div>
             </motion.div>
           </>
@@ -536,57 +536,57 @@ export default function MechanicView({ user }: MechanicViewProps) {
               initial={{ y: 500 }}
               animate={{ y: 0 }}
               exit={{ y: 500 }}
-              className="relative w-full bg-white rounded-t-[2.5rem] rounded-b-2xl p-8 max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl"
+              className="relative w-full bg-slate-900 border border-slate-800 rounded-t-[2.5rem] rounded-b-2xl p-8 max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl text-white"
             >
-              <div className="flex items-center justify-between mb-8 pb-4 border-b border-slate-50">
+              <div className="flex items-center justify-between mb-8 pb-4 border-b border-slate-800">
                  <div>
-                   <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter italic">Nova Intervenção</h3>
-                   <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-1">Registo Técnico de Oficina</p>
+                   <h3 className="text-xl font-black text-white uppercase tracking-tighter italic">Nova Intervenção</h3>
+                   <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest mt-1">Registo Técnico de Oficina</p>
                  </div>
-                 <button onClick={() => setIsModalOpen(false)} className="p-2 bg-slate-100 rounded-full text-slate-400">
+                 <button onClick={() => setIsModalOpen(false)} className="p-2 bg-slate-800 rounded-full text-slate-400 hover:text-white">
                    <X size={18} />
                  </button>
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-5 pb-8">
                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Viatura em Reparação</label>
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Viatura em Reparação</label>
                     <select 
                       required
                       value={formData.vehicleId}
                       onChange={(e) => setFormData({...formData, vehicleId: e.target.value})}
-                      className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-5 py-4 text-xs font-black uppercase outline-none focus:border-brand-primary shadow-sm"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-5 py-4 text-xs font-black uppercase text-white outline-none focus:border-brand-primary shadow-sm"
                     >
-                      <option value="">Seleccionar Viatura...</option>
+                      <option value="" className="bg-slate-900 text-white">Seleccionar Viatura...</option>
                       {vehicles.map(v => (
-                        <option key={v.id} value={v.id}>{v.prefix} - {v.name}</option>
+                        <option key={v.id} value={v.id} className="bg-slate-900 text-white">{v.prefix} - {v.name}</option>
                       ))}
                     </select>
                  </div>
 
                  <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1.5">
-                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Serviço</label>
+                       <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Serviço</label>
                        <select 
                          required
                          value={formData.type}
                          onChange={(e) => setFormData({...formData, type: e.target.value})}
-                         className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-5 py-4 text-xs font-black uppercase outline-none focus:border-brand-primary"
+                         className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-5 py-4 text-xs font-black uppercase text-white outline-none focus:border-brand-primary"
                        >
-                         <option value="Troca de Óleo">Troca de Óleo</option>
-                         <option value="Travões">Travões</option>
-                         <option value="Pneus">Pneus</option>
-                         <option value="Outro">Outro</option>
+                         <option value="Troca de Óleo" className="bg-slate-900 text-white">Troca de Óleo</option>
+                         <option value="Travões" className="bg-slate-900 text-white">Travões</option>
+                         <option value="Pneus" className="bg-slate-900 text-white">Pneus</option>
+                         <option value="Outro" className="bg-slate-900 text-white">Outro</option>
                        </select>
                     </div>
                     <div className="space-y-1.5">
-                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">KM Atual</label>
+                       <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">KM Atual</label>
                        <input 
                          type="number"
                          required
                          value={formData.mileage}
                          onChange={(e) => setFormData({...formData, mileage: e.target.value})}
-                         className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-5 py-4 text-xs font-black outline-none focus:border-brand-primary"
+                         className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-5 py-4 text-xs font-black text-white outline-none focus:border-brand-primary"
                          placeholder="Ex: 50.000"
                        />
                     </div>
@@ -594,55 +594,55 @@ export default function MechanicView({ user }: MechanicViewProps) {
 
                  <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1.5">
-                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Data</label>
+                       <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Data</label>
                        <input 
                          type="date"
                          required
                          value={formData.date}
                          onChange={(e) => setFormData({...formData, date: e.target.value})}
-                         className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-5 py-4 text-xs font-black outline-none focus:border-brand-primary"
+                         className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-5 py-4 text-xs font-black text-white outline-none focus:border-brand-primary"
                        />
                     </div>
                     <div className="space-y-1.5">
-                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Custo (Kz)</label>
+                       <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Custo (Kz)</label>
                        <input 
                          type="number"
                          required
                          value={formData.cost}
                          onChange={(e) => setFormData({...formData, cost: e.target.value})}
-                         className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-5 py-4 text-xs font-black outline-none focus:border-brand-primary"
+                         className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-5 py-4 text-xs font-black text-white outline-none focus:border-brand-primary"
                          placeholder="10.000"
                        />
                     </div>
                  </div>
 
                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Status</label>
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Status</label>
                     <select 
                       required
                       value={formData.status}
                       onChange={(e) => setFormData({...formData, status: e.target.value})}
-                      className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-5 py-4 text-xs font-black uppercase outline-none focus:border-brand-primary"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-5 py-4 text-xs font-black uppercase text-white outline-none focus:border-brand-primary"
                     >
-                      <option value="planned">Pendente / Aberto</option>
-                      <option value="completed">Concluído / Resolvido</option>
+                      <option value="planned" className="bg-slate-900 text-white">Pendente / Aberto</option>
+                      <option value="completed" className="bg-slate-900 text-white">Concluído / Resolvido</option>
                     </select>
                  </div>
 
                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Notas Técnicas</label>
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Notas Técnicas</label>
                     <textarea 
                       rows={3}
                       value={formData.description}
                       onChange={(e) => setFormData({...formData, description: e.target.value})}
-                      className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-5 py-3 text-xs font-bold outline-none focus:border-brand-primary resize-none placeholder:text-slate-300"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-5 py-3 text-xs font-bold text-white outline-none focus:border-brand-primary resize-none placeholder:text-slate-600"
                       placeholder="Descreva o problema ou reparo..."
                     />
                  </div>
 
                  <button 
                   type="submit"
-                  className="w-full bg-slate-900 text-white py-5 rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-2xl hover:bg-slate-800 transition-all active:scale-95 mt-4"
+                  className="w-full bg-brand-primary hover:bg-brand-primary/95 text-white py-5 rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-lg shadow-brand-primary/20 transition-all active:scale-95 mt-4"
                  >
                    Registar Intervenção
                  </button>

@@ -123,7 +123,7 @@ export function WhatsAppMonitor() {
   // Estados de Configuração de Conexão WhatsApp
   const [showSettings, setShowSettings] = useState(false);
   const [whatsappNumber, setWhatsappNumber] = useState(() => {
-    return localStorage.getItem('taxi_wa_number') || '+244 937 537 330';
+    return localStorage.getItem('taxi_wa_number') || '+244 923 000 000';
   });
   const [driversGroupLink, setDriversGroupLink] = useState(() => {
     return localStorage.getItem('taxi_wa_drivers_link') || 'https://chat.whatsapp.com/GoperatonalDriversLuena';
@@ -139,32 +139,23 @@ export function WhatsAppMonitor() {
   });
 
   const getApiUrl = (endpoint: string) => {
-    const isFirebaseHosting = window.location.hostname.endsWith('.web.app') || window.location.hostname.endsWith('.firebaseapp.com');
-    if (isFirebaseHosting) {
-      const customUrl = backendApiUrl.trim();
-      if (customUrl) {
-        const base = customUrl.endsWith('/') ? customUrl.slice(0, -1) : customUrl;
-        const cleanPath = endpoint.startsWith('/') ? endpoint : '/' + endpoint;
-        return `${base}${cleanPath}`;
-      }
+    const customUrl = backendApiUrl.trim();
+    if (customUrl) {
+      const base = customUrl.endsWith('/') ? customUrl.slice(0, -1) : customUrl;
+      const cleanPath = endpoint.startsWith('/') ? endpoint : '/' + endpoint;
+      return `${base}${cleanPath}`;
     }
-    // For Cloud Run, Localhost, or custom domains serving the backend, always use relative pathway
     return endpoint;
   };
 
   // Auto detect static Firebase hosting (.web.app) and set default backend API URL
   useEffect(() => {
-    const isFirebaseHosting = window.location.hostname.endsWith('.web.app') || window.location.hostname.endsWith('.firebaseapp.com');
-    if (isFirebaseHosting) {
-      if (!localStorage.getItem('taxi_wa_backend_api_url')) {
+    if (!localStorage.getItem('taxi_wa_backend_api_url')) {
+      if (window.location.hostname.endsWith('.web.app') || window.location.hostname.endsWith('.firebaseapp.com')) {
         const defaultBackend = "https://ais-pre-x7ae5zjwislnpda2b3a6l6-214885335133.europe-west3.run.app";
         setBackendApiUrl(defaultBackend);
         localStorage.setItem('taxi_wa_backend_api_url', defaultBackend);
       }
-    } else {
-      // If we are on same-origin Cloud Run or Localhost, clear any old stale localStorage variable so it defaults to relative paths
-      localStorage.removeItem('taxi_wa_backend_api_url');
-      setBackendApiUrl('');
     }
   }, []);
 
@@ -172,7 +163,7 @@ export function WhatsAppMonitor() {
   const [baileysServerState, setBaileysServerState] = useState({
     connected: false,
     status: "idle",
-    whatsappNumber: "+244 937 537 330",
+    whatsappNumber: "+244 923 000 000",
     sessionName: "TaxiControl-Luena-MD",
     qrCodeString: null as string | null,
     pairingCode: null as string | null,
