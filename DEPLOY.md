@@ -12,14 +12,14 @@ Para que as análises operacionais e o mapa satélite funcionem no site, precisa
 
 No **Windows (CMD)**:
 ```cmd
-set GEMINI_API_KEY=AIzaSyCtQB8mNuc3C9R4Vx84maWW2FZNJ_XrX5Q
-set VITE_GOOGLE_MAPS_API_KEY=AIzaSyB4JC9DV84f5zmeKqKONNkb6T_P4HYozX0
+set GEMINI_API_KEY=
+set VITE_GOOGLE_MAPS_API_KEY=
 ```
 
 No **Linux/Mac/PowerShell**:
 ```bash
-export GEMINI_API_KEY=AIzaSyCtQB8mNuc3C9R4Vx84maWW2FZNJ_XrX5Q
-export VITE_GOOGLE_MAPS_API_KEY=AIzaSyB4JC9DV84f5zmeKqKONNkb6T_P4HYozX0
+export GEMINI_API_KEY=
+export VITE_GOOGLE_MAPS_API_KEY
 ```
 
 Depois disso, execute o `npm run build` e o `firebase deploy` normalmente.
