@@ -1,6 +1,5 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
-import { getAnalytics, isSupported } from 'firebase/analytics';
 import 'firebase/auth'; // Force registration
 import { 
   getFirestore,
@@ -18,9 +17,11 @@ try {
   app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
   
   // Analytics is only supported in some environments
+  /*
   isSupported().then(yes => {
     if (yes) analytics = getAnalytics(app);
   });
+  */
 
   console.log("[Firebase] App initialized successfully with project:", firebaseConfig.projectId);
 } catch (e: any) {

@@ -31,7 +31,8 @@ import {
   Sparkles,
   Send,
   Camera,
-  Loader2
+  Loader2,
+  Forward
 } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
@@ -1310,6 +1311,15 @@ export function WhatsAppMonitor({ isMechanicView = false, isDriverView = false, 
                             {msg.text}
                           </p>
                         )}
+                        <div className="mt-2 pt-2 border-t border-slate-700/10 dark:border-slate-700/50">
+                          <button
+                            onClick={() => alert('Forwarding: ' + msg.text)}
+                            className="text-[10px] flex items-center gap-1 text-slate-500 dark:text-slate-400 hover:text-emerald-500 transition-colors"
+                          >
+                            <Forward size={12} />
+                            Reencaminhar
+                          </button>
+                        </div>
 
                         {/* Controle Operativo dos Pedidos de Clientes */}
                         {activeTab === 'clients' && msg.sender !== 'Operador Central' && (

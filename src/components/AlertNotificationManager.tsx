@@ -10,7 +10,8 @@ import {
   AlertOctagon,
   Phone,
   Activity,
-  Trash2
+  Trash2,
+  MessageSquare
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { collection, onSnapshot, query, orderBy, limit, Timestamp, where, addDoc, serverTimestamp } from 'firebase/firestore';
@@ -166,26 +167,37 @@ export default function AlertNotificationManager() {
   }, []);
 
   const triggerAlert = (alert: Alert) => {
-    // Avoid spam: only show if not already recently alerted (state-based check)
+    let isDuplicate = false;
     setAlerts(prev => {
-      const exists = prev.find(a => a.id === alert.id);
-      if (exists) return prev;
-      
-      // Browser notification
-      if (Notification.permission === 'granted') {
-          new Notification(alert.title, {
-            body: alert.message,
-          });
+      if (prev.find(a => a.id === alert.id)) {
+        isDuplicate = true;
+        return prev;
       }
-
-      // Auto-dismiss after 15 seconds (longer for critical)
-      const duration = alert.type === 'panic' ? 30000 : 15000;
-      setTimeout(() => {
-        removeAlert(alert.id);
-      }, duration);
-
       return [alert, ...prev].slice(0, 5); // Keep last 5
     });
+
+    if (isDuplicate) return;
+
+    // Browser notification
+    if (Notification.permission === 'granted') {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.ready
+          .then(registration => {
+            registration.showNotification(alert.title, {
+              body: alert.message,
+            }).catch(e => console.error("Service worker notification failed:", e));
+          })
+          .catch(e => console.error("Service worker not ready:", e));
+      } else {
+        console.warn("Service worker not supported, cannot show notification.");
+      }
+    }
+
+    // Auto-dismiss after 15 seconds (longer for critical)
+    const duration = alert.type === 'panic' ? 30000 : 15000;
+    setTimeout(() => {
+      removeAlert(alert.id);
+    }, duration);
   };
 
   const removeAlert = (id: string) => {
@@ -234,9 +246,9 @@ export default function AlertNotificationManager() {
             </motion.div>
           )}
 
-          {alerts.map((alert) => (
+          {alerts.map((alertItem) => (
             <motion.div
-              key={alert.id}
+              key={alertItem.id}
               initial={{ scale: 0.8, y: -50, opacity: 0 }}
               animate={{ scale: 1, y: 0, opacity: 1 }}
               exit={{ scale: 0.8, y: -20, opacity: 0 }}
@@ -244,16 +256,16 @@ export default function AlertNotificationManager() {
             >
               <div className={`
                 relative overflow-hidden rounded-2xl border-2 shadow-[0_20px_50px_rgba(0,0,0,0.3)]
-                ${alert.severity === 'critical' ? 'bg-red-600 border-red-500' : 'bg-amber-500 border-amber-400'}
+                ${alertItem.severity === 'critical' ? 'bg-red-600 border-red-500' : 'bg-amber-500 border-amber-400'}
               `}>
                 {/* Visual Accent */}
                 <div className="absolute top-0 right-0 p-8 opacity-10 rotate-12 bg-white rounded-full -mr-10 -mt-10" />
                 
                 <div className="px-6 py-5 flex items-start gap-5 relative z-10">
                   <div className="p-3 bg-white/20 rounded-xl backdrop-blur-md shadow-inner">
-                    {alert.type === 'speeding' && <Activity size={24} className="text-white animate-pulse" />}
-                    {alert.type === 'missed_call' && <Phone size={24} className="text-white animate-bounce" />}
-                    {alert.type === 'panic' && <ShieldAlert size={24} className="text-white animate-[ping_1.5s_infinite]" />}
+                    {alertItem.type === 'speeding' && <Activity size={24} className="text-white animate-pulse" />}
+                    {alertItem.type === 'missed_call' && <Phone size={24} className="text-white animate-bounce" />}
+                    {alertItem.type === 'panic' && <ShieldAlert size={24} className="text-white animate-[ping_1.5s_infinite]" />}
                   </div>
                   
                   <div className="flex-1">
@@ -261,29 +273,37 @@ export default function AlertNotificationManager() {
                       <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/70">Alerta Crítico</span>
                       <div className="w-1 h-1 rounded-full bg-white animate-ping" />
                     </div>
-                    <h4 className="text-lg font-black text-white leading-none mb-1 uppercase italic tracking-tighter">{alert.title}</h4>
+                    <h4 className="text-lg font-black text-white leading-none mb-1 uppercase italic tracking-tighter">{alertItem.title}</h4>
                     <p className="text-sm text-white/90 font-bold leading-tight">
-                      {alert.type === 'missed_call' && alert.metadata?.callTimestamp ? (
-                        <>Cliente {alert.metadata.customerName || 'N/A'} está à espera há <WaitingTimer timestamp={alert.metadata.callTimestamp} className="underline font-black" />!</>
+                      {alertItem.type === 'missed_call' && alertItem.metadata?.callTimestamp ? (
+                        <>Cliente {alertItem.metadata.customerName || 'N/A'} está à espera há <WaitingTimer timestamp={alertItem.metadata.callTimestamp} className="underline font-black" />!</>
                       ) : (
-                        alert.message
+                        alertItem.message
                       )}
                     </p>
                   </div>
 
-                  <button 
-                    onClick={() => removeAlert(alert.id)}
-                    className="p-1.5 hover:bg-white/10 rounded-lg transition-all text-white/50 hover:text-white"
-                  >
-                    <X size={20} />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => alert('Respondendo ao alerta: ' + alertItem.title)}
+                      className="p-1.5 hover:bg-white/10 rounded-lg transition-all text-white/70 hover:text-white"
+                    >
+                      <MessageSquare size={18} />
+                    </button>
+                    <button 
+                      onClick={() => removeAlert(alertItem.id)}
+                      className="p-1.5 hover:bg-white/10 rounded-lg transition-all text-white/50 hover:text-white"
+                    >
+                      <X size={20} />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Progress bar for auto-dismiss */}
                 <motion.div 
                   initial={{ width: '100%' }}
                   animate={{ width: '0%' }}
-                  transition={{ duration: alert.type === 'panic' ? 30 : 15, ease: 'linear' }}
+                  transition={{ duration: alertItem.type === 'panic' ? 30 : 15, ease: 'linear' }}
                   className="h-1 bg-white/30 absolute bottom-0 left-0"
                 />
               </div>

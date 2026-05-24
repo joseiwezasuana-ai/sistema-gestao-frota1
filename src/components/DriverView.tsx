@@ -1183,17 +1183,13 @@ export default function DriverView({ user }: DriverViewProps) {
   };
 
   return (
-    <div className="flex items-center justify-center p-4 min-h-[calc(100vh-160px)]">
-      {/* Smartphone Container */}
-      <div className="relative w-[340px] h-[680px] bg-slate-900 rounded-[3rem] border-[8px] border-slate-800 shadow-[0_0_50px_rgba(0,0,0,0.3)] overflow-hidden">
-        {/* Notch */}
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-6 bg-slate-800 rounded-b-2xl z-50 flex items-center justify-center gap-1.5">
-          <div className="w-1.5 h-1.5 rounded-full bg-slate-700" />
-          <div className="w-8 h-1 rounded-full bg-slate-700" />
-        </div>
+    <div className="flex flex-col w-full h-full min-h-screen bg-slate-50">
+      <div className="relative w-full h-full flex flex-col overflow-hidden">
+        {/* Notch - hidden as requested */}
+        <div className="hidden absolute top-0 left-1/2 -translate-x-1/2 w-32 h-6 bg-slate-800 rounded-b-2xl z-50"></div>
 
         {/* Screen Content */}
-        <div className="relative h-full bg-slate-50 flex flex-col font-sans overflow-y-auto custom-scrollbar pt-8">
+        <div className="relative h-full bg-slate-50 flex flex-col font-sans overflow-y-auto custom-scrollbar">
           {/* Status Bar App Style */}
           <div className="px-6 py-2 flex items-center justify-between text-[11px] font-bold text-slate-400">
             <span>9:41</span>
