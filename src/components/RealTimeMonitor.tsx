@@ -45,6 +45,7 @@ import {
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { format } from 'date-fns';
+import WaitingTimer from './WaitingTimer';
 import { cn } from '../lib/utils';
 import RealTimeMap from './RealTimeMap';
 import GPSTimeline from './GPSTimeline';
@@ -65,6 +66,7 @@ export default function RealTimeMonitor({ user }: RealTimeMonitorProps) {
   const [statusFilter, setStatusFilter] = useState<string>('todos');
   const [pageSize, setPageSize] = useState(50);
   const [loading, setLoading] = useState(true);
+  const [shifts, setShifts] = useState<any[]>([]);
 
   // S.O.S Alerts monitoring states
   const [panicAlerts, setPanicAlerts] = useState<any[]>([]);
@@ -108,10 +110,15 @@ export default function RealTimeMonitor({ user }: RealTimeMonitorProps) {
     // 1. Listen for calls (PSM Operator)
     let qCalls = query(collection(db, 'calls'), orderBy('timestamp', 'desc'), limit(pageSize));
     
-    if (statusFilter !== 'todos' && activeSubTab === 'psm') {
+    if (statusFilter !== 'todos' && statusFilter !== 'encaminhada' && activeSubTab === 'psm') {
+      let dbStatus = statusFilter;
+      if (statusFilter === 'ativo') dbStatus = 'active';
+      if (statusFilter === 'concluída') dbStatus = 'completed';
+      if (statusFilter === 'cancelada') dbStatus = 'cancelled';
+
       qCalls = query(
         collection(db, 'calls'), 
-        where('status', '==', statusFilter),
+        where('status', '==', dbStatus),
         orderBy('timestamp', 'desc'), 
         limit(pageSize)
       );
@@ -144,12 +151,19 @@ export default function RealTimeMonitor({ user }: RealTimeMonitorProps) {
       setPanicAlerts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     }, (error) => handleFirestoreError(error, OperationType.GET, 'panic_alerts'));
 
+    // 6. Listen for Shifts (Scale)
+    const qShifts = query(collection(db, 'driver_scales'), orderBy('date', 'desc'), limit(150));
+    const unsubShifts = onSnapshot(qShifts, (snapshot) => {
+      setShifts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'driver_scales'));
+
     return () => {
       unsubCalls();
       unsubSms();
       unsubDrivers();
       unsubMaster();
       unsubPanic();
+      unsubShifts();
     };
   }, [statusFilter, pageSize, activeSubTab]);
 
@@ -310,10 +324,22 @@ export default function RealTimeMonitor({ user }: RealTimeMonitorProps) {
     }
   };
 
-  const filteredCalls = calls.filter(c => 
-    (c.customerName?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
-    (c.customerPhone || '').includes(searchTerm)
-  );
+  const filteredCalls = calls.filter(c => {
+    const matchesSearch = 
+      (c.customerName?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+      (c.customerPhone || '').includes(searchTerm) ||
+      (c.pickupAddress?.toLowerCase() || '').includes(searchTerm.toLowerCase());
+    
+    if (!matchesSearch) return false;
+
+    if (statusFilter === 'todos') return true;
+    if (statusFilter === 'ativo') return c.status === 'active' || c.status === 'ativo' || c.status === 'em curso';
+    if (statusFilter === 'concluída') return c.status === 'completed' || c.status === 'concluída' || c.status === 'finalizada';
+    if (statusFilter === 'cancelada') return c.status === 'cancelled' || c.status === 'cancelada' || c.status === 'failed';
+    if (statusFilter === 'encaminhada') return c.isForwarded === true || c.type === 'direct_referral' || c.status === 'forwarded' || c.status === 'transferred';
+
+    return true;
+  });
 
   const filteredSms = smsLogs.filter(s => 
     (s.content?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
@@ -324,7 +350,8 @@ export default function RealTimeMonitor({ user }: RealTimeMonitorProps) {
     { id: 'todos', label: 'Todos', icon: Activity },
     { id: 'ativo', label: 'Em Curso', icon: RefreshCcw },
     { id: 'concluída', label: 'Concluídas', icon: CheckCircle2 },
-    { id: 'cancelada', label: 'Canceladas', icon: XCircle }
+    { id: 'cancelada', label: 'Canceladas', icon: XCircle },
+    { id: 'encaminhada', label: 'Encaminhadas', icon: PhoneCall }
   ];
 
   return (
@@ -352,7 +379,7 @@ export default function RealTimeMonitor({ user }: RealTimeMonitorProps) {
           <div className="flex flex-wrap bg-slate-800/50 p-1.5 rounded-xl border border-slate-700/50 gap-1.5">
              {[
                { id: 'psm', label: 'Histórico PSM COMERCIAL', icon: Phone, color: 'bg-brand-primary', roles: ['admin', 'operator', 'contabilista', 'mecanico'] },
-               { id: 'unitel', label: 'Monitoria Unitel', icon: Wifi, color: 'bg-amber-500', roles: ['admin', 'operator', 'contabilista', 'mecanico'] },
+               { id: 'unitel', label: 'Monitoria Taxicontrol', icon: Wifi, color: 'bg-amber-500', roles: ['admin', 'operator', 'contabilista', 'mecanico'] },
                { id: 'map', label: 'Geolocalização Live', icon: MapIcon, color: 'bg-indigo-600', roles: ['admin', 'operator', 'mecanico'] },
                { id: 'gps_timeline', label: 'Auditoria GPS', icon: HistoryIcon, color: 'bg-teal-600', roles: ['admin', 'operator'] },
                { id: 'sos', label: 'Gestão de S.O.S 🚨', icon: ShieldAlert, color: 'bg-rose-700', roles: ['admin', 'operator'] },
@@ -386,7 +413,7 @@ export default function RealTimeMonitor({ user }: RealTimeMonitorProps) {
                   <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-brand-primary transition-colors" />
                   <input 
                       type="text" 
-                      placeholder={activeSubTab === 'psm' ? "Pesquisar por cliente, telefone..." : "Pesquisar por conteúdo SMS..."}
+                      placeholder={activeSubTab === 'psm' ? "Pesquisar por cliente, telefone..." : "Pesquisar por logs Taxicontrol..."}
                       className="w-full pl-11 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary transition-all outline-none"
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
@@ -455,11 +482,16 @@ export default function RealTimeMonitor({ user }: RealTimeMonitorProps) {
                             </div>
                         </div>
                         <div className="flex flex-col items-end gap-1.5">
-                            <span className={cn("px-2 py-0.5 rounded text-[9px] font-black uppercase border", getStatusColor(call.status))}>
-                            {call.status}
+                            <span className={cn("px-2 py-0.5 rounded text-[9px] font-black uppercase border", 
+                              (call.isForwarded || call.type === 'direct_referral' || call.status === 'forwarded')
+                                ? 'text-amber-600 bg-amber-50 border-amber-100'
+                                : getStatusColor(call.status)
+                            )}>
+                            {(call.isForwarded || call.type === 'direct_referral' || call.status === 'forwarded') ? 'encaminhada' : call.status}
                             </span>
                             <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1">
                             <Clock size={10} /> {call.timestamp?.toDate ? format(call.timestamp.toDate(), 'HH:mm:ss') : '--:--'}
+                            {call.status === 'pending' && <WaitingTimer timestamp={call.timestamp} className="ml-1 text-amber-600 font-black" />}
                             </div>
                         </div>
                     </div>

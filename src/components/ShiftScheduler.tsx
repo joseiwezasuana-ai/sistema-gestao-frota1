@@ -88,6 +88,15 @@ export default function ShiftScheduler({ user }: { user: UserProfile }) {
 
     const fetchMasters = async () => {
       try {
+        // Fetch maintenance logs to check for pending status
+        const maintSnap = await getDocs(collection(db, 'maintenance_logs'));
+        const pendingPrefixes = new Set(
+          maintSnap.docs
+            .map(doc => doc.data())
+            .filter(log => log.status === 'planned')
+            .map(log => log.prefix)
+        );
+
         // Fetch from drivers_master instead of users to include all personnel registered in the fleet
         const driversSnap = await getDocs(collection(db, 'drivers_master'));
         const driversList = driversSnap.docs.map(doc => ({ 
@@ -100,9 +109,12 @@ export default function ShiftScheduler({ user }: { user: UserProfile }) {
 
         const vehiclesSnap = await getDocs(collection(db, 'master_vehicles'));
         const vehiclesList = vehiclesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Vehicle[];
+        // Filter out vehicles that have pending maintenance
+        const filteredVehiclesList = vehiclesList.filter(v => !pendingPrefixes.has(v.prefix));
+        
         // Sort prefixes numerically (e.g., TX-01, TX-10)
-        vehiclesList.sort((a, b) => a.prefix.localeCompare(b.prefix, undefined, { numeric: true, sensitivity: 'base' }));
-        setVehicles(vehiclesList);
+        filteredVehiclesList.sort((a, b) => a.prefix.localeCompare(b.prefix, undefined, { numeric: true, sensitivity: 'base' }));
+        setVehicles(filteredVehiclesList);
       } catch (err) {
         console.error("Error fetching masters:", err);
       }
@@ -144,11 +156,33 @@ export default function ShiftScheduler({ user }: { user: UserProfile }) {
   const handleCloneShift = async (shift: Shift) => {
     try {
       const nextDay = addDays(parseISO(shift.date), 1);
+      const targetDate = format(nextDay, 'yyyy-MM-dd');
+      
+      const qDate = query(collection(db, 'driver_scales'), where('date', '==', targetDate));
+      const dateSnap = await getDocs(qDate);
+      
+      let conflictMsg = "";
+      dateSnap.forEach(docSnap => {
+        const s = docSnap.data();
+        if (s.status === 'Folga' || s.status === 'Suspenso') return;
+        
+        if (s.prefix === shift.prefix) {
+          conflictMsg = `A viatura ${shift.prefix} já está escalada para o dia ${targetDate}.`;
+        } else if (s.driverId === shift.driverId) {
+          conflictMsg = `Este motorista já está escalado para o dia ${targetDate}.`;
+        }
+      });
+
+      if (conflictMsg) {
+        alert(conflictMsg);
+        return;
+      }
+
       const data = {
         driverId: shift.driverId,
         driverName: shift.driverName,
         prefix: shift.prefix,
-        date: format(nextDay, 'yyyy-MM-dd'),
+        date: targetDate,
         shift: shift.shift,
         status: shift.status,
         updatedAt: serverTimestamp()
@@ -164,6 +198,28 @@ export default function ShiftScheduler({ user }: { user: UserProfile }) {
     if (!formData.driverId || !formData.prefix || !formData.date) return;
 
     try {
+      if (!editingShift) {
+        const qDate = query(collection(db, 'driver_scales'), where('date', '==', formData.date));
+        const dateSnap = await getDocs(qDate);
+        
+        let conflictMsg = "";
+        dateSnap.forEach(docSnap => {
+          const s = docSnap.data();
+          if (s.status === 'Folga' || s.status === 'Suspenso') return;
+          
+          if (s.prefix === formData.prefix) {
+            conflictMsg = `A viatura ${formData.prefix} já está escalada para o dia ${formData.date}.`;
+          } else if (s.driverId === formData.driverId) {
+            conflictMsg = `Este motorista já está escalado para o dia ${formData.date}.`;
+          }
+        });
+
+        if (conflictMsg) {
+          alert(conflictMsg);
+          return;
+        }
+      }
+
       const data = {
         ...formData,
         updatedAt: serverTimestamp()

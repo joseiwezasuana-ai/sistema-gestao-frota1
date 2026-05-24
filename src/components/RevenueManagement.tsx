@@ -22,7 +22,8 @@ import {
   Download,
   FileText,
   Loader2,
-  Printer
+  Printer,
+  Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
@@ -40,7 +41,7 @@ interface RevenueLog {
   prefix: string;
   amount: number;
   date: string;
-  status: 'vended_by_driver' | 'approved_by_operator' | 'approved_by_accountant' | 'finalized' | 'rejected_by_operator' | 'rejected_by_accountant' | 'archived' | 'paid_to_staff';
+  status: 'pending_approval' | 'approved_by_operator' | 'approved_by_accountant' | 'finalized' | 'rejected_by_operator' | 'rejected_by_accountant' | 'archived' | 'paid_to_staff';
   rejectionReason?: string;
   breakdown: {
     tpa: number;
@@ -64,6 +65,8 @@ export default function RevenueManagement({ user }: { user: any }) {
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [archivedRevenues, setArchivedRevenues] = useState<RevenueLog[]>([]);
+  const [calls, setCalls] = useState<any[]>([]);
+  const [smsLogs, setSmsLogs] = useState<any[]>([]);
 
   const isAdmin = user?.role === 'admin' || user?.email === 'joseiwezasuana@gmail.com';
   const isContabilista = user?.role === 'contabilista';
@@ -90,15 +93,27 @@ export default function RevenueManagement({ user }: { user: any }) {
 
     // Fetch Drivers for Filter
     const qDrivers = query(collection(db, 'drivers_master'), orderBy('name', 'asc'));
+    
+    // Fetch Calls and SMS
+    const qCalls = query(collection(db, 'calls'), orderBy('timestamp', 'desc'));
+    const qSms = query(collection(db, 'sms_logs'), orderBy('timestamp', 'desc'));
+
     const unsubscribeDrivers = onSnapshot(qDrivers, (snapshot) => {
       setDrivers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    }, (error) => {
-      handleFirestoreError(error, OperationType.GET, 'drivers_master');
     });
 
+    const unsubscribeCalls = onSnapshot(qCalls, (snapshot) => {
+      setCalls(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
+    const unsubscribeSms = onSnapshot(qSms, (snapshot) => {
+      setSmsLogs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
     return () => {
       unsubscribe();
       unsubscribeDrivers();
+      unsubscribeCalls();
+      unsubscribeSms();
     };
   }, [isContabilista, isAdmin]);
 
@@ -106,7 +121,7 @@ export default function RevenueManagement({ user }: { user: any }) {
     if (isHistoryModalOpen) {
       const q = query(
         collection(db, 'revenue_logs'), 
-        where('status', '==', 'archived'),
+        where('status', 'in', ['archived', 'finalized', 'paid_to_staff']),
         orderBy('timestamp', 'desc')
       );
       const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -212,7 +227,7 @@ export default function RevenueManagement({ user }: { user: any }) {
     const reason = window.prompt("Porquê está a reprovar esta renda? (Opcional)");
     if (reason === null) return; // Cancelled prompt
     
-    const nextStatus = currentStatus === 'vended_by_driver' ? 'rejected_by_operator' : 'rejected_by_accountant';
+    const nextStatus = currentStatus === 'pending_approval' ? 'rejected_by_operator' : 'rejected_by_accountant';
     handleStatusChange(revenueId, nextStatus, reason);
   };
 
@@ -237,9 +252,41 @@ export default function RevenueManagement({ user }: { user: any }) {
     }
   };
 
+  const handleDeleteArchive = async () => {
+    if (!isAdmin) return;
+    if (!confirm('Deseja eliminar permanentemente TODOS os registos arquivados? Esta ação é irreversível.')) return;
+    
+    setIsProcessing(true);
+    try {
+      for (const rev of archivedRevenues) {
+        await deleteDoc(doc(db, 'revenue_logs', rev.id));
+      }
+      alert('Arquivo limpo com sucesso!');
+      setIsHistoryModalOpen(false);
+    } catch (error) {
+      console.error(error);
+      alert('Erro ao eliminar arquivo.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleDeleteSingleArchive = async (revenueId: string) => {
+    if (!isAdmin) return;
+    if (!confirm('Deseja eliminar este registo? Esta ação é irreversível.')) return;
+    
+    try {
+      await deleteDoc(doc(db, 'revenue_logs', revenueId));
+      alert('Registo eliminado!');
+    } catch (error) {
+      console.error(error);
+      alert('Erro ao eliminar registo.');
+    }
+  };
+
   const getStatusDisplay = (status: string) => {
     switch (status) {
-      case 'vended_by_driver': return { label: 'Pendente Operador', color: 'bg-amber-50 text-amber-600 border-amber-100', icon: Clock };
+      case 'pending_approval': return { label: 'Pendente Operador', color: 'bg-amber-50 text-amber-600 border-amber-100', icon: Clock };
       case 'rejected_by_operator': return { label: 'Reprovado Operador', color: 'bg-red-50 text-red-600 border-red-100', icon: XCircle };
       case 'rejected_by_accountant': return { label: 'Reprovado Contab.', color: 'bg-red-50 text-red-600 border-red-100', icon: XCircle };
       case 'approved_by_operator': return { label: 'Pendente Contab.', color: 'bg-blue-50 text-blue-600 border-blue-100', icon: Clock };
@@ -265,8 +312,8 @@ export default function RevenueManagement({ user }: { user: any }) {
     return driverMatch;
   });
 
-  const canApproveOperator = (status: string) => isOperator && status === 'vended_by_driver';
-  const canApproveAccountant = (status: string) => isContabRole && status === 'approved_by_operator';
+  const canApproveOperator = (status: string) => (isOperator || isAdmin) && status === 'pending_approval';
+  const canApproveAccountant = (status: string) => (isContabRole || isAdmin) && status === 'approved_by_operator';
   const canApproveFinal = (status: string) => isAdmin && status === 'approved_by_accountant';
 
   const stats = {
@@ -274,11 +321,12 @@ export default function RevenueManagement({ user }: { user: any }) {
       .filter(r => (r.status === 'finalized' || r.status === 'paid_to_staff'))
       .reduce((acc, curr) => acc + (curr.amount || 0), 0),
     totalProcess: revenues
-      .filter(r => !['finalized', 'paid_to_staff'].includes(r.status))
+      .filter(r => !['finalized', 'paid_to_staff', 'archived'].includes(r.status))
       .reduce((acc, curr) => acc + (curr.amount || 0), 0),
     totalExpenses: revenues
+      .filter(r => r.status !== 'archived')
       .reduce((acc, curr) => acc + (curr.breakdown?.expenses || 0), 0),
-    todayCount: revenues.filter(r => r.date === new Date().toISOString().split('T')[0]).length
+    todayCount: revenues.filter(r => r.date === new Date().toISOString().split('T')[0] && r.status !== 'archived').length
   };
 
   const exportPDF = () => {
@@ -408,7 +456,7 @@ export default function RevenueManagement({ user }: { user: any }) {
                <Filter size={18} className="text-slate-400" />
              </div>
              <div className="flex gap-2 p-1.5 bg-white border border-slate-200 rounded-2xl">
-                {['all', 'vended_by_driver', 'approved_by_operator', 'approved_by_accountant', 'finalized', 'rejected_by_operator', 'rejected_by_accountant', 'paid_to_staff'].map((f) => (
+                {['all', 'pending_approval', 'approved_by_operator', 'approved_by_accountant', 'finalized', 'rejected_by_operator', 'rejected_by_accountant', 'paid_to_staff'].map((f) => (
                   <button
                     key={f}
                     onClick={() => setFilter(f)}
@@ -631,12 +679,26 @@ export default function RevenueManagement({ user }: { user: any }) {
                         <th className="px-8 py-5">Colaborador / Viatura</th>
                         <th className="px-8 py-5">Registos & Breakdown</th>
                         <th className="px-8 py-5">Líquido PSM</th>
+                        <th className="px-8 py-5">Comunicações</th>
                         <th className="px-8 py-5">Data Fecho</th>
                         <th className="px-8 py-5 text-right">Acções</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {archivedRevenues.map((rev) => (
+                      {archivedRevenues.map((rev) => {
+                        const driverCalls = calls.filter(c => c.driverId === rev.driverId || c.driverName === rev.driverName);
+                        // Filter calls for this specific date
+                        const dailyCalls = driverCalls.filter(c => {
+                          const callDate = c.timestamp?.toDate ? c.timestamp.toDate().toISOString().split('T')[0] : new Date(c.timestamp).toISOString().split('T')[0];
+                          return callDate === rev.date;
+                        });
+                        const driverSms = smsLogs.filter(s => s.driverId === rev.driverId);
+                        const dailySms = driverSms.filter(s => {
+                          const smsDate = s.timestamp?.toDate ? s.timestamp.toDate().toISOString().split('T')[0] : new Date(s.timestamp).toISOString().split('T')[0];
+                          return smsDate === rev.date;
+                        });
+
+                        return (
                         <tr key={rev.id} className="hover:bg-slate-50 transition-colors group/arch">
                           <td className="px-8 py-6">
                             <div className="flex items-center gap-3">
@@ -661,19 +723,34 @@ export default function RevenueManagement({ user }: { user: any }) {
                             <span className="text-sm font-black text-emerald-700 italic">{(rev.amount || 0).toLocaleString()} Kz</span>
                           </td>
                           <td className="px-8 py-6">
+                              <div className="flex flex-col gap-1 text-[9px] font-bold text-slate-500 uppercase tracking-tight">
+                                <span>📞 {dailyCalls.length} Chamadas</span>
+                                <span>💬 {dailySms.length} Alertas SMS</span>
+                              </div>
+                          </td>
+                          <td className="px-8 py-6">
                             <div className="flex items-center gap-2 text-slate-400">
                                <Calendar size={12} />
                                <span className="text-[10px] font-black uppercase tracking-tight">{rev.date}</span>
                             </div>
                           </td>
                           <td className="px-8 py-6 text-right">
-                             <div className="flex items-center justify-end gap-2 text-[10px] font-black text-slate-400 uppercase italic">
-                                <CheckCircle2 size={14} className="text-emerald-500" />
-                                Arquivado
+                             <div className="flex items-center justify-end gap-4 text-[10px] font-black text-slate-400 uppercase italic">
+                                <button 
+                                  onClick={() => handleDeleteSingleArchive(rev.id)}
+                                  className="text-rose-500 hover:text-rose-700 p-2 hover:bg-rose-50 rounded-lg transition-colors"
+                                  title="Eliminar registo"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                                <div className="flex items-center gap-2">
+                                  <CheckCircle2 size={14} className="text-emerald-500" />
+                                  Arquivado
+                                </div>
                              </div>
                           </td>
                         </tr>
-                      ))}
+                      )})}
                     </tbody>
                   </table>
                 )}
@@ -694,12 +771,21 @@ export default function RevenueManagement({ user }: { user: any }) {
                       </span>
                    </div>
                 </div>
-                <button 
-                  onClick={() => setIsHistoryModalOpen(false)}
-                  className="px-10 py-3 bg-slate-900 text-white rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-black transition-all shadow-xl shadow-black/20"
-                >
-                  Fechar Arquivo
-                </button>
+                <div className="flex gap-4">
+                  <button 
+                    onClick={handleDeleteArchive}
+                    disabled={isProcessing || archivedRevenues.length === 0}
+                    className="px-6 py-3 bg-rose-50 text-rose-600 rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-rose-100 transition-all border border-rose-100 disabled:opacity-50"
+                  >
+                    {isProcessing ? 'A eliminar...' : 'Eliminar Arquivo'}
+                  </button>
+                  <button 
+                    onClick={() => setIsHistoryModalOpen(false)}
+                    className="px-10 py-3 bg-slate-900 text-white rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-black transition-all shadow-xl shadow-black/20"
+                  >
+                    Fechar Arquivo
+                  </button>
+                </div>
               </div>
             </motion.div>
           </div>

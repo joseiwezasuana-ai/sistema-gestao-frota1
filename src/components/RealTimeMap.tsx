@@ -7,7 +7,7 @@ import 'leaflet/dist/leaflet.css';
 import { renderToString } from 'react-dom/server';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { Truck, Crosshair, Map as MapIcon, Globe, AlertCircle, Zap, User } from 'lucide-react';
+import { Truck, Crosshair, Map as MapIcon, Globe, AlertCircle, Zap, User, Phone } from 'lucide-react';
 import { animate } from 'motion/react';
 
 // Fix for Leaflet default icon issues in React/Webpack/Vite
@@ -142,13 +142,25 @@ const MovingTaxiMarker = ({ driver, onLocate }: { driver: any, onLocate: (d: any
       }}
     >
       <Popup offset={[0, -10]}>
-        <div className="p-1">
-          <p className="font-bold text-blue-700 text-xs mb-1 uppercase tracking-tighter italic">{driver.prefix}</p>
-          <p className="text-[10px] text-slate-800 font-medium">{driver.name}</p>
-          <div className="mt-1 pt-1 border-t border-slate-100 flex items-center justify-between gap-4">
+        <div className="p-2 min-w-[130px] font-sans">
+          <p className="font-bold text-brand-primary text-xs mb-1 uppercase tracking-tighter italic">{driver.prefix}</p>
+          <p className="text-[10px] text-slate-800 font-black leading-tight">{driver.name}</p>
+          {driver.phone && (
+            <p className="text-[9px] text-emerald-600 font-bold font-mono tracking-wider mt-1">{driver.phone}</p>
+          )}
+          <div className="mt-2 pt-1 border-t border-slate-100 flex items-center justify-between gap-4">
             <span className="text-[9px] text-slate-500 font-bold uppercase">{driver.status}</span>
             <span className="text-[9px] text-brand-primary font-black italic">{driver.speed || 0} KM/H</span>
           </div>
+          {driver.phone && (
+            <a 
+              href={`tel:${driver.phone}`}
+              onClick={(e) => e.stopPropagation()}
+              className="mt-2 text-center w-full block py-1.5 bg-emerald-500 hover:bg-emerald-600 font-sans text-[8px] font-black uppercase text-white rounded-lg tracking-widest leading-none transition-all shadow-sm"
+            >
+              Ligar Já
+            </a>
+          )}
         </div>
       </Popup>
     </Marker>
@@ -182,10 +194,68 @@ const MovingGoogleTaxiMarker = ({ driver }: { driver: any }) => {
   return <TaxiMarker lat={lat} lng={lng} driver={driver} />;
 };
 
+const isValidGoogleMapsKey = (key: string | null | undefined): boolean => {
+  if (!key) return false;
+  const cleanKey = key.trim();
+  if (cleanKey === '' || cleanKey === 'undefined' || cleanKey === 'null') return false;
+  if (!cleanKey.startsWith('AIzaSy')) return false;
+  if (cleanKey.includes('PLACEHOLDER') || cleanKey.includes('YOUR_') || cleanKey.includes('...') || cleanKey.includes('API_KEY')) return false;
+  if (cleanKey.length < 30) return false;
+  return true;
+};
+
+class MapErrorBoundary extends React.Component<{ onError: (error: Error) => void, children: React.ReactNode }, { hasError: boolean }> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  componentDidCatch(error: Error) {
+    this.props.onError(error);
+  }
+  render() {
+    if (this.state.hasError) {
+      return null;
+    }
+    return this.props.children;
+  }
+}
+
+const getGoogleCoords = (coords: any): { lat: number, lng: number } => {
+  if (Array.isArray(coords)) {
+    return { lat: Number(coords[0] || -11.7833), lng: Number(coords[1] || 19.9167) };
+  }
+  if (coords && typeof coords === 'object') {
+    return { lat: Number(coords.lat || -11.7833), lng: Number(coords.lng || 19.9167) };
+  }
+  return { lat: -11.7833, lng: 19.9167 };
+};
+
 export default function RealTimeMap() {
   const [useGoogleMaps, setUseGoogleMaps] = useState(false); // Default to Leaflet (OpenStreetMap)
+  const [googleMapsApiKey, setGoogleMapsApiKey] = useState<string | null>(null);
   const [googleMapsError, setGoogleMapsError] = useState<string | null>(null);
   const [drivers, setDrivers] = useState<any[]>([]);
+
+  const handleGoogleMapCrash = useCallback((error: Error) => {
+    console.error("Local Google Maps error caught:", error);
+    setGoogleMapsError("InvalidKeyMapError");
+    setUseGoogleMaps(false);
+  }, []);
+
+  useEffect(() => {
+    // Fetch Map configuration from server to avoid exposing API keys in build environment
+    fetch('/api/config')
+      .then(res => res.json())
+      .then(config => {
+        if (config.googleMapsApiKey) {
+          setGoogleMapsApiKey(config.googleMapsApiKey);
+        }
+      })
+      .catch(err => console.error("Error fetching map config:", err));
+  }, []);
 
   const [mapConfig, setMapConfig] = useState({
     center: [-11.7833, 19.9167] as [number, number],
@@ -254,7 +324,8 @@ export default function RealTimeMap() {
 
   const mapCenterArray = mapConfig.center;
 
-  const showGoogleError = googleMapsError || (useGoogleMaps && (!import.meta.env.VITE_GOOGLE_MAPS_API_KEY || import.meta.env.VITE_GOOGLE_MAPS_API_KEY === "undefined" || import.meta.env.VITE_GOOGLE_MAPS_API_KEY.includes("...")));
+  const isKeyValid = isValidGoogleMapsKey(googleMapsApiKey);
+  const showGoogleError = useGoogleMaps && (!isKeyValid || googleMapsError);
 
   return (
     <div className="h-full flex flex-col gap-6">
@@ -336,8 +407,8 @@ export default function RealTimeMap() {
                         <li>Verifique se a <strong>Faturação</strong> (Billing) está ativa.</li>
                       </ol>
                     </>
-                  ) : !import.meta.env.VITE_GOOGLE_MAPS_API_KEY ? (
-                    <p>A chave de API não foi configurada. Use o modo <strong>OpenMap</strong> ou configure o <code>VITE_GOOGLE_MAPS_API_KEY</code> nos Segredos.</p>
+                  ) : !googleMapsApiKey ? (
+                    <p>A chave de API não foi configurada. Use o modo <strong>OpenMap</strong> ou configure o <code>GOOGLE_MAPS_API_KEY</code> nos Segredos.</p>
                   ) : (
                     <p>Ocorreu um problema ao carregar o Google Maps. Verifique se a API está ativa e se as restrições de IP/Domínio estão corretas.</p>
                   )}
@@ -359,7 +430,7 @@ export default function RealTimeMap() {
                     Abrir Dashboard do Google Cloud
                   </button>
                 </div>
-                {import.meta.env.VITE_GOOGLE_MAPS_API_KEY && (
+                {googleMapsApiKey && (
                    <p className="mt-4 text-[10px] text-slate-400">
                      Certifique-se de que a "Maps JavaScript API" está ATIVA no seu painel Google Cloud.
                    </p>
@@ -368,29 +439,31 @@ export default function RealTimeMap() {
             </div>
           )}
 
-          {useGoogleMaps && !googleMapsError ? (
+          {useGoogleMaps && !googleMapsError && isKeyValid ? (
             <div className="h-full w-full">
+              <MapErrorBoundary onError={handleGoogleMapCrash}>
                 <GoogleMap
                   /* @ts-ignore */
-                  apiKey={import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''}
+                  apiKey={googleMapsApiKey}
                   /* @ts-ignore */
-                  defaultCenter={typeof mapConfig.center === 'object' && !Array.isArray(mapConfig.center) ? mapConfig.center : { lat: -11.7833, lng: 19.9167 }}
+                  defaultCenter={getGoogleCoords(mapConfig.center)}
                   /* @ts-ignore */
                   defaultZoom={mapConfig.zoom}
                   /* @ts-ignore */
-                  center={typeof mapConfig.center === 'object' && !Array.isArray(mapConfig.center) ? mapConfig.center : { lat: -11.7833, lng: 19.9167 }}
+                  center={getGoogleCoords(mapConfig.center)}
                   /* @ts-ignore */
                   zoom={mapConfig.zoom}
                   onGoogleApiLoaded={() => console.log('Google Maps API Loaded')}
                   mapMinHeight="100%"
                 >
-                {filteredDrivers.map(driver => (
-                  <MovingGoogleTaxiMarker 
-                    key={driver.id} 
-                    driver={driver}
-                  />
-                ))}
-              </GoogleMap>
+                  {filteredDrivers.map(driver => (
+                    <MovingGoogleTaxiMarker 
+                      key={driver.id} 
+                      driver={driver}
+                    />
+                  ))}
+                </GoogleMap>
+              </MapErrorBoundary>
             </div>
           ) : (
             <div className="h-full w-full">
@@ -444,16 +517,30 @@ export default function RealTimeMap() {
                   </div>
                   <p className="text-[11px] text-slate-500">{driver.name}</p>
                 </div>
-                <button 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleLocateDriver(driver);
-                  }}
-                  title="Localizar Motorista"
-                  className="p-2 text-slate-400 hover:text-brand-primary hover:bg-brand-light rounded-md transition-all active:scale-95 shadow-sm bg-white border border-slate-100"
-                >
-                  <Crosshair size={14} />
-                </button>
+                <div className="flex items-center gap-1.5">
+                  {driver.phone && (
+                    <a 
+                      href={`tel:${driver.phone}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                      }}
+                      title="Ligar para o Motorista"
+                      className="p-2 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 rounded-md transition-all active:scale-95 shadow-sm bg-white border border-slate-100 flex items-center justify-center cursor-pointer"
+                    >
+                      <Phone size={14} />
+                    </a>
+                  )}
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleLocateDriver(driver);
+                    }}
+                    title="Localizar Motorista"
+                    className="p-2 text-slate-400 hover:text-brand-primary hover:bg-brand-light rounded-md transition-all active:scale-95 shadow-sm bg-white border border-slate-100"
+                  >
+                    <Crosshair size={14} />
+                  </button>
+                </div>
               </div>
             ))}
             {filteredDrivers.length === 0 && (

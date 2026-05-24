@@ -29,6 +29,23 @@ export default function MaintenanceRegistry({ user }: { user?: any }) {
   const [masterVehicles, setMasterVehicles] = useState<any[]>([]);
   const [inventory, setInventory] = useState<any[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingLog, setEditingLog] = useState<any | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
+
+  const requestConfirm = (title: string, message: string, onConfirm: () => void) => {
+    setConfirmDialog({
+      isOpen: true,
+      title,
+      message,
+      onConfirm
+    });
+  };
+
   const [loading, setLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const currentMonth = new Date().toISOString().slice(0, 7);
@@ -53,6 +70,85 @@ export default function MaintenanceRegistry({ user }: { user?: any }) {
 
   const [selectedMaterial, setSelectedMaterial] = useState('');
   const [materialQty, setMaterialQty] = useState(1);
+
+  const openNewModal = () => {
+    setEditingLog(null);
+    setFormData({
+      vehicleId: '',
+      prefix: '',
+      type: 'Troca de Óleo',
+      mileage: '',
+      date: new Date().toISOString().split('T')[0],
+      cost: '',
+      status: 'planned',
+      description: '',
+      itemsUsed: []
+    });
+    setIsModalOpen(true);
+  };
+
+  const openEditModal = (log: any) => {
+    setEditingLog(log);
+    setFormData({
+      vehicleId: log.vehicleId || '',
+      prefix: log.prefix || '',
+      type: log.type || 'Troca de Óleo',
+      mileage: String(log.mileage || ''),
+      date: log.date || new Date().toISOString().split('T')[0],
+      cost: String(log.cost || ''),
+      status: log.status || 'planned',
+      description: log.description || '',
+      itemsUsed: log.itemsUsed || []
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleQuickComplete = (log: any) => {
+    requestConfirm(
+      "Concluir Manutenção",
+      `Pretende marcar a manutenção da viatura ${log.prefix} como concluída? As peças utilizadas serão retiradas do inventário.`,
+      async () => {
+        try {
+          const batch = writeBatch(db);
+          const logRef = doc(db, 'maintenance_logs', log.id);
+          
+          batch.update(logRef, {
+            status: 'completed',
+            deducted: true
+          });
+          
+          const itemsUsed = log.itemsUsed || [];
+          for (const itemUsage of itemsUsed) {
+            const itemDocRef = doc(db, 'warehouse_inventory', itemUsage.itemId);
+            const item = inventory.find(i => i.id === itemUsage.itemId);
+            if (item) {
+              batch.update(itemDocRef, {
+                stock: item.stock - itemUsage.quantity,
+                updatedAt: serverTimestamp()
+              });
+
+              const logMoveRef = doc(collection(db, 'warehouse_logs'));
+              batch.set(logMoveRef, {
+                itemId: itemUsage.itemId,
+                itemName: itemUsage.name,
+                quantity: itemUsage.quantity,
+                type: 'maintenance',
+                timestamp: serverTimestamp(),
+                user: user?.name || 'Sistema',
+                vehicleId: log.vehicleId,
+                maintenanceId: log.id
+              });
+            }
+          }
+          
+          await batch.commit();
+        } catch (error) {
+          handleFirestoreError(error, OperationType.WRITE, `maintenance_logs/${log.id}/complete`);
+          alert("Erro ao concluir manutenção.");
+        }
+      }
+    );
+  };
 
   useEffect(() => {
     const q = query(collection(db, 'maintenance_logs'), orderBy('date', 'desc'));
@@ -126,24 +222,106 @@ export default function MaintenanceRegistry({ user }: { user?: any }) {
     try {
       const batch = writeBatch(db);
       
-      // Add maintenance log
-      const logRef = doc(collection(db, 'maintenance_logs'));
-      batch.set(logRef, {
+      // Add or update maintenance log
+      const logRef = editingLog ? doc(db, 'maintenance_logs', editingLog.id) : doc(collection(db, 'maintenance_logs'));
+      
+      const wasDeductedBefore = editingLog?.deducted || false;
+      const isCompletedNow = formData.status === 'completed';
+      
+      const logData = {
         ...formData,
         prefix: selectedVehicle?.prefix || 'N/A',
         mileage: Number(formData.mileage),
         cost: Number(formData.cost),
-        timestamp: new Date().toISOString()
-      });
+        timestamp: editingLog ? (editingLog.timestamp || new Date().toISOString()) : new Date().toISOString(),
+        deducted: isCompletedNow
+      };
 
-      // If completed, deduct items from inventory
-      if (formData.status === 'completed') {
-        for (const itemUsage of formData.itemsUsed) {
+      if (editingLog) {
+        batch.update(logRef, logData);
+      } else {
+        batch.set(logRef, logData);
+      }
+
+      // If completed, deduct/adjust items from inventory
+      if (isCompletedNow) {
+        if (!wasDeductedBefore) {
+          // Case A: Newly completed. Deduct all itemsUsed
+          for (const itemUsage of formData.itemsUsed) {
+            const itemDocRef = doc(db, 'warehouse_inventory', itemUsage.itemId);
+            const item = inventory.find(i => i.id === itemUsage.itemId);
+            if (item) {
+              batch.update(itemDocRef, {
+                stock: item.stock - itemUsage.quantity,
+                updatedAt: serverTimestamp()
+              });
+
+              // Log movement
+              const logMoveRef = doc(collection(db, 'warehouse_logs'));
+              batch.set(logMoveRef, {
+                itemId: itemUsage.itemId,
+                itemName: itemUsage.name,
+                quantity: itemUsage.quantity,
+                type: 'maintenance',
+                timestamp: serverTimestamp(),
+                user: user?.name || 'Sistema',
+                vehicleId: formData.vehicleId,
+                maintenanceId: logRef.id
+              });
+            }
+          }
+        } else {
+          // Case B: Already completed & deducted, but items could have changed. Calculate differences.
+          const oldItemsMap = new Map<string, number>();
+          for (const oldItem of (editingLog.itemsUsed || [])) {
+            oldItemsMap.set(oldItem.itemId, oldItem.quantity);
+          }
+
+          const newItemsMap = new Map<string, number>();
+          for (const newItem of formData.itemsUsed) {
+            newItemsMap.set(newItem.itemId, newItem.quantity);
+          }
+
+          const allItemIds = new Set([...oldItemsMap.keys(), ...newItemsMap.keys()]);
+
+          for (const itemId of allItemIds) {
+            const oldQty = oldItemsMap.get(itemId) || 0;
+            const newQty = newItemsMap.get(itemId) || 0;
+            const diff = newQty - oldQty; // Positive = more items used (deduct), Negative = items returned (add back)
+
+            if (diff !== 0) {
+              const itemDocRef = doc(db, 'warehouse_inventory', itemId);
+              const item = inventory.find(i => i.id === itemId);
+              if (item) {
+                batch.update(itemDocRef, {
+                  stock: item.stock - diff,
+                  updatedAt: serverTimestamp()
+                });
+
+                // Log movement
+                const logMoveRef = doc(collection(db, 'warehouse_logs'));
+                batch.set(logMoveRef, {
+                  itemId: itemId,
+                  itemName: item.name,
+                  quantity: Math.abs(diff),
+                  type: diff > 0 ? 'maintenance_output_adjust' : 'maintenance_input_adjust',
+                  timestamp: serverTimestamp(),
+                  user: user?.name || 'Sistema',
+                  vehicleId: formData.vehicleId,
+                  maintenanceId: logRef.id
+                });
+              }
+            }
+          }
+        }
+      } else if (wasDeductedBefore) {
+        // Case C: Transitioned from completed to pending/planned. Return all items back to stock!
+        for (const itemUsage of (editingLog.itemsUsed || [])) {
           const itemDocRef = doc(db, 'warehouse_inventory', itemUsage.itemId);
           const item = inventory.find(i => i.id === itemUsage.itemId);
           if (item) {
             batch.update(itemDocRef, {
-              stock: item.stock - itemUsage.quantity,
+              stock: item.stock + itemUsage.quantity,
               updatedAt: serverTimestamp()
             });
 
@@ -153,7 +331,7 @@ export default function MaintenanceRegistry({ user }: { user?: any }) {
               itemId: itemUsage.itemId,
               itemName: itemUsage.name,
               quantity: itemUsage.quantity,
-              type: 'maintenance',
+              type: 'maintenance_returned',
               timestamp: serverTimestamp(),
               user: user?.name || 'Sistema',
               vehicleId: formData.vehicleId,
@@ -166,6 +344,7 @@ export default function MaintenanceRegistry({ user }: { user?: any }) {
       await batch.commit();
       
       setIsModalOpen(false);
+      setEditingLog(null);
       setFormData({
         vehicleId: '',
         prefix: '',
@@ -183,34 +362,74 @@ export default function MaintenanceRegistry({ user }: { user?: any }) {
     }
   };
 
-  const deleteMaintenance = async (id: string) => {
-    if (!window.confirm("Deseja realmente eliminar este registo de manutenção?")) return;
-    
-    try {
-      await deleteDoc(doc(db, 'maintenance_logs', id));
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `maintenance_logs/${id}`);
-    }
+  const deleteMaintenance = (id: string) => {
+    const log = logs.find(l => l.id === id);
+    requestConfirm(
+      "Eliminar Registo",
+      `Deseja realmente eliminar este registo de manutenção da viatura ${log?.prefix || ''}? Esta ação é irreversível e irá restaurar os materiais ao inventário.`,
+      async () => {
+        try {
+          const batch = writeBatch(db);
+          
+          // If the log was completed and deducted, restore material stock to inventory
+          if (log && log.status === 'completed' && log.deducted) {
+            const itemsUsed = log.itemsUsed || [];
+            for (const itemUsage of itemsUsed) {
+              const itemDocRef = doc(db, 'warehouse_inventory', itemUsage.itemId);
+              const item = inventory.find(i => i.id === itemUsage.itemId);
+              if (item) {
+                batch.update(itemDocRef, {
+                  stock: item.stock + itemUsage.quantity,
+                  updatedAt: serverTimestamp()
+                });
+
+                // Log movement
+                const logMoveRef = doc(collection(db, 'warehouse_logs'));
+                batch.set(logMoveRef, {
+                  itemId: itemUsage.itemId,
+                  itemName: itemUsage.name,
+                  quantity: itemUsage.quantity,
+                  type: 'maintenance_deleted_restore',
+                  timestamp: serverTimestamp(),
+                  user: user?.name || 'Sistema',
+                  vehicleId: log.vehicleId,
+                  maintenanceId: id
+                });
+              }
+            }
+          }
+          
+          batch.delete(doc(db, 'maintenance_logs', id));
+          await batch.commit();
+        } catch (error) {
+          handleFirestoreError(error, OperationType.DELETE, `maintenance_logs/${id}`);
+        }
+      }
+    );
   };
 
-  const handleResetCycle = async () => {
+  const handleResetCycle = () => {
     if (!isAdmin) return;
-    if (!window.confirm("Deseja zerar o ciclo de manutenção? Todos os registos concluídos serão arquivados e removidos da vista principal.")) return;
-
-    setIsProcessing(true);
-    try {
-      // Archive completed logs
-      const toArchive = logs.filter(log => log.status === 'completed');
-      for (const log of toArchive) {
-        await updateDoc(doc(db, 'maintenance_logs', log.id), { status: 'archived' });
+    requestConfirm(
+      "Zerar Ciclo de Manutenção",
+      "Deseja zerar o ciclo de manutenção? Todos os registos concluídos serão arquivados e removidos da vista principal.",
+      async () => {
+        setIsProcessing(true);
+        try {
+          // Archive completed logs
+          const toArchive = logs.filter(log => log.status === 'completed');
+          for (const log of toArchive) {
+            await updateDoc(doc(db, 'maintenance_logs', log.id), { status: 'archived' });
+          }
+          alert('Ciclo reiniciado! Registos concluídos foram arquivados.');
+        } catch (error) {
+          handleFirestoreError(error, OperationType.UPDATE, 'maintenance_logs/archive');
+          alert("Erro ao reiniciar ciclo.");
+        } finally {
+          setIsProcessing(false);
+        }
       }
-      alert('Ciclo reiniciado! Registos concluídos foram arquivados.');
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, 'maintenance_logs/archive');
-      alert("Erro ao reiniciar ciclo.");
-    } finally {
-      setIsProcessing(false);
-    }
+    );
   };
 
   const getStatusStyle = (status: string) => {
@@ -299,7 +518,7 @@ export default function MaintenanceRegistry({ user }: { user?: any }) {
               Exportar PDF
             </button>
             <button 
-              onClick={() => setIsModalOpen(true)}
+              onClick={openNewModal}
               className="bg-brand-primary hover:bg-brand-secondary text-white px-5 py-2.5 rounded-lg flex items-center gap-2 text-xs font-black shadow-lg shadow-brand-primary/20 transition-all uppercase tracking-widest active:scale-95"
             >
               <Plus size={16} />
@@ -436,15 +655,30 @@ export default function MaintenanceRegistry({ user }: { user?: any }) {
                   <td className="px-6 py-4 text-right">
                     <div className="flex items-center justify-end gap-2">
                        {!isContabilista && (
-                         <button 
-                           onClick={() => deleteMaintenance(log.id)}
-                           className="p-2 text-slate-400 hover:text-red-500 transition-colors"
-                           title="Eliminar"
-                         >
-                           <Trash2 size={18} />
-                         </button>
+                         <>
+                           {log.status === 'planned' && (
+                             <button 
+                               onClick={() => handleQuickComplete(log)}
+                               className="p-2 text-slate-400 hover:text-emerald-500 transition-colors"
+                               title="Concluir Manutenção"
+                             >
+                               <CheckCircle2 size={18} />
+                             </button>
+                           )}
+                           <button 
+                             onClick={() => deleteMaintenance(log.id)}
+                             className="p-2 text-slate-400 hover:text-red-500 transition-colors"
+                             title="Eliminar"
+                           >
+                             <Trash2 size={18} />
+                           </button>
+                         </>
                        )}
-                       <button className="p-2 text-slate-400 hover:text-brand-primary transition-colors">
+                       <button 
+                         onClick={() => openEditModal(log)}
+                         className="p-2 text-slate-400 hover:text-brand-primary transition-colors"
+                         title="Editar Registo"
+                       >
                          <ChevronRight size={18} />
                        </button>
                     </div>
@@ -485,8 +719,8 @@ export default function MaintenanceRegistry({ user }: { user?: any }) {
             >
               <div className="px-8 py-6 bg-slate-900 text-white flex items-center justify-between">
                 <div>
-                   <h3 className="text-lg font-black uppercase tracking-tighter">Registar Manutenção</h3>
-                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Início de intervenção técnica</p>
+                   <h3 className="text-lg font-black uppercase tracking-tighter">{editingLog ? 'Editar Manutenção' : 'Registar Manutenção'}</h3>
+                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{editingLog ? 'Atualização de intervenção técnica' : 'Início de intervenção técnica'}</p>
                 </div>
                 <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-white/10 rounded-full transition-colors">
                   <Search className="rotate-45" size={20} />
@@ -680,6 +914,53 @@ export default function MaintenanceRegistry({ user }: { user?: any }) {
                    </button>
                 </div>
               </form>
+            </motion.div>
+          </div>
+        )}
+
+        {confirmDialog && confirmDialog.isOpen && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setConfirmDialog(null)}
+              className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 15 }}
+              className="relative bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden border border-slate-100"
+            >
+              <div className="p-6 space-y-4">
+                <div className="w-12 h-12 rounded-full bg-slate-900 flex items-center justify-center text-white mb-2">
+                  <AlertCircle size={24} className="text-amber-500" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight">{confirmDialog.title}</h4>
+                  <p className="text-[10px] text-slate-500 font-bold mt-1.5 leading-relaxed">{confirmDialog.message}</p>
+                </div>
+                <div className="pt-2 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDialog(null)}
+                    className="flex-1 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[9px] font-black uppercase tracking-widest rounded-lg transition-colors border border-slate-200"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      confirmDialog.onConfirm();
+                      setConfirmDialog(null);
+                    }}
+                    className="flex-1 px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-[9px] font-black uppercase tracking-widest rounded-lg transition-colors"
+                  >
+                    Confirmar
+                  </button>
+                </div>
+              </div>
             </motion.div>
           </div>
         )}

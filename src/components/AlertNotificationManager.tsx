@@ -16,6 +16,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { collection, onSnapshot, query, orderBy, limit, Timestamp, where, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { format } from 'date-fns';
+import WaitingTimer from './WaitingTimer';
 
 interface Alert {
   id: string;
@@ -61,7 +62,8 @@ export default function AlertNotificationManager() {
             title: 'Chamada Abandonada',
             message: `Cliente ${call.customerName || 'N/A'} está à espera há mais de 5 min!`,
             severity: 'critical',
-            timestamp: new Date()
+            timestamp: new Date(),
+            metadata: { callTimestamp: ts, customerName: call.customerName }
           });
         }
       });
@@ -260,7 +262,13 @@ export default function AlertNotificationManager() {
                       <div className="w-1 h-1 rounded-full bg-white animate-ping" />
                     </div>
                     <h4 className="text-lg font-black text-white leading-none mb-1 uppercase italic tracking-tighter">{alert.title}</h4>
-                    <p className="text-sm text-white/90 font-bold leading-tight">{alert.message}</p>
+                    <p className="text-sm text-white/90 font-bold leading-tight">
+                      {alert.type === 'missed_call' && alert.metadata?.callTimestamp ? (
+                        <>Cliente {alert.metadata.customerName || 'N/A'} está à espera há <WaitingTimer timestamp={alert.metadata.callTimestamp} className="underline font-black" />!</>
+                      ) : (
+                        alert.message
+                      )}
+                    </p>
                   </div>
 
                   <button 

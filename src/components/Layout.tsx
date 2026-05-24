@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, 
   Truck, 
@@ -26,8 +26,12 @@ import {
   Calendar,
   BookOpen,
   Sun,
-  Moon
+  Moon,
+  AlertTriangle,
+  X
 } from 'lucide-react';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { useTheme } from '../context/ThemeContext';
@@ -45,6 +49,19 @@ interface LayoutProps {
 
 export default function Layout({ children, user, globalSettings, activeTab, onTabChange, onLogout, onToggleMobile, onEditProfile }: LayoutProps) {
   const { theme, toggleTheme } = useTheme();
+  const [panicAlerts, setPanicAlerts] = useState<any[]>([]);
+  const [isAlertsDropdownOpen, setIsAlertsDropdownOpen] = useState(false);
+
+  useEffect(() => {
+    const qPanic = query(collection(db, 'panic_alerts'), where('status', '==', 'active'));
+    const unsubscribePanic = onSnapshot(qPanic, (snapshot) => {
+      setPanicAlerts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => {
+      console.error("Layout panic listener error:", error);
+    });
+    return () => unsubscribePanic();
+  }, []);
+
   const menuItems = [
     { id: 'dashboard', label: 'Painel Geral', icon: LayoutDashboard },
     { id: 'recruitment', label: 'Portal de Recrutamento', icon: UserPlus, roles: ['admin', 'operator', 'mecanico'] },
@@ -55,6 +72,7 @@ export default function Layout({ children, user, globalSettings, activeTab, onTa
     { id: 'maintenance', label: 'Gestão de Oficinas', icon: Wrench, roles: ['admin', 'operator', 'mecanico', 'contabilista'] },
     { id: 'accounting', label: 'Hub Contabilidade', icon: Calculator, roles: ['admin', 'contabilista'] },
     { id: 'messages', label: 'Hub de Comunicações', icon: MessageSquare, roles: ['admin', 'operator'] },
+    { id: 'call_sms_dossier', label: 'Dossiê Comunicações', icon: FileText, roles: ['admin', 'operator'] },
     { id: 'baileys_gateway', label: 'Gateway Baileys', icon: MessageCircle, roles: ['admin', 'operator'] },
     { id: 'settings', label: 'Configurações', icon: SettingsIcon, roles: ['admin'] },
     { id: 'manual', label: 'Manual & Guia', icon: BookOpen, roles: ['admin', 'operator', 'contabilista', 'mecanico'] },
@@ -195,10 +213,89 @@ export default function Layout({ children, user, globalSettings, activeTab, onTa
             
             <div className="h-4 w-px bg-slate-200" />
 
-            <button className="relative text-slate-400 hover:text-brand-primary transition-all p-2 hover:bg-slate-50 rounded-lg">
-              <Bell size={18} />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white" />
-            </button>
+            <div className="relative">
+              <button 
+                onClick={() => setIsAlertsDropdownOpen(!isAlertsDropdownOpen)}
+                className={cn(
+                  "relative transition-all p-2 rounded-lg cursor-pointer focus:outline-none flex items-center justify-center",
+                  panicAlerts.length > 0 
+                    ? "text-red-500 hover:text-red-600 bg-red-500/10 hover:bg-red-500/20 animate-bounce" 
+                    : "text-slate-400 hover:text-brand-primary hover:bg-slate-50 dark:hover:bg-slate-800"
+                )}
+                title={panicAlerts.length > 0 ? `${panicAlerts.length} Alertas de Pânico Ativos` : "Sem Alertas"}
+              >
+                <Bell size={18} className={panicAlerts.length > 0 ? "text-red-500 animate-pulse" : ""} />
+                {panicAlerts.length > 0 ? (
+                  <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 bg-red-500 text-white rounded-full text-[9px] font-black flex items-center justify-center border border-white dark:border-slate-950">
+                    {panicAlerts.length}
+                  </span>
+                ) : null}
+              </button>
+
+              <AnimatePresence>
+                {isAlertsDropdownOpen && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    className="absolute right-0 mt-2 w-80 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl z-50 overflow-hidden text-slate-800 dark:text-slate-100"
+                  >
+                    <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                       <h3 className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                         <AlertTriangle size={14} className={panicAlerts.length > 0 ? "text-red-500" : "text-emerald-500"} />
+                         Alertas de Pânico
+                       </h3>
+                       <button 
+                         onClick={() => setIsAlertsDropdownOpen(false)}
+                         className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md text-slate-400"
+                       >
+                         <X size={14} />
+                       </button>
+                    </div>
+                    
+                    <div className="max-h-60 overflow-y-auto custom-scrollbar p-2 space-y-1.5">
+                       {panicAlerts.length > 0 ? (
+                          panicAlerts.map(alert => (
+                             <div 
+                               key={alert.id} 
+                               onClick={() => {
+                                 onTabChange('monitors');
+                                 setIsAlertsDropdownOpen(false);
+                               }}
+                               className="p-3 bg-red-50/50 dark:bg-red-500/5 hover:bg-red-100/50 dark:hover:bg-red-500/10 border border-red-100/50 dark:border-red-500/10 rounded-xl transition-all cursor-pointer flex items-center justify-between"
+                             >
+                                <div>
+                                   <p className="text-[10px] font-black text-red-600 dark:text-red-400 uppercase tracking-tight">SOS: {alert.prefix || 'TAX-Viatura'}</p>
+                                   <p className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider mt-0.5">{alert.driverName || 'Motorista'}</p>
+                                </div>
+                                <span className="text-[8px] font-black bg-red-500 text-white px-2 py-0.5 rounded-full uppercase tracking-wider animate-pulse font-mono shrink-0">Ativo</span>
+                             </div>
+                          ))
+                       ) : (
+                          <div className="py-8 px-4 text-center text-slate-450 dark:text-slate-500 text-xs font-black uppercase tracking-wider">
+                             🎉 Sem Alertas Pendentes!<br/>
+                             <span className="text-[9px] font-semibold tracking-normal text-slate-500 dark:text-slate-650 lowercase mt-1.5 block">bom trabalho, administrador!</span>
+                          </div>
+                       )}
+                    </div>
+                    
+                    {panicAlerts.length > 0 && (
+                      <div className="p-2.5 bg-slate-50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-800">
+                         <button 
+                           onClick={() => {
+                             onTabChange('monitors');
+                             setIsAlertsDropdownOpen(false);
+                           }}
+                           className="w-full py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-[9px] font-black uppercase tracking-widest transition-all"
+                         >
+                           Ver Detalhes do SOS
+                         </button>
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           </div>
         </header>
 

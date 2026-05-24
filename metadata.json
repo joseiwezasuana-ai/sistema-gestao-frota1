@@ -4,5 +4,5 @@
   "requestFramePermissions": [
     "geolocation"
   ],
-  "majorCapabilities": ["AI Insights", "Real-time Fleet Tracking", "Automated Accounting", "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

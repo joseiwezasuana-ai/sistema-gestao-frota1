@@ -17,7 +17,7 @@ export default defineConfig(({mode}) => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
+        includeAssets: ['logo.svg'],
         manifest: {
           name: 'SUPER Taxi Control',
           short_name: 'TaxiControl',
@@ -25,19 +25,9 @@ export default defineConfig(({mode}) => {
           theme_color: '#1e293b',
           icons: [
             {
-              src: 'pwa-192x192.png',
-              sizes: '192x192',
-              type: 'image/png'
-            },
-            {
-              src: 'pwa-512x512.png',
-              sizes: '512x512',
-              type: 'image/png'
-            },
-            {
-              src: 'pwa-512x512.png',
-              sizes: '512x512',
-              type: 'image/png',
+              src: 'logo.svg',
+              sizes: 'any',
+              type: 'image/svg+xml',
               purpose: 'any maskable'
             }
           ]
@@ -76,7 +66,7 @@ export default defineConfig(({mode}) => {
       }
     },
     define: {
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+      // process.env.GEMINI_API_KEY is now handled server-side only
     },
     resolve: {
       alias: {

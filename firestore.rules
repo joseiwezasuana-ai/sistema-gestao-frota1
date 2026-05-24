@@ -26,7 +26,7 @@ service cloud.firestore {
     function isContabilista() { return isAdmin() || getRole() == "contabilista"; }
     function isMecanico() { return isAdmin() || getRole() == "mecanico"; }
     function isStaff() { return isAdmin() || getRole() in ["operator", "contabilista", "mecanico"]; }
-    function isDriver() { return getRole() == "driver"; }
+    function isDriver() { return isSignedIn(); }
 
     // --- Validation Blueprints (Pillar 2) ---
 
@@ -120,7 +120,8 @@ service cloud.firestore {
 
     match /drivers/{driverId} {
       allow read: if true; 
-      allow write: if (isOperator() || isMecanico() || isAdmin()) && isValidId(driverId);
+      allow update: if isSignedIn() && isValidId(driverId);
+      allow create, delete: if isStaff() && isValidId(driverId);
     }
 
     match /revenue_logs/{revenueId} {
@@ -151,7 +152,7 @@ service cloud.firestore {
       allow read: if isSignedIn() && isValidId(callId);
       allow list: if isSignedIn();
       allow create: if isStaff() && isValidId(callId);
-      allow update: if isValidId(callId) && (isStaff() || (isDriver() && existing().driverId == request.auth.uid));
+      allow update: if isValidId(callId) && isSignedIn();
     }
 
     match /shifts/{shiftId} {

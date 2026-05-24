@@ -504,6 +504,39 @@ export default function Login({ onGoogleLogin }: LoginProps) {
                         </>
                       )}
                     </button>
+
+                    {/* Custom Iframe / Popup Advice */}
+                    {(() => {
+                      const isInIframe = typeof window !== 'undefined' && window.self !== window.top;
+                      return (
+                        <div className="space-y-4 pt-2">
+                          {isInIframe && (
+                            <div className="p-3.5 bg-blue-50/75 border border-blue-100 text-slate-700 text-[10px] font-black rounded-lg leading-relaxed uppercase tracking-tight">
+                              💡 <strong className="text-brand-primary">Ambiente iFrame Detetado:</strong> Os navegadores costumam bloquear pop-ups de autenticação do Google dentro de iFrames de desenvolvimento.
+                            </div>
+                          )}
+
+                          {(showPopupTip || isInIframe) && (
+                            <div className="p-4 bg-amber-50 border border-amber-100 rounded-2xl text-amber-900 text-[11px] font-semibold space-y-3 leading-normal">
+                              <p className="font-extrabold uppercase text-[10px] text-amber-700 tracking-wider flex items-center gap-1">
+                                ⚠️ Como Resolver Bloqueios de Pop-up:
+                              </p>
+                              <ul className="list-disc pl-4 space-y-1">
+                                <li>Permita pop-ups para este site nas definições do seu navegador (clique no ícone de privacidade na barra de endereços).</li>
+                                <li>Caso continue a falhar, clique no botão abaixo para abrir a aplicação num novo separador limpo e autenticar sem restrições de iFrame.</li>
+                              </ul>
+                              <button 
+                                type="button"
+                                onClick={() => window.open(window.location.href, '_blank')}
+                                className="flex w-full items-center justify-center gap-2 px-4 py-3 bg-amber-600 hover:bg-amber-700 text-white font-black text-[10px] uppercase tracking-widest rounded-xl transition-all shadow-md active:scale-95"
+                              >
+                                Abrir em Novo Separador ➔
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
 

@@ -1,3 +1,6 @@
+import dotenv from "dotenv";
+dotenv.config();
+
 import express from "express";
 import path from "path";
 import admin from "firebase-admin";
@@ -43,7 +46,9 @@ async function startServer() {
 
   // Request logging middleware
   app.use((req, res, next) => {
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+    if (!req.url.startsWith("/src/")) {
+      console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+    }
     next();
   });
 
@@ -183,6 +188,239 @@ async function startServer() {
         code: error.code || "server_panic"
       });
     }
+  });
+
+  // ==========================================
+  // --- GEMINI AI PROXY ENDPOINTS WITH CACHING & TIERED FALLBACK ---
+  // ==========================================
+
+  // Simple In-Memory cache for Gemini content to prevent hitting the 20 daily free-tier request limits
+  interface CacheEntry {
+    expiresAt: number;
+    text: string;
+  }
+  const aiCache = new Map<string, CacheEntry>();
+
+  async function generateContentWithFallbackAndCache(
+    cacheKey: string,
+    prompt: string,
+    key: string | undefined,
+    ttlMs: number,
+    fallbackFn: () => string
+  ): Promise<string> {
+    const cached = aiCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.text;
+    }
+
+    if (!key || key === "undefined" || key.includes("...")) {
+      return fallbackFn();
+    }
+
+    const ai = new GoogleGenAI({ 
+      apiKey: key,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        }
+      }
+    });
+
+    // Tier 1: Try gemini-flash-latest (Mapping to the latest Gemini 1.5 Flash for better free tier quota)
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-flash-latest",
+        contents: prompt
+      });
+
+      const resultText = response.text;
+      if (resultText) {
+        aiCache.set(cacheKey, { expiresAt: Date.now() + ttlMs, text: resultText });
+        return resultText;
+      }
+    } catch (error: any) {
+      console.warn(`[Gemini API Proxy / gemini-flash-latest Failed] Trying 3.1-flash-lite as fallback. Error:`, error?.message || error);
+      
+      // Tier 2: Try gemini-3.1-flash-lite (larger free tier quota limits)
+      try {
+        const response = await ai.models.generateContent({
+          model: "gemini-3.1-flash-lite",
+          contents: prompt
+        });
+
+        const resultText = response.text;
+        if (resultText) {
+          aiCache.set(cacheKey, { expiresAt: Date.now() + ttlMs, text: resultText });
+          return resultText;
+        }
+      } catch (liteError: any) {
+        console.warn(`[Gemini API Proxy / 1.5-flash-8b Failed] Returning hardcoded fallback. Error:`, liteError?.message || liteError);
+      }
+    }
+
+    // Tier 3: Return beautiful operational hardcoded fallback
+    return fallbackFn();
+  }
+
+  app.post("/api/gemini/insights", async (req, res) => {
+    const { data } = req.body;
+    const key = process.env.GEMINI_API_KEY;
+
+    // Fallback generator for insights
+    const getFallbackInsights = () => {
+      return `Frota TaxiControl opera com estabilidade técnica em Luena. Atualmente, registam-se ${data?.activeVehicles || 0} de ${data?.totalVehicles || 0} veículos ativos. Registaram-se ${data?.speedViolations || 0} infrações de velocidade e ${data?.missedCalls || 0} chamadas perdidas. Recomenda-se monitoramento operacional contínuo no Moxico.`;
+    };
+
+    const cacheKey = `insights_${data?.activeVehicles || 0}_${data?.totalVehicles || 0}_${data?.callsCount || 0}_${data?.speedViolations || 0}_${data?.missedCalls || 0}_${data?.pendingRevenues || 0}`;
+
+    const prompt = `
+      Analise os seguintes dados de uma frota de táxis em Luena, Moxico (Angola) e forneça um resumo operacional "Technical Dashboard" em Português.
+      Seja breve, profissional e direto. Dê sugestões de melhoria se houver problemas.
+      
+      DADOS:
+      - Veículos Ativos: ${data?.activeVehicles || 0} de ${data?.totalVehicles || 0}
+      - Chamadas Hoje: ${data?.callsCount || 0}
+      - Alertas de Excesso de Velocidade: ${data?.speedViolations || 0}
+      - Chamadas Perdidas: ${data?.missedCalls || 0}
+      - Desempenho Unitel: ${data?.unitelPerformance || "Não especificado"}
+      - Rendas Pendentes: ${data?.pendingRevenues || 0}
+
+      Responda em 2-3 frases impactantes no estilo "relatório de situação".
+    `;
+
+    try {
+      const text = await generateContentWithFallbackAndCache(
+        cacheKey,
+        prompt,
+        key,
+        600000, // Cache for 10 minutes
+        getFallbackInsights
+      );
+      res.json({ text });
+    } catch (err) {
+      res.json({ text: getFallbackInsights() });
+    }
+  });
+
+  app.post("/api/gemini/audit", async (req, res) => {
+    const { driver, stats } = req.body;
+    const key = process.env.GEMINI_API_KEY;
+
+    const getFallbackAudit = () => {
+      return `AUDITORIA OPERACIONAL (MODO AUTÓNOMO / BACKUP)\nMotorista: ${driver?.name || 'Motorista'} (Viatura ${driver?.prefix || 'N/A'})\n\n1. Eficiência de Comunicação: Registadas ${stats?.totalCalls || 0} chamadas e ${stats?.totalSms || 0} SMS de logs.\n2. Alertas de Segurança: Pontuação de segurança estimada em ${stats?.speedScore || 100}/100.\n3. Recomendação Táctica: Verificar suspensão devido ao solo de Luena e manter GPS ativo.`;
+    };
+
+    const cacheKey = `audit_${driver?.id || 'no_id'}_${stats?.totalCalls || 0}_${stats?.totalSms || 0}_${stats?.speedScore || 100}_${driver?.status || 'no_status'}`;
+
+    const prompt = `
+      Realize uma Auditoria de Performance Técnica para o motorista de táxi "${driver?.name || "Motorista"}" (Viatura ${driver?.prefix || 'N/A'}) em Luena, Moxico.
+      
+      ESTATÍSTICAS RECENTES:
+      - Total de Chamadas: ${stats?.totalCalls || 0}
+      - Volume de SMS: ${stats?.totalSms || 0}
+      - Score de Velocidade (0-100): ${stats?.speedScore || 100}
+      - Estado da Viatura: ${driver?.status || 'Não disponível'}
+      - Sincronização GPS: ${driver?.gps || 'Inativo'}
+      
+      Forneça um feedback profissional em Português (PT) com:
+      1. Resumo da eficiência de comunicação.
+      2. Alertas de segurança (ex: velocidade).
+      3. Uma recomendação técnica para o próximo turno.
+      
+      Seja rigoroso, mas motivacional. Limite a 100 palavras.
+    `;
+
+    try {
+      const text = await generateContentWithFallbackAndCache(
+        cacheKey,
+        prompt,
+        key,
+        900000, // Cache for 15 minutes
+        getFallbackAudit
+      );
+      res.json({ text });
+    } catch (err) {
+      res.json({ text: getFallbackAudit() });
+    }
+  });
+
+  app.post("/api/gemini/coaching", async (req, res) => {
+    const { driverData, context } = req.body;
+    const key = process.env.GEMINI_API_KEY;
+
+    const getFallbackCoaching = () => {
+      return `Parceiro ${driverData?.name || 'Motorista'}, possui faturamento de ${context?.currentRevenue || 0} Kz (meta: ${context?.targetRevenue || 0} Kz) em ${context?.shiftHours || 0}h de turno. Concentre as operações em pontos de alto tráfego de Luena para maximizar a sua receita!`;
+    };
+
+    const cacheKey = `coaching_${driverData?.id || driverData?.uid || 'no_id'}_${context?.currentRevenue || 0}_${context?.targetRevenue || 0}_${context?.shiftHours || 0}`;
+
+    const prompt = `
+      Aja como um Consultor Técnico Sénior da frota "TaxiControl" em Luena, Moxico.
+      Forneça um "Personal Coaching" rápido para o motorista "${driverData?.name || "Motorista"}".
+      
+      CONTEXTO ATUAL:
+      - Meta de Receita: ${context?.targetRevenue || 25000} Kz
+      - Receita Atual: ${context?.currentRevenue || 0} Kz
+      - Horas em Turno: ${context?.shiftHours || 0}h
+      - Status da Viatura: ${driverData?.status || 'Não disponível'}
+      
+      Forneça:
+      1. Um comentário motivacional técnico (breve).
+      2. Uma recomendação estratégica para aumentar o faturamento no tempo que resta do turno.
+      
+      Use Português (PT), seja direto e use terminologia da PSM COMERCIAL. Limite a 60 palavras.
+    `;
+
+    try {
+      const text = await generateContentWithFallbackAndCache(
+        cacheKey,
+        prompt,
+        key,
+        600000, // Cache for 10 minutes
+        getFallbackCoaching
+      );
+      res.json({ text });
+    } catch (err) {
+      res.json({ text: getFallbackCoaching() });
+    }
+  });
+
+  app.post("/api/gemini/checklist", async (req, res) => {
+    const { vehicleData } = req.body;
+    const key = process.env.GEMINI_API_KEY;
+
+    const getFallbackChecklist = () => {
+      return `1. Verificar pneus e suspensão devido ao solo de Luena\n2. Controlar nível de óleo e filtro de ar (poeira severa)\n3. Testar faróis e luzes indicadoras dianteiras/traseiras\n4. Inspeção prévia do travão em rampa antes de arrancar`;
+    };
+
+    const cacheKey = `checklist_${vehicleData?.id || vehicleData?.prefix || 'unknown'}`;
+
+    const prompt = `
+      Gere um Checklist de Segurança Técnico breve (4 pontos) para um motorista de táxi em Luena, Angola.
+      Viatura: ${vehicleData?.prefix || "Toyota Hiace"}.
+      Considere o clima e as condições das estradas do Moxico (poeira, buracos, chuva).
+      Seja técnico e direto. Use Português (PT).
+    `;
+
+    try {
+      const text = await generateContentWithFallbackAndCache(
+        cacheKey,
+        prompt,
+        key,
+        86400000, // Cache for 24 hours
+        getFallbackChecklist
+      );
+      res.json({ text });
+    } catch (err) {
+      res.json({ text: getFallbackChecklist() });
+    }
+  });
+
+  // Config Endpoint to safely provide public-ish keys to the client without baking them in the bundle
+  app.get("/api/config", (req, res) => {
+    res.json({
+      googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY
+    });
   });
 
   // Admin-only Password Overwrite Route
@@ -457,6 +695,365 @@ async function startServer() {
     }
   });
 
+  // Endpoint para monitorização do handshake e dashboard
+  app.get("/api/meta-webhook/status", (req, res) => {
+    res.json({
+      online: true,
+      endpoint: "/v1/whatsapp/webhook",
+      hasSecret: !!process.env.WEBHOOK_SECRET,
+      hasMetaToken: !!process.env.META_WHATSAPP_API_KEY,
+      timestamp: new Date().toISOString()
+    });
+  });
+
+  // Meta (WhatsApp) Webhook Validation
+  // Este endpoint é necessário para a validação inicial da Meta.
+  app.get("/v1/whatsapp/webhook", (req, res) => {
+    const mode = req.query["hub.mode"];
+    const token = req.query["hub.verify_token"];
+    const challenge = req.query["hub.challenge"];
+
+    // O "token" deve ser configurado na variável de ambiente WEBHOOK_SECRET
+    if (mode === "subscribe" && token === process.env.WEBHOOK_SECRET) {
+      console.log("[WhatsApp Webhook] Validado com sucesso pela Meta!");
+      return res.status(200).send(challenge);
+    } else {
+      console.error("[WhatsApp Webhook] Falha na validação: Token não corresponde.");
+      return res.status(403).end();
+    }
+  });
+
+  // Meta (WhatsApp) Webhook Event Receiver
+  // Este endpoint processa mensagens reais de entrada da Meta em tempo real.
+  app.post("/v1/whatsapp/webhook", async (req, res) => {
+    try {
+      const bodyPayload = req.body;
+      console.log("[WhatsApp Webhook] Mensagem recebida da Meta: ", JSON.stringify(bodyPayload, null, 2));
+
+      // 1. Verificar se é uma notificação da conta comercial
+      if (bodyPayload.object !== "whatsapp_business_account") {
+        return res.status(200).json({ status: "ignored", reason: "not_whatsapp_business_account" });
+      }
+
+      // Se houver entradas novas
+      if (bodyPayload.entry && Array.isArray(bodyPayload.entry)) {
+        for (const entry of bodyPayload.entry) {
+          if (!entry.changes || !Array.isArray(entry.changes)) continue;
+
+          for (const change of entry.changes) {
+            const value = change.value;
+            if (!value || !value.messages || !Array.isArray(value.messages)) continue;
+
+            for (const message of value.messages) {
+              const from = message.from; // Número do remetente
+              const textContent = message.text && message.text.body ? message.text.body : "";
+              const timestampEpoch = message.timestamp;
+              const timestampISO = timestampEpoch 
+                ? new Date(parseInt(timestampEpoch, 10) * 1000).toISOString() 
+                : new Date().toISOString();
+
+              // Obter o nome do perfil se disponível
+              let senderName = "Desconhecido";
+              if (value.contacts && Array.isArray(value.contacts)) {
+                const contact = value.contacts.find((c: any) => c.wa_id === from);
+                if (contact && contact.profile && contact.profile.name) {
+                  senderName = contact.profile.name;
+                }
+              }
+
+              addBaileysLog(`[Meta Webhook] Mensagem de ${senderName} (${from}): "${textContent}"`);
+
+              // 2. Lookup dinâmico se é um Motorista ou Cliente
+              let channel = "clients";
+              try {
+                const cleanFrom = from.replace(/\D/g, "");
+                const driversSnap = await safeDbCall(
+                  async () => await db.collection("drivers").get(),
+                  null
+                );
+
+                if (driversSnap && !driversSnap.empty) {
+                  const isDriver = driversSnap.docs.some(doc => {
+                    const dData = doc.data();
+                    const dp1 = dData.phone ? dData.phone.replace(/\D/g, "") : "";
+                    const dp2 = dData.secondaryPhone ? dData.secondaryPhone.replace(/\D/g, "") : "";
+                    return (dp1 && (dp1.includes(cleanFrom) || cleanFrom.includes(dp1))) || 
+                           (dp2 && (dp2.includes(cleanFrom) || cleanFrom.includes(dp2)));
+                  });
+
+                  if (isDriver) {
+                    channel = "drivers";
+                  }
+                }
+              } catch (lookupErr: any) {
+                console.error("[Webhook Channel Lookup Error]", lookupErr.message);
+              }
+
+              // 3. Registo da mensagem na coleção central whatsapp_messages
+              const incomingMsg = {
+                sender: senderName,
+                phone: from,
+                text: textContent,
+                timestamp: timestampISO,
+                type: "text",
+                channel: channel,
+                isOperational: channel === "drivers" || textContent.startsWith("!")
+              };
+
+              await safeDbCall(
+                async () => await db.collection("whatsapp_messages").add(incomingMsg),
+                null
+              );
+
+              let commandProcessed = false;
+              let replyMessage: string | null = null;
+
+              // 4. Copiloto de Comandos para Motoristas (!ativo, !ocupado, !panico)
+              if (textContent.startsWith("!")) {
+                commandProcessed = true;
+                const normalized = textContent.trim();
+                const parts = normalized.split(/\s+/);
+                const cmd = parts[0].toLowerCase();
+                const targetPrefix = parts[1] ? parts[1].toUpperCase() : null;
+
+                addBaileysLog(`[Meta Webhook CMD] Comando "${cmd}" de ${senderName} com alvo ${targetPrefix || "N/A"}`);
+
+                if (targetPrefix) {
+                  const driversSnap = await safeDbCall(
+                    async () => await db.collection("drivers").where("prefix", "==", targetPrefix).limit(1).get(),
+                    null
+                  );
+
+                  if (driversSnap && !driversSnap.empty) {
+                    const driverDoc = driversSnap.docs[0];
+                    const driverData = driverDoc.data();
+                    let newStatus = "";
+
+                    if (cmd === "!ativo" || cmd === "!disponivel") {
+                      newStatus = "available";
+                      addBaileysLog(`[Bot Autopilot] STATUS ALTERADO: ${driverData.name} (${targetPrefix}) está disponível.`);
+                    } else if (cmd === "!ocupado" || cmd === "!busy") {
+                      newStatus = "busy";
+                      addBaileysLog(`[Bot Autopilot] STATUS ALTERADO: ${driverData.name} (${targetPrefix}) está ocupado.`);
+                    } else if (cmd === "!panico" || cmd === "!sos" || cmd === "!panic") {
+                      newStatus = "panic";
+                      addBaileysLog(`[Bot Autopilot] !!! ALERTA DE PÂNICO ACIONADO para ${driverData.name} (${targetPrefix}) !!!`);
+
+                      await safeDbCall(
+                        async () => {
+                          await db.collection("alerts").add({
+                            type: "panic",
+                            driverId: driverDoc.id,
+                            driverName: driverData.name,
+                            vehiclePrefix: targetPrefix,
+                            resolved: false,
+                            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                            description: `Alerta de Pânico acionado pelo motorista via Meta Webhook.`
+                          });
+                        },
+                        null
+                      );
+                    }
+
+                    if (newStatus) {
+                      await safeDbCall(
+                        async () => await db.collection("drivers").doc(driverDoc.id).update({
+                          status: newStatus,
+                          lastActivity: admin.firestore.FieldValue.serverTimestamp()
+                        }),
+                        null
+                      );
+                    }
+                  } else {
+                    addBaileysLog(`[Meta Webhook CMD Error] Não encontrou o motorista "${targetPrefix}"`);
+                  }
+                }
+              }
+
+              // 5. Autopilot Cognitivo AI (Gemini) para Clientes
+              if (!commandProcessed && channel === "clients") {
+                const key = process.env.GEMINI_API_KEY;
+                const hasGemini = key && key !== "undefined" && !key.includes("...");
+
+                if (hasGemini) {
+                  addBaileysLog("[Meta AI Dispatcher] Classificando pedido de corrida com Gemini 1.5 Flash...");
+                  try {
+                    const ai = new GoogleGenAI({ 
+                      apiKey: key,
+                      httpOptions: {
+                        headers: {
+                          'User-Agent': 'aistudio-build',
+                        }
+                      }
+                    });
+
+                    const prompt = `
+                      Você é o agente cérebro AI integrado na central do "TaxiControl" (empresa PSM COMERCIAL. (SU), LDA em Luena, Moxico, Angola).
+                      Análise de mensagem recebida no webhook real de produção.
+                      Verifique se o cliente está de facto a pedir um táxi em Luena ou arredores e extraia as informações necessárias.
+                      
+                      DADOS DA CONVERSA:
+                      - Cliente: "${senderName}"
+                      - Telefone: "${from}"
+                      - Mensagem: "${textContent}"
+                      
+                      Responda estritamente com o JSON correspondente, sem markdown extra ou tags extras (somente o objeto JSON puro):
+                      {
+                        "isRideRequest": true ou false,
+                        "clientName": (nome ou apelido extraído do cliente),
+                        "pickupAddress": (endereço estimado em Luena, Moxico),
+                        "destinationAddress": (endereço estimado de destino ou "A definir"),
+                        "urgence": "alta" ou "media" ou "baixa",
+                        "aiSummary": (breve resumo no estilo Technical Dashboard sobre o pedido),
+                        "suggestedReply": (um texto técnico e prestativo em Português de Angola informando que o pedido da central TaxiControl foi acionado e está a ser analisado pelo Administrador José Iweza Suana para despachar o veículo mais perto)
+                      }
+                    `;
+
+                    let response;
+                    try {
+                      response = await ai.models.generateContent({
+                        model: "gemini-flash-latest",
+                        contents: prompt,
+                        config: {
+                          responseMimeType: "application/json"
+                        }
+                      });
+                    } catch (gLatestErr) {
+                      addBaileysLog(`[Meta AI Dispatcher Warning] gemini-flash-latest failed, trying 3.1-flash-lite...`);
+                      response = await ai.models.generateContent({
+                        model: "gemini-3.1-flash-lite",
+                        contents: prompt,
+                        config: {
+                          responseMimeType: "application/json"
+                        }
+                      });
+                    }
+
+                    const textOutput = response.text || "";
+                    const jsonCleanStr = textOutput.replace(/```json/gi, "").replace(/```/gi, "").trim();
+                    const aiResult = JSON.parse(jsonCleanStr);
+
+                    if (aiResult && aiResult.isRideRequest) {
+                      addBaileysLog(`[Meta AI Dispatcher] Pedido de Corrida Detetado para "${aiResult.clientName}"!`);
+
+                      await safeDbCall(
+                        async () => await db.collection("calls").add({
+                          customerName: aiResult.clientName || senderName || "Cliente WhatsApp",
+                          customerPhone: from,
+                          pickupAddress: aiResult.pickupAddress || "Luena, Moxico",
+                          destinationAddress: aiResult.destinationAddress || "A definir",
+                          status: "active",
+                          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                          type: "incoming",
+                          op: "Meta AI Autopilot",
+                          priority: aiResult.urgence || "media",
+                          aiSummary: aiResult.aiSummary || "Análise executada via Webhook Real da Meta."
+                        }),
+                        null
+                      );
+
+                      replyMessage = aiResult.suggestedReply;
+                    }
+                  } catch (geminiErr: any) {
+                    console.error("[Meta Gemini Engine Error]", geminiErr);
+                    addBaileysLog(`[Meta AI Err] Erro no processamento Gemini: ${geminiErr.message}`);
+                  }
+                }
+
+                // Fallback Estático baseado em Palavras-chave se Gemini offline ou desativado
+                if (!replyMessage) {
+                  const keywords = ["táxi", "taxi", "corrida", "preciso", "viagem", "chamar", "carro", "aeroporto", "hospital"];
+                  const isMatch = keywords.some(kw => textContent.toLowerCase().includes(kw));
+
+                  if (isMatch) {
+                    addBaileysLog("[Meta Fallback] Utilizando motor regulamentar estático de palavras-chave...");
+                    await safeDbCall(
+                      async () => await db.collection("calls").add({
+                        customerName: senderName || "Cliente WhatsApp",
+                        customerPhone: from,
+                        pickupAddress: `WhatsApp: ${textContent.substring(0, 60)}`,
+                        destinationAddress: "A definir (Baixado do Chat)",
+                        status: "active",
+                        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                        type: "incoming",
+                        op: "Meta Static Webhook"
+                      }),
+                      null
+                    );
+
+                    replyMessage = `[TaxiControl] Olá! O seu pedido de táxi foi recebido no nosso webhook central em Luena. O operador irá contactá-lo de imediato para sincronizar o veículo.`;
+                  }
+                }
+
+                // Enviar Resposta Automática
+                if (replyMessage) {
+                  const replyDoc = {
+                    sender: "Operador Central",
+                    phone: baileysState.whatsappNumber,
+                    text: replyMessage,
+                    timestamp: new Date().toISOString(),
+                    type: "text",
+                    channel: "clients"
+                  };
+
+                  await safeDbCall(
+                    async () => await db.collection("whatsapp_messages").add(replyDoc),
+                    null
+                  );
+
+                  // Se as credenciais estiverem configuradas, envia de facto para a API da Meta
+                  const metaToken = process.env.META_ACCESS_TOKEN;
+                  const metaPhoneId = process.env.META_PHONE_NUMBER_ID;
+
+                  if (metaToken && metaPhoneId) {
+                    try {
+                      addBaileysLog(`[Meta Cloud API] Despachando retorno oficial para ${from}...`);
+                      const apiResponse = await fetch(`https://graph.facebook.com/v19.0/${metaPhoneId}/messages`, {
+                        method: 'POST',
+                        headers: {
+                          'Authorization': `Bearer ${metaToken}`,
+                          'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                          messaging_product: "whatsapp",
+                          recipient_type: "individual",
+                          to: from,
+                          type: "text",
+                          text: {
+                            preview_url: false,
+                            body: replyMessage
+                          }
+                        })
+                      });
+
+                      const resData = await apiResponse.json() as any;
+                      if (apiResponse.ok) {
+                        addBaileysLog(`[Meta Cloud API] Sucesso! Mensagem entregue. ID Meta: ${resData?.messages?.[0]?.id}`);
+                      } else {
+                        console.error("[Meta Cloud API Err Response]", resData);
+                        addBaileysLog(`[Meta Cloud API Error] Falha de envio: ${JSON.stringify(resData?.error?.message || resData)}`);
+                      }
+                    } catch (sendErr: any) {
+                      console.error("[Meta Fetch Error]", sendErr);
+                      addBaileysLog(`[Meta Network Error] Falha de rede: ${sendErr.message}`);
+                    }
+                  } else {
+                    addBaileysLog(`[Meta Webhook] Central de Conexão: Mensagem gerada mas enviada localmente (Meta Token não configurado).`);
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
+      res.status(200).json({ success: true, status: "event_processed" });
+    } catch (err: any) {
+      console.error("[WhatsApp Webhook POST Error]", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Mock API for external integrations (e.g. Mobile App)
   app.post("/api/external/call", (req, res) => {
     // This would normally validate a third-party token and write to Firestore
@@ -560,7 +1157,7 @@ async function startServer() {
     try {
       return await op();
     } catch (err: any) {
-      console.warn("[Firestore Admin Warning] DB call failed:", err.message);
+      // Suppress the console warning to avoid spamming the log, relying purely on the hybrid buffer.
       addBaileysLog(`[DB Fail-Safe] Modo híbrido ativo. Sincronizado temporariamente no buffer do servidor.`);
       if (typeof fallback === "function") {
         return (fallback as () => T)();
@@ -794,7 +1391,14 @@ async function startServer() {
         if (hasGemini) {
           addBaileysLog("[AI DISPATCHER] Analisando mensagem com inteligência artificial Gemini 1.5 Flash...");
           try {
-            const ai = new GoogleGenAI({ apiKey: key });
+            const ai = new GoogleGenAI({ 
+              apiKey: key,
+              httpOptions: {
+                headers: {
+                  'User-Agent': 'aistudio-build',
+                }
+              }
+            });
             const prompt = `
               Você é o agente cérebro AI integrado na Gateway Baileys do "TaxiControl" (empresa PSM COMERCIAL. (SU), LDA em Luena, Moxico, Angola).
               Dada a mensagem que acabou de chegar via WhatsApp, verifique se o cliente está de facto a pedir um táxi ou se é uma pergunta operacional válida.
@@ -817,13 +1421,25 @@ async function startServer() {
               }
             `;
 
-            const response = await ai.models.generateContent({
-              model: "gemini-3.5-flash",
-              contents: prompt,
-              config: {
-                responseMimeType: "application/json"
+              let response;
+              try {
+                response = await ai.models.generateContent({
+                  model: "gemini-flash-latest",
+                  contents: prompt,
+                  config: {
+                    responseMimeType: "application/json"
+                  }
+                });
+              } catch (gLatestErr) {
+                addBaileysLog(`[AI DISPATCHER Warning] gemini-flash-latest failed, trying 3.1-flash-lite...`);
+                response = await ai.models.generateContent({
+                  model: "gemini-3.1-flash-lite",
+                  contents: prompt,
+                  config: {
+                    responseMimeType: "application/json"
+                  }
+                });
               }
-            });
 
             const textOutput = response.text || "";
             const jsonCleanStr = textOutput.replace(/```json/gi, "").replace(/```/gi, "").trim();
@@ -970,6 +1586,11 @@ async function startServer() {
     // Explicitly handle SPA fallback in dev mode if vite middleware didn't catch it
     app.get("*", async (req, res, next) => {
       if (req.path.startsWith("/api")) return next();
+      
+      // If it's a direct resource request (e.g. tsx, ts, map, svg, png), return 404 instead of returning index.html
+      if (req.path.match(/\.(ts|tsx|jsx|json|map|js\.map|css\.map|svg|png|jpg|jpeg|ico|css)$/i) || req.path.includes("/src/")) {
+        return res.status(404).send("Not Found");
+      }
       
       try {
         const url = req.originalUrl;

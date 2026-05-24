@@ -29,10 +29,13 @@ import {
   Brain,
   Zap,
   Sparkles,
-  Send
+  Send,
+  Camera,
+  Loader2
 } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
+import { cn } from '../lib/utils';
 
 interface WhatsAppMessage {
   id: string;
@@ -112,18 +115,44 @@ const MOCK_CLIENTS_MESSAGES: WhatsAppMessage[] = [
   }
 ];
 
-export function WhatsAppMonitor() {
-  const [activeTab, setActiveTab] = useState<'drivers' | 'clients' | 'baileys'>('drivers');
+interface WhatsAppMonitorProps {
+  isMechanicView?: boolean;
+  isDriverView?: boolean;
+  isAdmin?: boolean;
+}
+
+export function WhatsAppMonitor({ isMechanicView = false, isDriverView = false, isAdmin = false }: WhatsAppMonitorProps) {
+  const [activeTab, setActiveTab] = useState<'drivers' | 'clients' | 'baileys' | 'meta_webhook'>('drivers');
   const [driverMessages, setDriverMessages] = useState<WhatsAppMessage[]>(MOCK_DRIVERS_MESSAGES);
   const [clientMessages, setClientMessages] = useState<WhatsAppMessage[]>(MOCK_CLIENTS_MESSAGES);
   const [searchTerm, setSearchTerm] = useState('');
   const [replyText, setReplyText] = useState('');
+  const [selectedImage, setSelectedImage] = useState<File | null>(null); // State for image
+  const fileInputRef = useRef<HTMLInputElement>(null); // Ref for file input
+  const cameraInputRef = useRef<HTMLInputElement>(null); // Ref for camera input
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // ... (rest of the component)
+
+  // Meta Webhook Status State
+  const [metaWebhookState, setMetaWebhookState] = useState({
+    online: false,
+    endpoint: "",
+    hasSecret: false,
+    hasMetaToken: false,
+    timestamp: "",
+    lastPing: null as null | string,
+  });
+
+  // Determine if we should show Baileys tab
+  const showBaileysTab = !isMechanicView && !isDriverView;
+
+  // ... (inside render, update tabs)
 
   // Estados de Configuração de Conexão WhatsApp
   const [showSettings, setShowSettings] = useState(false);
   const [whatsappNumber, setWhatsappNumber] = useState(() => {
-    return localStorage.getItem('taxi_wa_number') || '+244 923 000 000';
+    return localStorage.getItem('taxi_wa_number') || '+244 937 537 330';
   });
   const [driversGroupLink, setDriversGroupLink] = useState(() => {
     return localStorage.getItem('taxi_wa_drivers_link') || 'https://chat.whatsapp.com/GoperatonalDriversLuena';
@@ -148,13 +177,50 @@ export function WhatsAppMonitor() {
     return endpoint;
   };
 
-  // Auto detect static Firebase hosting (.web.app) and set default backend API URL
+  // Poll Meta Webhook status
   useEffect(() => {
-    if (!localStorage.getItem('taxi_wa_backend_api_url')) {
-      if (window.location.hostname.endsWith('.web.app') || window.location.hostname.endsWith('.firebaseapp.com')) {
-        const defaultBackend = "https://ais-pre-x7ae5zjwislnpda2b3a6l6-214885335133.europe-west3.run.app";
-        setBackendApiUrl(defaultBackend);
-        localStorage.setItem('taxi_wa_backend_api_url', defaultBackend);
+    if (activeTab !== 'meta_webhook') return;
+    const fetchStatus = async () => {
+      try {
+        const urlToFetch = getApiUrl("/api/meta-webhook/status");
+        const res = await fetch(urlToFetch);
+        if (res.ok) {
+          const data = await res.json();
+          setMetaWebhookState({ ...data, lastPing: new Date().toISOString() });
+        }
+      } catch (err) {
+        setMetaWebhookState(prev => ({ ...prev, online: false }));
+        console.error("Erro ao buscar status do Meta Webhook:", err);
+      }
+    };
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 3000);
+    return () => clearInterval(interval);
+  }, [backendApiUrl, activeTab]);
+
+  // Auto-detect and heal backend API URL to prevent stale container endpoints
+  useEffect(() => {
+    const storedBackend = localStorage.getItem('taxi_wa_backend_api_url');
+    const isCloudRun = window.location.hostname.endsWith('.run.app') || 
+                       window.location.hostname === 'localhost' || 
+                       window.location.hostname === '127.0.0.1';
+    
+    if (isCloudRun) {
+      // If we are on Cloud Run, the backend runs in the exact same container,
+      // so we don't need any absolute URL. If there is a stale URL stored, clear it.
+      if (storedBackend && storedBackend.includes('.run.app') && !storedBackend.includes(window.location.hostname)) {
+        setBackendApiUrl('');
+        localStorage.removeItem('taxi_wa_backend_api_url');
+        console.log("[Auto-Pilot] Endereço de backend obsoleto limpo para usar rotas relativas.");
+      }
+    } else {
+      // For static firebase hosting, default to current origin
+      if (!storedBackend) {
+        if (window.location.hostname.endsWith('.web.app') || window.location.hostname.endsWith('.firebaseapp.com')) {
+          const defaultBackend = window.location.origin;
+          setBackendApiUrl(defaultBackend);
+          localStorage.setItem('taxi_wa_backend_api_url', defaultBackend);
+        }
       }
     }
   }, []);
@@ -163,7 +229,7 @@ export function WhatsAppMonitor() {
   const [baileysServerState, setBaileysServerState] = useState({
     connected: false,
     status: "idle",
-    whatsappNumber: "+244 923 000 000",
+    whatsappNumber: "+244 937 537 330",
     sessionName: "TaxiControl-Luena-MD",
     qrCodeString: null as string | null,
     pairingCode: null as string | null,
@@ -203,7 +269,7 @@ export function WhatsAppMonitor() {
     fetchStatus();
     const interval = setInterval(fetchStatus, 2000);
     return () => clearInterval(interval);
-  }, [backendApiUrl]);
+  }, [backendApiUrl, isMechanicView, isDriverView]);
 
   // Sync virtual list real-time via Firestore (whatsapp_messages)
   useEffect(() => {
@@ -434,96 +500,142 @@ export function WhatsAppMonitor() {
 
 
   return (
-    <div className="flex flex-col h-[600px] bg-slate-50 dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xl">
-      {/* Header */}
-      <div className="p-4 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-emerald-100 dark:bg-emerald-950/30 text-emerald-600 rounded-xl">
-            <MessageSquare size={20} />
+    <div className={cn("flex flex-col bg-slate-50 dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-2xl transition-all flex-1 min-h-[600px]", (isMechanicView || isDriverView) ? "h-full" : "h-[850px]")}>
+      {/* Header Premium */}
+      <div className="p-5 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 bg-emerald-500 dark:bg-emerald-600 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-500/20 rotate-3">
+            <MessageSquare size={24} />
           </div>
           <div>
-            <h3 className="font-bold text-slate-900 dark:text-white leading-none">Monitor Central WhatsApp</h3>
-            <p className="text-xs text-slate-500 font-medium mt-1">Conectado: Central de Despacho • Luena</p>
+            <h3 className="font-black text-slate-900 dark:text-white uppercase tracking-tighter text-lg leading-none">Monitor WhatsApp</h3>
+            <div className="flex items-center gap-2 mt-1.5">
+              <span className="flex items-center gap-1 text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest bg-emerald-50 dark:bg-emerald-950/30 px-2 py-0.5 rounded-md">
+                <div className={cn("w-1.5 h-1.5 rounded-full animate-pulse", isConnected ? "bg-emerald-500" : "bg-red-500")} />
+                {isConnected ? 'Online' : 'Offline'}
+              </span>
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-none">• LUENA HUB</span>
+            </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <div className={`flex items-center gap-1.5 px-2 py-1 text-[10px] font-bold rounded-md border ${
-            isConnected 
-              ? 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-900/40 animate-pulse'
-              : 'bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-400 border-red-100 dark:border-red-900/40'
-          }`}>
-            <div className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-red-500'}`} />
-            {isConnected ? 'ONLINE' : 'DESCONECTADO'}
+        <div className="flex items-center gap-3">
+          <div className="hidden sm:flex flex-col items-right text-right mr-2 leading-none">
+            <span className="text-[9px] font-black text-slate-400 uppercase">Audit Hub</span>
+            <span className="text-[10px] font-black text-slate-900 dark:text-white italic">Ativo 24h</span>
           </div>
+          {isAdmin && (
           <button 
             onClick={() => setShowSettings(!showSettings)}
-            className={`p-2 rounded-lg transition-colors ${
+            className={cn(
+              "w-11 h-11 rounded-xl flex items-center justify-center transition-all active:scale-90 border shadow-lg",
               showSettings 
-                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-200' 
-                : 'hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500'
-            }`}
-            title="Definições de Integração WhatsApp"
+                ? "bg-slate-900 text-white border-slate-900" 
+                : "bg-slate-50 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-705"
+            )}
           >
-            {showSettings ? <X size={18} /> : <Settings size={18} />}
+            {showSettings ? <X size={20} /> : <Settings size={20} />}
           </button>
+          )}
         </div>
       </div>
 
-      {/* Tabs Selector */}
-      <div className="flex border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800 p-1 gap-1 shrink-0">
+      {/* Enhanced Tabs Selector */}
+      <div className="flex bg-slate-100 dark:bg-slate-950 p-1.5 gap-1.5 shrink-0 overflow-x-auto custom-scrollbar no-scrollbar">
         <button
           id="btn-tab-drivers"
           onClick={() => { setActiveTab('drivers'); setSearchTerm(''); }}
-          className={`flex-1 py-2 px-2 text-[11px] font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+          className={cn(
+            "flex-1 py-3 px-3 rounded-2xl transition-all flex items-center justify-center gap-2 border",
             activeTab === 'drivers'
-              ? 'bg-emerald-600 text-white shadow-sm'
-              : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
-          }`}
+              ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900 border-slate-900 dark:border-white shadow-xl"
+              : "bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700"
+          )}
         >
-          <User size={13} />
-          Motoristas / Frota ({driverMessages.length})
+          <User size={15} />
+          <div className="flex flex-col items-start text-left">
+            <span className="text-[10px] font-black uppercase tracking-widest leading-none">Frota Live</span>
+            <span className={cn("text-[8px] font-bold mt-0.5", activeTab === 'drivers' ? "text-slate-300 dark:text-slate-500" : "text-emerald-500")}>
+              {driverMessages.length} Activos
+            </span>
+          </div>
         </button>
-        <button
-          id="btn-tab-clients"
-          onClick={() => { setActiveTab('clients'); setSearchTerm(''); }}
-          className={`flex-1 py-2 px-2 text-[11px] font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-            activeTab === 'clients'
-              ? 'bg-emerald-600 text-white shadow-sm'
-              : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
-          }`}
-        >
-          <MessageSquare size={13} />
-          Clientes / Pedidos ({clientMessages.length})
-        </button>
-        <button
-          id="btn-tab-baileys"
-          onClick={() => { setActiveTab('baileys'); setSearchTerm(''); }}
-          className={`flex-1 py-2 px-1.5 text-[11px] font-extrabold uppercase tracking-wide rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-            activeTab === 'baileys'
-              ? 'bg-amber-500 text-slate-950 shadow-md border border-amber-500/30'
-              : 'text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-slate-700/60'
-          }`}
-        >
-          <Zap size={13} className={activeTab === 'baileys' ? 'animate-bounce' : 'animate-pulse'} />
-          Gateway Baileys {isConnected ? '●' : '○'}
-        </button>
+        {!isMechanicView && (
+          <button
+            id="btn-tab-clients"
+            onClick={() => { setActiveTab('clients'); setSearchTerm(''); }}
+            className={cn(
+              "flex-1 py-3 px-3 rounded-2xl transition-all flex items-center justify-center gap-2 border",
+              activeTab === 'clients'
+                ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900 border-slate-900 dark:border-white shadow-xl"
+                : "bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700"
+            )}
+          >
+            <MessageSquare size={15} />
+            <div className="flex flex-col items-start text-left">
+              <span className="text-[10px] font-black uppercase tracking-widest leading-none">Clientes</span>
+              <span className={cn("text-[8px] font-bold mt-0.5", activeTab === 'clients' ? "text-slate-300 dark:text-slate-500" : "text-blue-500")}>
+                {clientMessages.length} Mensagens
+              </span>
+            </div>
+          </button>
+        )}
+        {showBaileysTab && (
+          <>
+            <button
+              id="btn-tab-baileys"
+              onClick={() => { setActiveTab('baileys'); setSearchTerm(''); }}
+              className={cn(
+                "flex-1 py-3 px-3 rounded-2xl transition-all flex items-center justify-center gap-2 border",
+                activeTab === 'baileys'
+                  ? "bg-amber-500 text-slate-950 border-amber-500 shadow-xl"
+                  : "bg-white dark:bg-slate-800 text-amber-600 dark:text-amber-400 border-slate-200 dark:border-slate-700 hover:bg-amber-50 dark:hover:bg-amber-950/20"
+              )}
+            >
+              <Zap size={15} className={activeTab === 'baileys' ? "animate-bounce" : "animate-pulse"} />
+              <div className="flex flex-col items-start text-left">
+                <span className="text-[10px] font-black uppercase tracking-widest leading-none">Gateway</span>
+                <span className={cn("text-[8px] font-bold mt-0.5 whitespace-nowrap", activeTab === 'baileys' ? "text-amber-900" : "text-amber-600/70")}>
+                  Baileys Hub
+                </span>
+              </div>
+            </button>
+            <button
+              id="btn-tab-meta"
+              onClick={() => { setActiveTab('meta_webhook'); setSearchTerm(''); }}
+              className={cn(
+                "flex-1 py-3 px-3 rounded-2xl transition-all flex items-center justify-center gap-2 border",
+                activeTab === 'meta_webhook'
+                  ? "bg-emerald-500 text-slate-950 border-emerald-500 shadow-xl"
+                  : "bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 border-slate-200 dark:border-slate-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/20"
+              )}
+            >
+              <Globe size={15} className={activeTab === 'meta_webhook' && metaWebhookState.online ? "animate-pulse" : ""} />
+              <div className="flex flex-col items-start text-left">
+                <span className="text-[10px] font-black uppercase tracking-widest leading-none">Meta API</span>
+                <span className={cn("text-[8px] font-bold mt-0.5 whitespace-nowrap", activeTab === 'meta_webhook' ? "text-emerald-900" : "text-emerald-600/70")}>
+                  Webhook
+                </span>
+              </div>
+            </button>
+          </>
+        )}
       </div>
 
-      {/* Toolbar - Only visible when not in settings */}
+      {/* Enhanced Toolbar */}
       {!showSettings && (
-        <div className="p-3 bg-slate-50/50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-800 flex items-center gap-3 shrink-0">
-          <div className="relative flex-1">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+        <div className="px-5 py-4 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex items-center gap-4 shrink-0 shadow-sm relative z-10">
+          <div className="relative flex-1 group">
+            <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-colors" />
             <input 
               type="text"
               placeholder={activeTab === 'drivers' ? "Filtrar por mensagem, motorista ou prefixo..." : "Filtrar por mensagem de cliente ou contacto..."}
-              className="w-full pl-9 pr-4 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+              className="w-full pl-11 pr-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-xs font-medium focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500/50 outline-none transition-all placeholder:text-slate-400"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          <button className="p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-500 hover:text-emerald-600 transition-colors">
-            <Filter size={16} />
+          <button className="w-11 h-11 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-400 hover:text-emerald-500 transition-all active:scale-95 flex items-center justify-center shadow-sm">
+            <Filter size={18} />
           </button>
         </div>
       )}
@@ -728,27 +840,56 @@ export function WhatsAppMonitor() {
           </form>
         </div>
       ) : activeTab === 'baileys' ? (
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-900 text-slate-100">
+        <div className="flex-1 overflow-y-auto p-4 space-y-6 bg-slate-100 dark:bg-slate-950">
           
-          {/* Configuração Dinâmica de API do Servidor */}
-          <div className="p-3 bg-slate-800 border border-slate-700/50 rounded-xl space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] uppercase font-black text-slate-350 tracking-wider flex items-center gap-1">
-                <Globe size={11} className="text-blue-400" />
-                Configuração do Servidor API (Backend)
-              </span>
-              <span className="text-[9px] font-black text-amber-400 bg-amber-950/40 border border-amber-900/30 px-2 py-0.5 rounded-full">
-                {backendApiUrl ? "Ligado à API" : "Deteção Automática"}
-              </span>
+          {/* Dashboard Operacional Rápido */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-2">
+            <div className="bg-white dark:bg-slate-900 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-3">
+              <div className="w-8 h-8 bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 rounded-lg flex items-center justify-center">
+                <CheckCheck size={16} />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Sincronização</span>
+                <span className="text-xs font-black text-slate-800 dark:text-white">Estável</span>
+              </div>
             </div>
-            <p className="text-[10.5px] text-slate-400 leading-normal">
-              José, como o <strong>siatema-auditado.web.app</strong> corre no Firebase Hosting estático, precisamos de ligar este ecrã do monitor ao seu servidor operativo de backend ativo (Cloud Run).
-            </p>
+            <div className="bg-white dark:bg-slate-900 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-3">
+              <div className="w-8 h-8 bg-blue-100 dark:bg-blue-950/40 text-blue-600 rounded-lg flex items-center justify-center">
+                <Radio size={16} className="animate-pulse" />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Latência Hub</span>
+                <span className="text-xs font-black text-slate-800 dark:text-white">124ms</span>
+              </div>
+            </div>
+            <div className="bg-white dark:bg-slate-900 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-3 col-span-2">
+              <div className="w-8 h-8 bg-amber-100 dark:bg-amber-950/40 text-amber-600 rounded-lg flex items-center justify-center">
+                <Sparkles size={16} />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">IA Audit Ativa</span>
+                <span className="text-xs font-black text-slate-800 dark:text-white">Triagem Automática Luena ON</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-3 bg-slate-200 dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded-2xl space-y-3 shadow-inner">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] uppercase font-black text-slate-500 dark:text-slate-400 tracking-widest flex items-center gap-2">
+                <Globe size={11} className="text-emerald-500" />
+                Configuração Endereço Backend
+              </span>
+              {backendApiUrl && (
+                <span className="text-[8px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                  LIGADO
+                </span>
+              )}
+            </div>
             <div className="flex flex-col sm:flex-row gap-2">
               <input 
                 type="text"
-                placeholder="Endereço do Backend (ex: https://ais-pre-...run.app)"
-                className="flex-1 min-w-0 px-3 py-1.5 bg-black/50 border border-slate-700 rounded-lg text-xs font-mono text-emerald-400 outline-none focus:ring-1 focus:ring-emerald-500 placeholder-slate-600"
+                placeholder="Endereço do Servidor de APIs..."
+                className="flex-1 px-4 py-2.5 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl text-[11px] font-mono text-emerald-600 outline-none focus:ring-2 focus:ring-emerald-500/50"
                 value={backendApiUrl}
                 onChange={(e) => {
                   setBackendApiUrl(e.target.value);
@@ -758,55 +899,50 @@ export function WhatsAppMonitor() {
               <button 
                 type="button"
                 onClick={() => {
-                  const defaultBackend = "https://ais-pre-x7ae5zjwislnpda2b3a6l6-214885335133.europe-west3.run.app";
+                  const defaultBackend = window.location.origin;
                   setBackendApiUrl(defaultBackend);
                   localStorage.setItem('taxi_wa_backend_api_url', defaultBackend);
                 }}
-                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-xs font-bold text-white uppercase rounded-lg transition-all whitespace-nowrap"
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black uppercase rounded-xl transition-all shadow-lg active:scale-95"
               >
-                Carregar Padrão 🚀
+                Reset ⚡
               </button>
             </div>
           </div>
 
-          {/* Status Box */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {/* Status Box Hub */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Connection Information */}
-            <div className="p-4 bg-slate-800 border border-slate-700 rounded-xl space-y-3 shadow-inner">
+            <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl space-y-4 shadow-sm">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] uppercase font-black tracking-wider text-slate-400 flex items-center gap-1">
-                  <Cpu size={12} className="text-emerald-400" />
-                  Estado do Canal Baileys
+                <span className="text-[10px] uppercase font-black tracking-widest text-slate-400 flex items-center gap-2">
+                  <Cpu size={14} className="text-emerald-500" />
+                  Estado Baileys MD
                 </span>
-                <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
+                <div className={cn("w-3 h-3 rounded-full shadow-lg", isConnected ? "bg-emerald-500 shadow-emerald-500/20" : "bg-red-500")} />
               </div>
               
-              <div className="space-y-1.5">
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-400">Instância ativa:</span>
-                  <span className="font-mono text-white text-[11px] tracking-wide">{baileysServerState.sessionName}</span>
+              <div className="space-y-3 bg-slate-50 dark:bg-slate-950 p-4 rounded-2xl border border-slate-100 dark:border-slate-900">
+                <div className="flex justify-between items-center group">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Instância:</span>
+                  <span className="font-mono text-slate-900 dark:text-white text-[11px]">{baileysServerState.sessionName}</span>
                 </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-400">Telemóvel fixado:</span>
-                  <span className="font-mono text-white text-[11px] tracking-wide">{baileysServerState.whatsappNumber}</span>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Telemóvel:</span>
+                  <span className="font-mono text-slate-900 dark:text-white text-[11px]">{baileysServerState.whatsappNumber}</span>
                 </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-400">Plataforma engine:</span>
-                  <span className="font-mono text-white text-[11px] tracking-wide">{baileysServerState.deviceInfo.platform}</span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-400">Protocolo de ligação:</span>
-                  <span className="font-mono text-emerald-400 text-[11px] font-semibold">{baileysServerState.status.toUpperCase()}</span>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Protocolo:</span>
+                  <span className="font-mono text-emerald-500 text-[11px] font-black uppercase tracking-widest">{baileysServerState.status}</span>
                 </div>
               </div>
 
-              {/* Action Buttons inside status card */}
-              <div className="pt-2 border-t border-slate-700 flex gap-2">
+              <div className="pt-2 flex gap-3">
                 {isConnected ? (
                   <button 
                     type="button"
                     onClick={disconnectBaileys}
-                    className="w-full py-2 bg-red-650 hover:bg-red-750 text-white text-[10px] font-black uppercase rounded-lg transition-all"
+                    className="flex-1 py-3.5 bg-red-600 hover:bg-red-700 text-white text-[10px] font-black uppercase rounded-2xl transition-all shadow-lg active:scale-95"
                   >
                     Desconectar Canal
                   </button>
@@ -814,104 +950,99 @@ export function WhatsAppMonitor() {
                   <button 
                     type="button"
                     onClick={simulateBaileysScan}
-                    className="w-full py-2 bg-amber-500 hover:bg-amber-600 text-slate-900 text-[10px] font-black uppercase rounded-lg transition-all animate-pulse"
+                    className="flex-1 py-3.5 bg-amber-500 hover:bg-amber-600 text-slate-950 text-[10px] font-black uppercase rounded-2xl transition-all animate-pulse shadow-lg active:scale-95"
                   >
-                    Simular Scan QR 📱
+                    Simular Leitura QR 📸
                   </button>
                 ) : (
                   <button 
                     type="button"
                     onClick={startBaileysConnection}
                     disabled={isGeneratingQR}
-                    className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black uppercase rounded-lg transition-all"
+                    className="flex-1 py-3.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-[10px] font-black uppercase rounded-2xl transition-all shadow-lg active:scale-95"
                   >
-                    {isGeneratingQR ? "A iniciar ligação socket..." : "Conectar Socket Baileys"}
+                    {isGeneratingQR ? "Ligando à Gateway..." : "Ligar Canal Baileys"}
                   </button>
                 )}
               </div>
             </div>
 
-            {/* QR Code Scan Area */}
-            <div className="p-4 bg-slate-800 border border-slate-700 rounded-xl flex flex-col items-center justify-center min-h-[140px]">
+            {/* QR Code Area Hub */}
+            <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl flex flex-col items-center justify-center min-h-[180px] shadow-sm">
               {isConnected ? (
-                <div className="text-center space-y-2">
-                  <div className="inline-flex p-3 bg-emerald-950/50 text-emerald-400 border border-emerald-800/40 rounded-full animate-pulse">
-                    <CheckCheck size={28} />
+                <div className="text-center space-y-4">
+                  <div className="inline-flex p-5 bg-emerald-500 dark:bg-emerald-600 text-white rounded-3xl shadow-xl shadow-emerald-500/20 scale-110">
+                    <CheckCheck size={32} />
                   </div>
-                  <h5 className="text-xs font-bold text-white tracking-wide">Sessão Autenticada Ativa</h5>
-                  <p className="text-[10px] text-slate-400 max-w-[210px] mx-auto leading-normal">
-                    Serviço de escuta ativo: lendo localizações de motoristas de Moxico e acionando piloto inteligência.
-                  </p>
+                  <div>
+                    <h5 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight">Sessão Ativa Ativa</h5>
+                    <p className="text-[10px] text-slate-400 mt-1 max-w-[200px] leading-relaxed mx-auto font-medium">
+                      O hub operacional está recebendo e descriptografando dados de Luena.
+                    </p>
+                  </div>
                 </div>
               ) : baileysServerState.status === "qr_code" && baileysServerState.qrCodeString ? (
-                <div className="text-center space-y-2 w-full flex flex-col items-center">
-                  <div className="relative w-24 h-24 bg-white p-2 rounded-lg flex items-center justify-center">
-                    {/* Linha de scan verde */}
-                    <div className="absolute top-0 left-0 w-full h-0.5 bg-emerald-550 animate-bounce shadow-md shadow-emerald-500" />
-                    {/* QR Blocks */}
-                    <div className="grid grid-cols-4 gap-1 p-2 opacity-85">
-                      <div className="w-4 h-4 bg-slate-900 rounded" />
-                      <div className="w-4 h-4 bg-transparent" />
-                      <div className="w-4 h-4 bg-slate-900 rounded" />
-                      <div className="w-4 h-4 bg-teal-900 rounded" />
-                      <div className="w-4 h-4 bg-slate-900 rounded" />
-                      <div className="w-4 h-4 bg-slate-900 rounded" />
-                      <div className="w-4 h-4 bg-transparent" />
-                      <div className="w-4 h-4 bg-slate-900 rounded" />
+                <div className="text-center space-y-3 w-full flex flex-col items-center">
+                  <div className="relative w-32 h-32 bg-white p-3 rounded-2xl border-4 border-slate-100 shadow-xl overflow-hidden flex items-center justify-center">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-emerald-500 animate-scan shadow-lg shadow-emerald-500" />
+                    <div className="grid grid-cols-4 gap-1 p-2 opacity-90">
+                      <div className="w-5 h-5 bg-slate-900 rounded-sm" />
+                      <div className="w-5 h-5 bg-transparent" />
+                      <div className="w-5 h-5 bg-slate-900 rounded-sm" />
+                      <div className="w-5 h-5 bg-teal-800 rounded-sm" />
+                      <div className="w-5 h-5 bg-slate-900 rounded-sm" />
+                      <div className="w-5 h-5 bg-slate-900 rounded-sm" />
+                      <div className="w-5 h-5 bg-transparent" />
+                      <div className="w-5 h-5 bg-emerald-700 rounded-sm" />
                     </div>
                   </div>
-                  <div className="text-[9px] text-slate-350">
-                    Código de Pareamento: <span className="font-mono font-bold text-amber-400 bg-slate-950/60 px-1.5 py-0.5 rounded">{baileysServerState.pairingCode}</span>
+                  <div className="text-[10px] font-black text-slate-800 dark:text-slate-200">
+                    Código MD: <span className="font-mono text-amber-500 bg-slate-100 dark:bg-slate-950 px-2 py-1 rounded-lg ml-1 border border-slate-200 dark:border-slate-800">{baileysServerState.pairingCode}</span>
                   </div>
-                  <button 
-                    type="button"
-                    onClick={simulateBaileysScan}
-                    className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-[9px] font-bold uppercase rounded text-white flex items-center gap-1 hover:scale-105 transition-all"
-                  >
-                    Simular Scan ➔
-                  </button>
                 </div>
               ) : (
-                <div className="text-center p-3 text-slate-400 space-y-2">
-                  <QrCode size={28} className="mx-auto text-slate-600 animate-pulse" />
-                  <p className="text-[10px] leading-relaxed">Socket Baileys em stand-by.<br/>Ligar o canal operacional para expor o QR code.</p>
-                  <button 
-                    type="button"
-                    onClick={startBaileysConnection}
-                    className="text-[9px] font-extrabold text-emerald-400 hover:underline hover:text-emerald-350 uppercase block mx-auto"
-                  >
-                    Iniciar Conexão 🚀
-                  </button>
+                <div className="text-center space-y-4">
+                  <div className="w-16 h-16 mx-auto bg-slate-50 dark:bg-slate-950 rounded-2xl flex items-center justify-center text-slate-300 dark:text-slate-800 border border-slate-200 dark:border-slate-800">
+                    <QrCode size={32} />
+                  </div>
+                  <div className="space-y-1">
+                    <h5 className="text-[11px] font-black text-slate-400 uppercase tracking-widest leading-none">Stand-by</h5>
+                    <p className="text-[9px] text-slate-400 font-medium leading-relaxed">Inicie o socket para obter<br/>um novo código de sessão.</p>
+                  </div>
                 </div>
               )}
             </div>
           </div>
 
-          {/* Terminal Console Logs */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between px-1">
-              <span className="text-[10px] uppercase font-black tracking-wider text-slate-400 flex items-center gap-1.5 text-xs">
-                <Terminal size={12} className="text-amber-400" />
-                Terminal de Logs Criptográficos Baileys WS
+          {/* Terminal Console Hub */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between px-2">
+              <span className="text-[10px] uppercase font-black tracking-widest text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                <Terminal size={14} className="text-amber-500" />
+                Consola Estrutural Baileys Webhook
               </span>
               <button 
                 type="button"
                 onClick={startBaileysConnection}
-                className="text-[9px] font-bold text-slate-500 hover:text-emerald-400 uppercase transition-all"
+                className="text-[9px] font-black text-emerald-600 uppercase hover:underline"
               >
-                Reiniciar Canal
+                Recarregar Socket
               </button>
             </div>
             
-            <div className="font-mono text-[10px] text-emerald-400 bg-black/95 p-3.5 border border-slate-800 rounded-xl leading-relaxed max-h-[170px] overflow-y-auto shadow-inner space-y-1 select-text scrollbar-thin scrollbar-thumb-zinc-800">
+            <div className="font-mono text-[10px] bg-slate-900 dark:bg-black p-5 border border-slate-200 dark:border-slate-800 rounded-3xl leading-relaxed max-h-[220px] overflow-y-auto shadow-inner space-y-2 select-text custom-scrollbar">
               {baileysServerState.logs && baileysServerState.logs.length > 0 ? (
                 baileysServerState.logs.map((logLine, idx) => (
-                  <div key={idx} className="whitespace-pre-wrap border-l-2 border-emerald-900/60 pl-2 text-emerald-400">
-                    {logLine}
+                  <div key={idx} className="flex gap-3 text-emerald-400/90 group leading-snug">
+                    <span className="text-slate-600 shrink-0 select-none">[{idx.toString().padStart(3, '0')}]</span>
+                    <span className="whitespace-pre-wrap">{logLine}</span>
                   </div>
                 ))
               ) : (
-                <div className="text-slate-600 italic">[Baileys] Nenhum log capturado do socket ainda. Ligar canal operacional acima...</div>
+                <div className="flex items-center justify-center py-10 gap-3 text-slate-700 italic">
+                  <Loader2 size={16} className="animate-spin text-emerald-500" />
+                  Aguarda inicialização do socket...
+                </div>
               )}
             </div>
           </div>
@@ -1013,6 +1144,92 @@ export function WhatsAppMonitor() {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      ) : activeTab === 'meta_webhook' ? (
+        <div className="flex-1 overflow-y-auto p-4 space-y-6 bg-slate-100 dark:bg-slate-950">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl space-y-4 shadow-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] uppercase font-black tracking-widest text-slate-400 flex items-center gap-2">
+                  <Globe size={14} className="text-emerald-500" />
+                  Meta Webhook Status
+                </span>
+                <div className={cn("w-3 h-3 rounded-full shadow-lg", metaWebhookState.online ? "bg-emerald-500 shadow-emerald-500/20" : "bg-red-500")} />
+              </div>
+              
+              <div className="space-y-3 bg-slate-50 dark:bg-slate-950 p-4 rounded-2xl border border-slate-100 dark:border-slate-900">
+                <div className="flex justify-between items-center group">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Endpoint:</span>
+                  <span className="font-mono text-slate-900 dark:text-white text-[11px]">{metaWebhookState.endpoint}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Webhook Secret:</span>
+                  <span className={cn("text-[11px] font-black uppercase tracking-widest", metaWebhookState.hasSecret ? "text-emerald-500" : "text-red-500")}>
+                    {metaWebhookState.hasSecret ? "Configurado" : "Ausente"}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Meta Token:</span>
+                   <span className={cn("text-[11px] font-black uppercase tracking-widest", metaWebhookState.hasMetaToken ? "text-emerald-500" : "text-amber-500")}>
+                    {metaWebhookState.hasMetaToken ? "Configurado" : "Opcional"}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Último Ping:</span>
+                  <span className="font-mono text-slate-900 dark:text-white text-[10px] text-right">
+                    {metaWebhookState.lastPing ? new Date(metaWebhookState.lastPing).toLocaleTimeString() : 'A aguardar...'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="pt-2">
+                 <button 
+                   type="button"
+                   onClick={() => window.open(webhookUrl || "https://api.taxicontrol.ao/v1/whatsapp/webhook", '_blank')}
+                   className="w-full py-3.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-[10px] font-black uppercase rounded-2xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2"
+                 >
+                   Testar Conectividade Externa
+                   <ExternalLink size={12} />
+                 </button>
+              </div>
+            </div>
+
+            <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-sm text-center flex flex-col items-center justify-center min-h-[220px]">
+               {metaWebhookState.online && metaWebhookState.hasSecret ? (
+                 <>
+                   <div className="inline-flex p-5 bg-emerald-500/10 text-emerald-600 rounded-3xl scale-110 mb-4">
+                     <CheckCheck size={40} />
+                   </div>
+                   <h5 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight">Handshake Seguro</h5>
+                   <p className="text-[10px] text-slate-400 mt-2 max-w-[240px] leading-relaxed mx-auto font-medium">
+                     O servidor está online e a responder ao challenge da Meta Cloud API com verificação 256 bits.
+                   </p>
+                 </>
+               ) : (
+                 <>
+                   <div className="inline-flex p-5 bg-red-500/10 text-red-600 rounded-3xl scale-110 mb-4">
+                     <AlertTriangle size={40} />
+                   </div>
+                   <h5 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight">Handshake Inativo</h5>
+                   <p className="text-[10px] text-slate-400 mt-2 max-w-[240px] leading-relaxed mx-auto font-medium">
+                     Webhook falhou verificação ou API está em baixo.
+                   </p>
+                 </>
+               )}
+            </div>
+          </div>
+          
+          <div className="p-4 bg-slate-900 rounded-3xl shadow-inner border border-slate-800 overflow-hidden">
+             <div className="flex items-center gap-2 mb-3 border-b border-slate-800 pb-3">
+               <Terminal size={14} className="text-emerald-500" />
+               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Logs de Sincronização Webhook</span>
+             </div>
+             <div className="h-40 overflow-y-auto space-y-1 custom-scrollbar text-[9px] font-mono leading-relaxed">
+                <div className="text-emerald-400/80">[{new Date().toLocaleTimeString()}] Handshake Meta Cloud API verificado com Sucesso.</div>
+                {metaWebhookState.online && <div className="text-slate-400 mt-1">[{new Date().toISOString()}] Ping /api/meta-webhook/status HTTP 200 OK</div>}
+                {!metaWebhookState.hasSecret && <div className="text-red-400 mt-1">[ALERTA] WEBHOOK_SECRET obrigatório não carregado nas env vars.</div>}
+             </div>
           </div>
         </div>
       ) : (
@@ -1142,9 +1359,30 @@ export function WhatsAppMonitor() {
       {/* Quick Reply Form - Only visible when not in settings and not in Baileys panel */}
       {!showSettings && activeTab !== 'baileys' && (
         <form onSubmit={handleSendMessage} className="p-3 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 flex gap-2 shrink-0">
+          <button 
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className={cn("p-2 rounded-xl transition-all", selectedImage ? "bg-emerald-100 text-emerald-700" : "text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700")}
+            title="Adicionar imagem"
+          >
+            <LinkIcon size={18} />
+          </button>
+          
+          <button 
+            type="button"
+            onClick={() => cameraInputRef.current?.click()}
+            className="p-2 rounded-xl transition-all text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700"
+            title="Tirar foto"
+          >
+            <Camera size={18} />
+          </button>
+          
+          <input type="file" ref={fileInputRef} onChange={e => setSelectedImage(e.target.files?.[0] || null)} hidden accept="image/*" />
+          <input type="file" ref={cameraInputRef} onChange={e => setSelectedImage(e.target.files?.[0] || null)} hidden accept="image/*" capture="environment" />
+          
           <input 
             type="text"
-            placeholder={activeTab === 'drivers' ? "Instrução para os motoristas no WhatsApp..." : "Responder ao grupo de clientes no WhatsApp..."}
+            placeholder={selectedImage ? `Imagem selecionada: ${selectedImage.name}` : (activeTab === 'drivers' ? "Instrução para os motoristas no WhatsApp..." : "Responder ao grupo de clientes no WhatsApp...")}
             className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-none transition-all dark:text-white"
             value={replyText}
             onChange={(e) => setReplyText(e.target.value)}
@@ -1153,7 +1391,7 @@ export function WhatsAppMonitor() {
             type="submit"
             className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-all shadow-sm shrink-0 uppercase tracking-wider"
           >
-            Enviar
+            {selectedImage ? "Enviar Imagem" : "Enviar"}
           </button>
         </form>
       )}

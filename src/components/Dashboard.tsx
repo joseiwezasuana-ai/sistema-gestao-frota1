@@ -74,6 +74,7 @@ import 'leaflet/dist/leaflet.css';
 import { useTheme } from '../context/ThemeContext';
 
 import { geminiService } from '../services/geminiService';
+import WaitingTimer from './WaitingTimer';
 
 // Leaflet icon fix
 // @ts-ignore
@@ -83,6 +84,26 @@ L.Icon.Default.mergeOptions({
   iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
+
+const createPanicIcon = (prefix: string) => {
+  const html = `
+    <div class="relative flex items-center justify-center">
+      <span class="absolute inline-flex h-8 w-8 rounded-full bg-red-400 opacity-75 animate-ping"></span>
+      <div class="relative p-1.5 rounded-xl bg-red-600 text-white border-2 border-white shadow-lg flex items-center gap-1.5 px-3">
+         <span class="w-2 h-2 rounded-full bg-white animate-pulse"></span>
+         <span class="text-[10px] font-black tracking-tighter">
+           SOS: ${prefix || 'N/A'}
+         </span>
+      </div>
+    </div>
+  `;
+  return L.divIcon({
+    html,
+    className: 'dashboard-panic-icon',
+    iconSize: [80, 32],
+    iconAnchor: [40, 16],
+  });
+};
 
 const createDashboardIcon = (driver: any) => {
   const getMarkerColor = (status: string) => {
@@ -127,6 +148,9 @@ export default function Dashboard({ user }: { user: any }) {
   const [criticalAlerts, setCriticalAlerts] = useState<any[]>([]);
   const [vehicles, setVehicles] = useState<any[]>([]);
   const [panicAlerts, setPanicAlerts] = useState<any[]>([]);
+  const [driversMaster, setDriversMaster] = useState<any[]>([]);
+  const [mapCenter, setMapCenter] = useState<[number, number]>([-11.7833, 19.9167]);
+  const [mapZoom, setMapZoom] = useState<number>(13);
   const [speedViolations, setSpeedViolations] = useState<any[]>([]);
   const [whatsAppLink, setWhatsAppLink] = useState('');
   const [acknowledgedAlerts, setAcknowledgedAlerts] = useState<Set<string>>(new Set());
@@ -225,7 +249,11 @@ export default function Dashboard({ user }: { user: any }) {
         message: `Motorista ${p.driverName} (${p.prefix}) solicitou emergência!`,
         time: toSafeDate(p.timestamp) || new Date(),
         lat: p.lat,
-        lng: p.lng
+        lng: p.lng,
+        driverId: p.driverId,
+        driverName: p.driverName,
+        prefix: p.prefix,
+        driverPhone: p.driverPhone
       }));
 
       setCriticalAlerts(prev => {
@@ -240,7 +268,7 @@ export default function Dashboard({ user }: { user: any }) {
       setSpeedViolations(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     }, (error) => handleFirestoreError(error, OperationType.GET, 'speed_violations'));
 
-    const qCalls = query(collection(db, 'calls'), orderBy('timestamp', 'desc'), limit(1000));
+    const qCalls = query(collection(db, 'calls'), orderBy('timestamp', 'desc'), limit(150));
     const unsubCalls = onSnapshot(qCalls, (snapshot) => {
       const allCalls = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       
@@ -297,6 +325,7 @@ export default function Dashboard({ user }: { user: any }) {
     const qDrivers = query(collection(db, 'drivers_master'));
     const unsubDrivers = onSnapshot(qDrivers, (snapshot) => {
       setDriverCount(snapshot.size);
+      setDriversMaster(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     }, (error) => handleFirestoreError(error, OperationType.GET, 'drivers_master'));
 
     const qSms = query(collection(db, 'sms_logs'), orderBy('timestamp', 'desc'), limit(50));
@@ -382,14 +411,20 @@ export default function Dashboard({ user }: { user: any }) {
   const handleAssignDriver = async (requestId: string, driver: any) => {
     setAssigningLoading(true);
     try {
-      await updateDoc(doc(db, 'taxi_requests', requestId), {
+      // Determine if this is a taxi_request or a call from the Dashboard list
+      const isCall = selectedRequest?.type === 'direct_referral' || !selectedRequest?.status || selectedRequest?.customerPhone;
+      const collectionName = isCall ? 'calls' : 'taxi_requests';
+      
+      await updateDoc(doc(db, collectionName, requestId), {
         status: 'accepted',
         driverId: driver.id,
+        driverName: driver.name,
         driverInfo: {
           name: driver.name,
           phone: driver.phone || driver.phoneNumber || '',
           vehicleModel: driver.vehicleModel || driver.brand || 'Táxi PSM',
-          vehiclePlate: driver.vehiclePlate || driver.licensePlate || ''
+          vehiclePlate: driver.vehiclePlate || driver.licensePlate || '',
+          prefix: driver.prefix || ''
         }
       });
       setIsAssignModalOpen(false);
@@ -402,7 +437,37 @@ export default function Dashboard({ user }: { user: any }) {
     }
   };
 
-  const pendingRevenueCount = revenues.filter(r => r.status === 'vended_by_driver').length;
+  const getDriverPhone = (driverId: string, driverName?: string, prefix?: string, alertPhone?: string) => {
+    if (alertPhone) return alertPhone;
+
+    // 1. Try to find in driversMaster by UID or ID
+    let match = driversMaster.find(d => d.id === driverId || d.uid === driverId);
+    if (match && match.phone) return match.phone;
+
+    // 2. Try to find in driversMaster by name
+    if (driverName) {
+      match = driversMaster.find(d => d.name?.toLowerCase() === driverName.toLowerCase());
+      if (match && match.phone) return match.phone;
+    }
+
+    // 3. Try to find in vehicles (drivers active list) by driverId, ID, prefix or name
+    let vMatch = vehicles.find(v => v.id === driverId || v.driverId === driverId);
+    if (vMatch && vMatch.phone) return vMatch.phone;
+
+    if (prefix && prefix !== 'N/A') {
+      vMatch = vehicles.find(v => v.prefix === prefix);
+      if (vMatch && vMatch.phone) return vMatch.phone;
+    }
+
+    if (driverName) {
+      vMatch = vehicles.find(v => v.name?.toLowerCase() === driverName.toLowerCase());
+      if (vMatch && vMatch.phone) return vMatch.phone;
+    }
+
+    return '';
+  };
+
+  const pendingRevenueCount = revenues.filter(r => r.status === 'pending_approval').length;
 
   const stats = [
     { label: 'Motoristas Registados', value: driverCount.toString(), icon: Phone, color: 'text-brand-primary', trend: '+12%', sub: 'Base Staff' },
@@ -485,12 +550,14 @@ export default function Dashboard({ user }: { user: any }) {
     const customerName = String(call?.customerName || '').toLowerCase();
     const customerPhone = String(call?.customerPhone || '');
     const pickupAddress = String(call?.pickupAddress || '').toLowerCase();
+    const driverName = String(call?.driverName || '').toLowerCase();
     const term = (callSearchTerm || '').toLowerCase();
 
     const matchesSearch = 
       customerName.includes(term) ||
       customerPhone.includes(callSearchTerm || '') ||
-      pickupAddress.includes(term);
+      pickupAddress.includes(term) ||
+      driverName.includes(term);
 
     if (!matchesSearch) return false;
 
@@ -522,12 +589,14 @@ export default function Dashboard({ user }: { user: any }) {
       return;
     }
 
-    const headers = ["Data", "Cliente", "Ponto de Recolha", "Estado", "Operador"];
+    const headers = ["Data", "Cliente", "Telemóvel Cliente", "Ponto de Recolha", "Estado", "Motorista Assigned", "Operador"];
     const rows = filteredCallsForList.map(call => [
       formatSafe(call.timestamp, 'dd/MM/yyyy HH:mm:ss', '--:--:--'),
       call.customerName || 'Cliente Direto',
+      call.customerPhone || 'N/A',
       `"${(call.pickupAddress || '').replace(/"/g, '""')}"`,
       call.status,
+      call.driverName || 'N/A',
       call.op || 'System Central'
     ]);
 
@@ -981,6 +1050,7 @@ export default function Dashboard({ user }: { user: any }) {
                          <th className="px-10 py-5 italic">Identificação / Cliente</th>
                          <th className="px-10 py-5 text-center">Estado Operacional</th>
                          <th className="px-10 py-5">Canal Operador</th>
+                         <th className="px-10 py-5">Motorista / Telefone</th>
                          <th className="px-10 py-5 text-right">Controlo</th>
                       </tr>
                    </thead>
@@ -992,6 +1062,7 @@ export default function Dashboard({ user }: { user: any }) {
                                <div className="w-1.5 h-1.5 bg-brand-primary rounded-full opacity-0 group-hover/row:opacity-100 transition-opacity" />
                                <span className="font-mono font-black text-[13px] text-slate-900 dark:text-white tracking-tight">
                                   {formatSafe(call.timestamp, 'HH:mm:ss', '--:--:--')}
+                                  {call.status === 'pending' && <WaitingTimer timestamp={call.timestamp} className="ml-2 text-amber-500 font-black" />}
                                </span>
                             </div>
                          </td>
@@ -1009,9 +1080,9 @@ export default function Dashboard({ user }: { user: any }) {
                             </div>
                          </td>
                          <td className="px-10 py-5 text-center">
-                            <span className={cn("inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all", getStatusColor(call.status))}>
+                            <span className={cn("inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all", (call.isForwarded || call.type === 'direct_referral' || call.status === 'forwarded') ? 'text-amber-600 bg-amber-50 border-amber-200' : getStatusColor(call.status))}>
                                <div className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
-                               {call.status === 'pending' ? 'PENDENTE' : 
+                               {call.isForwarded || call.type === 'direct_referral' || call.status === 'forwarded' ? 'ENCAMINHADA' : call.status === 'pending' ? 'PENDENTE' : 
                                 call.status === 'active' ? 'EM CURSO' : 
                                 call.status === 'completed' ? 'CONCLUÍDA' : 
                                 call.status === 'cancelled' ? 'CANCELADA' : 
@@ -1026,8 +1097,38 @@ export default function Dashboard({ user }: { user: any }) {
                                <span className="text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase italic">{call.op || 'System Central'}</span>
                             </div>
                          </td>
+                         <td className="px-10 py-5">
+                            <div className="flex flex-col gap-1 text-left">
+                               {call.driverName ? (
+                                 <div className="text-[11px] font-black text-slate-900 dark:text-white uppercase tracking-tight flex items-center gap-1.5">
+                                    <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+                                    {call.driverName}
+                                 </div>
+                               ) : (
+                                 <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase italic">Central / Auto</span>
+                               )}
+                               {call.customerPhone ? (
+                                 <span className="text-[10px] font-mono font-black text-slate-500 dark:text-slate-400 tracking-wider">
+                                    {call.customerPhone}
+                                 </span>
+                               ) : (
+                                 <span className="text-[10px] font-mono text-slate-300 dark:text-slate-600">Sem Telefone</span>
+                               )}
+                            </div>
+                         </td>
                          <td className="px-10 py-5 text-right">
-                            <button className="text-[10px] font-black text-slate-400 uppercase px-4 py-2 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all italic tracking-tighter">Gerir Fluxo</button>
+                            <button 
+                              onClick={() => {
+                                setSelectedRequest({
+                                  ...call,
+                                  pickup: call.pickupAddress || 'Chamada sem local'
+                                });
+                                setIsAssignModalOpen(true);
+                              }}
+                              className="text-[10px] font-black text-brand-primary uppercase px-4 py-2 hover:bg-brand-primary hover:text-white border border-brand-primary rounded-xl transition-all italic tracking-tighter"
+                            >
+                              Gerir Fluxo
+                            </button>
                          </td>
                       </tr>
                       ))}
@@ -1119,7 +1220,7 @@ export default function Dashboard({ user }: { user: any }) {
                         <p className="text-[13px] font-black text-slate-900 dark:text-white uppercase tracking-tight italic group-hover:text-rose-600 transition-colors">{call.customerName || 'Cliente sem ID'}</p>
                         <div className="flex flex-col items-end gap-1.5">
                            <span className="text-[10px] font-black text-rose-500 bg-rose-50 dark:bg-rose-900/40 px-2 py-0.5 rounded-full border border-rose-100 dark:border-rose-800/40">
-                             PERDIDA {formatSafe(call.timestamp, 'HH:mm', '--:--')}
+                             PERDIDA • <WaitingTimer timestamp={call.timestamp} />
                            </span>
                            <button 
                               onClick={() => handleResolveMissedCall(call.id)}
@@ -1167,7 +1268,7 @@ export default function Dashboard({ user }: { user: any }) {
              </div>
              <div className="flex-1 bg-slate-50 dark:bg-slate-950 relative z-0">
                 {/* @ts-ignore */}
-                <MapContainer center={[-11.7833, 19.9167]} zoom={13} style={{ height: '100%', width: '100%' }} zoomControl={false} className="grayscale-[0.2] contrast-[1.1]">
+                <MapContainer key={`${mapCenter[0]}-${mapCenter[1]}-${mapZoom}`} center={mapCenter} zoom={mapZoom} style={{ height: '100%', width: '100%' }} zoomControl={false} className="grayscale-[0.2] contrast-[1.1]">
                    {/* @ts-ignore */}
                    <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                    {vehicles.map(driver => (
@@ -1186,6 +1287,26 @@ export default function Dashboard({ user }: { user: any }) {
                       </Popup>
                    </Marker>
                    ))}
+                    {panicAlerts.map(alert => {
+                      if (!alert.lat || !alert.lng) return null;
+                      return (
+                        /* @ts-ignore */
+                        <Marker key={`panic-marker-${alert.id}`} position={[alert.lat, alert.lng]} icon={createPanicIcon(alert.prefix)}>
+                          {/* @ts-ignore */}
+                          <Popup offset={[0, -15]}>
+                            <div className="p-3 min-w-[150px] font-sans dark:bg-slate-900">
+                              <p className="font-sans font-black text-rose-600 text-sm mb-1 italic tracking-tight animate-pulse">⚠️ ALERTA DE PÂNICO ⚠️</p>
+                              <p className="text-[11px] text-slate-1050 dark:text-white font-black uppercase">Viatura: {alert.prefix || 'N/A'}</p>
+                              <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase">Motorista: {alert.driverName || 'Motorista'}</p>
+                              {alert.driverPhone && (
+                                <p className="text-[10px] text-emerald-600 font-bold uppercase mt-1 font-mono">Contacto: {alert.driverPhone}</p>
+                              )}
+                              <p className="text-[8px] text-slate-400 mt-2 italic font-mono">{alert.timestamp ? new Date(alert.timestamp).toLocaleString() : ''}</p>
+                            </div>
+                          </Popup>
+                        </Marker>
+                      );
+                    })}
                 </MapContainer>
                 {/* ... existing legend ... */}
              </div>
@@ -1313,6 +1434,35 @@ export default function Dashboard({ user }: { user: any }) {
                       </button>
                     </div>
                     <p className={`text-[12px] font-bold leading-tight ${alert.id.startsWith('panic-') ? 'text-white' : 'text-slate-800 dark:text-slate-200'}`}>{alert.message}</p>
+                    {alert.id.startsWith('panic-') && (
+                      <div className="mt-3 flex items-center gap-2 pt-2 border-t border-white/20">
+                        {(() => {
+                          const phone = getDriverPhone(alert.driverId, alert.driverName, alert.prefix, alert.driverPhone);
+                          return phone ? (
+                            <a 
+                              href={`tel:${phone}`}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all font-mono"
+                            >
+                              Ligar Já
+                            </a>
+                          ) : (
+                            <span className="text-[8px] font-bold text-white/50 uppercase tracking-widest italic">Sem Contacto</span>
+                          );
+                        })()}
+                        {alert.lat && alert.lng && (
+                          <button 
+                            onClick={() => {
+                              setMapCenter([alert.lat, alert.lng]);
+                              setMapZoom(16);
+                            }}
+                            className="inline-flex items-center bg-white/10 hover:bg-white/20 text-white border border-white/15 py-1.5 px-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 cursor-pointer"
+                            title="Focar no Mapa"
+                          >
+                            Focar Mapa
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))
               ) : (

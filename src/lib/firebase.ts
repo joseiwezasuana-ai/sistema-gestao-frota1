@@ -39,7 +39,6 @@ const databaseId = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestor
   : undefined; 
 
 export const db = app ? initializeFirestore(app, {
-  experimentalForceLongPolling: true, 
   localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }), 
   ignoreUndefinedProperties: true
 }, databaseId) : { collection: () => ({}), doc: () => ({}) } as any;

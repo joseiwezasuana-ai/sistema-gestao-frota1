@@ -1,5 +1,5 @@
 // @ts-nocheck
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Smartphone,
   Power,
@@ -15,6 +15,7 @@ import {
   XCircle,
   Phone,
   PhoneIncoming,
+  PhoneCall,
   MessageCircle,
   MoreVertical,
   ChevronRight,
@@ -26,6 +27,7 @@ import {
   AlertTriangle,
   Wallet,
   Wrench,
+  Settings,
   FileSignature,
   X,
   Users,
@@ -33,7 +35,10 @@ import {
   ExternalLink,
   RefreshCw,
   Zap,
+  MessageSquare,
 } from "lucide-react";
+import { WhatsAppMonitor } from "./WhatsAppMonitor";
+import WaitingTimer from './WaitingTimer';
 import { motion, AnimatePresence } from "motion/react";
 import { cn } from "../lib/utils";
 import { format } from "date-fns";
@@ -42,6 +47,8 @@ import {
   collection,
   query,
   where,
+  or,
+  and,
   onSnapshot,
   orderBy,
   limit,
@@ -85,6 +92,7 @@ interface DriverViewProps {
 
 export default function DriverView({ user }: DriverViewProps) {
   const [isOnline, setIsOnline] = useState(false);
+  const [isWhatsAppOpen, setIsWhatsAppOpen] = useState(false);
   const [currentService, setCurrentService] = useState<any>(null);
   const [otherDrivers, setOtherDrivers] = useState<any[]>([]);
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
@@ -95,6 +103,14 @@ export default function DriverView({ user }: DriverViewProps) {
   const [transferPickupAddress, setTransferPickupAddress] = useState("");
   const [earnings, setEarnings] = useState(0);
   const [stars, setStars] = useState(4.8);
+  const hiddenCallIdsRef = useRef<string[]>([]);
+  const forceDismissService = () => {
+    if (currentService?.id) {
+       hiddenCallIdsRef.current.push(currentService.id);
+    }
+    setShowNotification(false);
+    setCurrentService(null);
+  };
   const [tripHistory, setTripHistory] = useState<any[]>([]);
 
   const [aiAdvice, setAiAdvice] = useState<string | null>(null);
@@ -170,9 +186,32 @@ export default function DriverView({ user }: DriverViewProps) {
   const [showNotification, setShowNotification] = useState(false);
   const [recentCalls, setRecentCalls] = useState<any[]>([]);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isMessagesModalOpen, setIsMessagesModalOpen] = useState(false);
   const [activeInternalTab, setActiveInternalTab] = useState<
-    "dashboard" | "history" | "wallet" | "contracts"
+    "dashboard" | "history" | "wallet" | "contracts" | "settings"
   >("dashboard");
+  const [selectedRingtone, setSelectedRingtone] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('driver_ringtone') || 'classic';
+    }
+    return 'classic';
+  });
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const ringtones = [
+    { id: 'classic', name: 'Clássico', url: 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3' },
+    { id: 'modern', name: 'Moderno', url: 'https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3' },
+    { id: 'alert', name: 'Alerta', url: 'https://assets.mixkit.co/active_storage/sfx/1359/1359-preview.mp3' },
+    { id: 'melodic', name: 'Melódico', url: 'https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3' },
+  ];
+
+  const playPreview = (url: string) => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+    }
+    audioRef.current = new Audio(url);
+    audioRef.current.play().catch(e => console.warn(e));
+  };
   const [showPanicModal, setShowPanicModal] = useState(false);
   const [panicLoading, setPanicLoading] = useState(false);
   const [isContractModalOpen, setIsContractModalOpen] = useState(false);
@@ -204,6 +243,7 @@ export default function DriverView({ user }: DriverViewProps) {
     Record<string, string>
   >({});
   const [todayRevenueSubmitted, setTodayRevenueSubmitted] = useState(false);
+  const [pendingRevenues, setPendingRevenues] = useState<any[]>([]);
   const [rejectedRevenues, setRejectedRevenues] = useState<any[]>([]);
   const [editingRevenueId, setEditingRevenueId] = useState<string | null>(null);
   const [lastAssignedShift, setLastAssignedShift] = useState<{
@@ -226,6 +266,16 @@ export default function DriverView({ user }: DriverViewProps) {
   const [unreadMessages, setUnreadMessages] = useState<any[]>([]);
   const [isAiAdviceExpanded, setIsAiAdviceExpanded] = useState(false);
   const [isAlertsCollapsed, setIsAlertsCollapsed] = useState(true);
+  const markMessageAsRead = async (messageId: string) => {
+    try {
+      await updateDoc(doc(db, "messages", messageId), {
+        status: "read",
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, "messages");
+    }
+  };
+
   // Listen for unread messages
   useEffect(() => {
     if (!user?.uid) return;
@@ -440,20 +490,20 @@ export default function DriverView({ user }: DriverViewProps) {
     return () => unsubscribe();
   }, [user?.uid]);
 
-  // Listen for rejected revenues
+  // Listen for pending / rejected revenues
   useEffect(() => {
     if (!user?.uid) return;
     const q = query(
       collection(db, "revenue_logs"),
       where("driverId", "==", user.uid),
-      where("status", "in", ["rejected_by_operator", "rejected_by_accountant"]),
+      where("status", "in", ["pending_approval", "rejected_by_operator", "rejected_by_accountant"]),
       orderBy("timestamp", "desc"),
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      setRejectedRevenues(
-        snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })),
-      );
+      const all = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      setPendingRevenues(all.filter(r => r.status === 'pending_approval'));
+      setRejectedRevenues(all.filter(r => r.status !== 'pending_approval'));
     }, (error) => handleFirestoreError(error, OperationType.GET, "revenue_logs"));
 
     return () => unsubscribe();
@@ -587,7 +637,7 @@ export default function DriverView({ user }: DriverViewProps) {
         date: editingRevenueId 
           ? rejectedRevenues.find(r => r.id === editingRevenueId)?.date || new Date().toISOString().split("T")[0]
           : new Date().toISOString().split("T")[0],
-        status: "vended_by_driver",
+        status: "pending_approval",
         timestamp: new Date().toISOString(),
         rejectionReason: "" // Clear reason on resubmit
       };
@@ -619,44 +669,68 @@ export default function DriverView({ user }: DriverViewProps) {
   useEffect(() => {
     if (!user?.uid) return;
 
-    // Listen for new calls assigned to this driver
+    // Simplificar a query para evitar problemas de índices compostos (FAILED_PRECONDITION)
     const q = query(
       collection(db, "calls"),
-      where("driverId", "==", user.uid),
-      where("status", "in", ["pending", "active"]),
-      orderBy("timestamp", "desc"),
-      limit(1),
+      where("status", "in", ["pending", "active"])
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      if (!snapshot.empty) {
-        const callData = snapshot.docs[0].data();
-        if (callData.status === "pending" && !currentService) {
+      // Filtrar chamadas atribuídas a este motorista localmente para evitar erros de índice do Firestore
+      const activeDocs = snapshot.docs.filter((doc) => {
+        if (hiddenCallIdsRef.current.includes(doc.id)) return false;
+        const d = doc.data();
+        return (
+          d.driverId === user.uid ||
+          d.driverId === (assignedVehicle?.id || "no_vehicle_id") ||
+          d.driverId === (assignedVehicle?.driverId || "no_driver_id") ||
+          d.driverName === (user.name || "no_name")
+        );
+      });
+      
+      // Ordenar por timestamp desc localmente
+      activeDocs.sort((a, b) => {
+        const tA = a.data().timestamp || "";
+        const tB = b.data().timestamp || "";
+        return tB.localeCompare(tA);
+      });
+
+      if (activeDocs.length > 0) {
+        const callDoc = activeDocs[0];
+        const callData = { id: callDoc.id, ...callDoc.data() };
+        if (callData.status === "pending") {
+          setCurrentService(callData);
           setShowNotification(true);
-          setCurrentService({ id: snapshot.docs[0].id, ...callData });
         } else if (callData.status === "active") {
-          setCurrentService({ id: snapshot.docs[0].id, ...callData });
+          setCurrentService(callData);
+          setShowNotification(false);
+        } else {
+          setCurrentService(null);
           setShowNotification(false);
         }
       } else {
         setCurrentService(null);
+        setShowNotification(false);
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, "calls"));
 
     return () => unsubscribe();
-  }, [user?.uid, currentService]);
+  }, [user?.uid, assignedVehicle?.id, assignedVehicle?.driverId, user?.name]);
 
   // Listen for other active and available drivers in the fleet
   useEffect(() => {
     if (!user?.uid) return;
-    const q = query(
-      collection(db, "drivers"),
-      where("status", "in", ["available", "ativo", "disponível"])
-    );
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubscribe = onSnapshot(collection(db, "drivers"), (snapshot) => {
       const driversList = snapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() }))
-        .filter((d: any) => d.driverId !== user?.uid && d.name !== user?.name);
+        .filter((d: any) => {
+          const isMe = d.driverId === user?.uid || (d.name && user?.name && d.name.toLowerCase() === user.name.toLowerCase());
+          if (isMe) return false;
+          
+          const status = (d.status || "").toLowerCase();
+          const activeStatuses = ["available", "ativo", "disponível", "disponivel", "busy", "ocupado", "em serviço", "em curso"];
+          return activeStatuses.includes(status);
+        });
       setOtherDrivers(driversList);
     }, (error) => handleFirestoreError(error, OperationType.GET, "drivers"));
 
@@ -760,6 +834,15 @@ export default function DriverView({ user }: DriverViewProps) {
   useEffect(() => {
     let timeout: NodeJS.Timeout;
     if (showNotification && currentService?.status === "pending") {
+      // Play Ringtone
+      const ringtone = ringtones.find(r => r.id === selectedRingtone) || ringtones[0];
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+      audioRef.current = new Audio(ringtone.url);
+      audioRef.current.loop = true;
+      audioRef.current.play().catch(e => console.warn("Audio play failed:", e));
+
       timeout = setTimeout(async () => {
         try {
           if (!currentService?.id) return;
@@ -768,8 +851,8 @@ export default function DriverView({ user }: DriverViewProps) {
             responseHistory: arrayUnion({
               action: "ignored",
               timestamp: new Date().toISOString(),
-              driverId: user?.uid,
-              driverName: user?.name,
+              driverId: user?.uid || "unknown",
+              driverName: user?.name || "Driver",
             }),
           });
           setShowNotification(false);
@@ -778,9 +861,19 @@ export default function DriverView({ user }: DriverViewProps) {
           handleFirestoreError(error, OperationType.UPDATE, `calls/${currentService.id}`);
         }
       }, 45000); // 45 seconds timeout
+    } else {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      }
     }
-    return () => clearTimeout(timeout);
-  }, [showNotification, currentService, user]);
+    return () => {
+      clearTimeout(timeout);
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+    };
+  }, [showNotification, currentService, user, selectedRingtone]);
 
   const captureContractLocation = () => {
     setIsCapturingGeo(true);
@@ -856,6 +949,9 @@ export default function DriverView({ user }: DriverViewProps) {
         setShowSafetyCheck(true);
       } catch (err) {
         setIsOnline(true);
+        if (assignedVehicle?.id) {
+          updateDoc(doc(db, "drivers", assignedVehicle.id), { status: "disponível" }).catch(e => console.warn(e));
+        }
       } finally {
         setAiLoading(false);
       }
@@ -863,33 +959,48 @@ export default function DriverView({ user }: DriverViewProps) {
       setIsOnline(false);
       setCurrentService(null);
       setShowNotification(false);
+      if (assignedVehicle?.id) {
+        updateDoc(doc(db, "drivers", assignedVehicle.id), { status: "indisponível" }).catch(e => console.warn(e));
+      }
     }
   };
 
   const confirmSafetyAndStart = () => {
     setIsOnline(true);
     setShowSafetyCheck(false);
+    if (assignedVehicle?.id) {
+      updateDoc(doc(db, "drivers", assignedVehicle.id), { status: "disponível" }).catch(e => console.warn(e));
+    }
   };
 
   const acceptService = async () => {
     if (!currentService) return;
 
     try {
-      const callRef = doc(db, "calls", currentService.id);
-      await updateDoc(callRef, {
-        status: "active",
-        acceptedAt: serverTimestamp(),
-        responseHistory: arrayUnion({
-          action: "accepted",
-          timestamp: new Date().toISOString(),
-          driverId: user?.uid,
-          driverName: user?.name,
-        }),
-      });
+      // Unblock UI immediately
       setShowNotification(false);
-      setCurrentService({ ...currentService, status: "active" });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `calls/${currentService.id}`);
+      setCurrentService({ ...currentService, status: "active", acceptedAt: new Date().toISOString() });
+      
+      if (currentService.id) {
+        const callRef = doc(db, "calls", currentService.id);
+        await updateDoc(callRef, {
+          status: "active",
+          acceptedAt: serverTimestamp(),
+          responseHistory: arrayUnion({
+            action: "accepted",
+            timestamp: new Date().toISOString(),
+            driverId: user?.uid || "unknown",
+            driverName: user?.name || "Driver",
+          }),
+        });
+      }
+
+      if (assignedVehicle?.id) {
+        await updateDoc(doc(db, "drivers", assignedVehicle.id), { status: "ocupado" });
+      }
+    } catch (error: any) {
+      alert("Erro ao aceitar chamada no sistema: " + (error?.message || String(error)));
+      console.error(error);
     }
   };
 
@@ -897,21 +1008,34 @@ export default function DriverView({ user }: DriverViewProps) {
     if (!currentService) return;
 
     try {
-      const callRef = doc(db, "calls", currentService.id);
-      await updateDoc(callRef, {
-        status: "cancelled",
-        cancelledAt: serverTimestamp(),
-        responseHistory: arrayUnion({
-          action: "rejected",
-          timestamp: new Date().toISOString(),
-          driverId: user?.uid,
-          driverName: user?.name,
-        }),
-      });
+      // Unblock UI immediately
       setShowNotification(false);
+      const serviceId = currentService.id;
+      if (serviceId) {
+        hiddenCallIdsRef.current.push(serviceId);
+      }
       setCurrentService(null);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `calls/${currentService.id}`);
+
+      if (serviceId) {
+        const callRef = doc(db, "calls", serviceId);
+        await updateDoc(callRef, {
+          status: "cancelled",
+          cancelledAt: serverTimestamp(),
+          responseHistory: arrayUnion({
+            action: "rejected",
+            timestamp: new Date().toISOString(),
+            driverId: user?.uid || "unknown",
+            driverName: user?.name || "Driver",
+          }),
+        });
+      }
+
+      if (assignedVehicle?.id) {
+        await updateDoc(doc(db, "drivers", assignedVehicle.id), { status: "disponível" });
+      }
+    } catch (error: any) {
+      alert("Erro ao recusar chamada no sistema: " + (error?.message || String(error)));
+      console.error(error);
     }
   };
 
@@ -919,21 +1043,34 @@ export default function DriverView({ user }: DriverViewProps) {
     if (!currentService) return;
 
     try {
-      const callRef = doc(db, "calls", currentService.id);
-      await updateDoc(callRef, {
-        status: "completed",
-        completedAt: serverTimestamp(),
-        responseHistory: arrayUnion({
-          action: "completed",
-          timestamp: new Date().toISOString(),
-          driverId: user?.uid,
-          driverName: user?.name,
-        }),
-      });
-      setEarnings((prev) => prev + (currentService?.price || 2500));
+      // Unblock UI immediately
+      const serviceId = currentService.id;
+      if (serviceId) {
+        hiddenCallIdsRef.current.push(serviceId);
+      }
+      setEarnings((prev) => prev + (currentService?.price || 0));
       setCurrentService(null);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `calls/${currentService.id}`);
+
+      if (serviceId) {
+        const callRef = doc(db, "calls", serviceId);
+        await updateDoc(callRef, {
+          status: "completed",
+          completedAt: serverTimestamp(),
+          responseHistory: arrayUnion({
+            action: "completed",
+            timestamp: new Date().toISOString(),
+            driverId: user?.uid || "unknown",
+            driverName: user?.name || "Driver",
+          }),
+        });
+      }
+
+      if (assignedVehicle?.id) {
+        await updateDoc(doc(db, "drivers", assignedVehicle.id), { status: "disponível" });
+      }
+    } catch (error: any) {
+      alert("Erro ao finalizar chamada no sistema: " + (error?.message || String(error)));
+      console.error(error);
     }
   };
 
@@ -952,6 +1089,7 @@ export default function DriverView({ user }: DriverViewProps) {
           vehiclePlate: targetDriver.vehiclePlate || targetDriver.licensePlate || ''
         },
         status: "pending",
+        isForwarded: true,
         responseHistory: arrayUnion({
           action: "transferred",
           timestamp: new Date().toISOString(),
@@ -973,6 +1111,7 @@ export default function DriverView({ user }: DriverViewProps) {
   const sendDirectCallTransfer = async (targetDriver: any) => {
     if (!transferCustomerPhone || !targetDriver) return;
     setTransferLoading(true);
+    console.log("DEBUG: Forwarding call to target driver:", targetDriver);
     try {
       const trimmedPhone = transferCustomerPhone.trim();
       const phoneWithPrefix = trimmedPhone.startsWith('+244') 
@@ -981,14 +1120,39 @@ export default function DriverView({ user }: DriverViewProps) {
           ? `+${trimmedPhone}`
           : `+244 ${trimmedPhone}`;
       
+      // Resolve the target colleague's Firebase Auth UID if possible by querying the 'users' collection using their registered name
+      // ONLY resolve if we don't already have a valid driverId
+      let resolvedDriverId = targetDriver.driverId || targetDriver.id;
+      console.log("DEBUG: Initial resolvedDriverId:", resolvedDriverId);
+      
+      if (!resolvedDriverId) {
+        try {
+          const usersRef = collection(db, "users");
+          const userQuery = query(usersRef, where("name", "==", targetDriver.name));
+          const userDocs = await getDocs(userQuery);
+          if (!userDocs.empty) {
+            resolvedDriverId = userDocs.docs[0].id;
+            console.log("DEBUG: Resolved Driver UID via users collection:", resolvedDriverId);
+          } else {
+              console.log("DEBUG: Could not resolve Driver UID via users collection by name:", targetDriver.name);
+          }
+        } catch (err) {
+          console.warn("Failed to resolve target driver's user UID, falling back to driver document ID", err);
+        }
+      } else {
+          console.log("DEBUG: Using existing driverId:", resolvedDriverId);
+      }
+      
+      console.log("DEBUG: Final resolvedDriverId being used for call:", resolvedDriverId);
+
       await addDoc(collection(db, "calls"), {
         customerPhone: phoneWithPrefix,
         customerName: transferCustomerName || "Cliente Particular",
         pickupAddress: transferPickupAddress || "Chamada Direta Recebida por Telemóvel",
         destinationAddress: "A definir com o cliente",
-        price: 2500,
-        timestamp: new Date().toISOString(),
-        driverId: targetDriver.driverId || targetDriver.id,
+        price: 0,
+        timestamp: serverTimestamp(),
+        driverId: resolvedDriverId,
         driverName: targetDriver.name,
         driverInfo: {
           name: targetDriver.name,
@@ -998,6 +1162,7 @@ export default function DriverView({ user }: DriverViewProps) {
         },
         status: "pending",
         type: "direct_referral",
+        isForwarded: true,
         transferredBy: {
           id: user?.uid,
           name: user?.name,
@@ -1060,12 +1225,21 @@ export default function DriverView({ user }: DriverViewProps) {
               </div>
             </div>
             <div className="flex items-center gap-2 relative">
-              <button className="p-2 text-slate-400 hover:text-slate-600 transition-colors relative">
+              <button 
+                onClick={() => setIsMessagesModalOpen(true)}
+                className="p-2 text-slate-400 hover:text-slate-600 transition-colors relative">
                 <Bell size={20} />
                 {unreadMessages.length > 0 && (
                   <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-rose-500 rounded-full border-2 border-white animate-pulse" />
                 )}
               </button>
+              <button
+                onClick={() => setIsWhatsAppOpen(true)}
+                className="p-2 text-slate-400 hover:text-emerald-600 transition-colors"
+              >
+                <MessageSquare size={20} />
+              </button>
+
               <button
                 onClick={() => setIsMenuOpen(!isMenuOpen)}
                 className="p-2 text-slate-400 hover:text-slate-600 transition-colors"
@@ -1095,6 +1269,13 @@ export default function DriverView({ user }: DriverViewProps) {
                         </p>
                       </div>
                       <button
+                        onClick={() => { setActiveInternalTab("settings"); setIsMenuOpen(false); }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors text-left"
+                      >
+                        <Settings size={14} />
+                        Configurar Toque
+                      </button>
+                      <button
                         onClick={() => signOut(auth)}
                         className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-bold text-red-500 hover:bg-red-50 transition-colors text-left"
                       >
@@ -1108,7 +1289,87 @@ export default function DriverView({ user }: DriverViewProps) {
             </div>
           </header>
 
-          <main className="flex-1 px-6 py-6 space-y-6">
+      <AnimatePresence>
+        {isMessagesModalOpen && (
+          <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
+              onClick={() => setIsMessagesModalOpen(false)}
+            />
+            <motion.div
+              initial={{ y: 300, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 300, opacity: 0 }}
+              className="relative w-full bg-white rounded-t-[2.5rem] sm:rounded-[2.5rem] p-6 space-y-6 shadow-2xl z-20 flex flex-col h-[90%] max-h-[90vh] sm:max-w-md overflow-hidden"
+            >
+              <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+                <h2 className="text-xl font-black uppercase tracking-tighter">Mensagens ({unreadMessages.length})</h2>
+                <button onClick={() => setIsMessagesModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full">
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto space-y-4 pr-2">
+                {unreadMessages.length === 0 && <p className="text-center text-slate-400 py-10">Nenhuma mensagem nova.</p>}
+                {unreadMessages.map((msg) => (
+                  <div key={msg.id} className="bg-slate-50 p-4 rounded-2xl border border-slate-100 relative">
+                    <p className="text-xs font-black text-slate-800 uppercase mb-1">{msg.subject || msg.title || "Notificação"}</p>
+                    <p className="text-[11px] text-slate-600 leading-relaxed mb-2">{msg.content}</p>
+                    <span className="block text-[9px] text-slate-400 font-bold uppercase">
+                      {new Date(msg.timestamp?.seconds ? msg.timestamp.seconds * 1000 : msg.timestamp).toLocaleString()}
+                    </span>
+                    <button
+                      onClick={() => markMessageAsRead(msg.id)}
+                      className="absolute top-4 right-4 p-1.5 bg-white border border-slate-200 rounded-full hover:bg-slate-100 text-slate-400 hover:text-brand-primary transition-colors"
+                      title="Marcar como lida"
+                    >
+                      <CheckCircle2 size={16} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <button 
+                onClick={() => setIsMessagesModalOpen(false)}
+                className="w-full bg-brand-primary text-white py-3 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl active:scale-95 transition-all"
+              >
+                Fechar
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isWhatsAppOpen && (
+          <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
+              onClick={() => setIsWhatsAppOpen(false)}
+            />
+            <motion.div
+              initial={{ y: 300, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 300, opacity: 0 }}
+              className="relative w-full bg-white rounded-t-[2.5rem] sm:rounded-[2.5rem] p-6 space-y-6 shadow-2xl z-20 flex flex-col h-[98%] max-h-[98vh] sm:max-w-4xl"
+            >
+              <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+                <h2 className="text-xl font-black uppercase tracking-tighter">Central WhatsApp</h2>
+                <button onClick={() => setIsWhatsAppOpen(false)} className="p-2 hover:bg-slate-100 rounded-full">
+                  <X size={20} />
+                </button>
+              </div>
+              <WhatsAppMonitor isDriverView={true} isMechanicView={false} />
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <main className="flex-1 px-6 py-6 space-y-6">
             <AnimatePresence>
               {showSafetyCheck && (
                 <motion.div 
@@ -1315,29 +1576,51 @@ export default function DriverView({ user }: DriverViewProps) {
                     </div>
                   </div>
 
-                  {/* Shift Action Toggle and Emergency Button */}
+                  {/* Shift Action Toggle / Service Control and Emergency Button */}
                   <div className="flex items-center gap-3 mt-4 pt-3 border-t border-slate-800">
-                    <button
-                      onClick={handleStartShift}
-                      className={cn(
-                        "flex-1 py-3 px-4 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all duration-300 flex items-center justify-center gap-2 shadow-lg",
-                        isOnline 
-                          ? "bg-emerald-600 text-white shadow-emerald-950/20 active:bg-emerald-700" 
-                          : "bg-white text-slate-950 shadow-black/20 active:bg-slate-100"
-                      )}
-                    >
-                      <Power size={13} />
-                      {isOnline ? "Terminar Turno" : "Iniciar Turno"}
-                    </button>
+                    {currentService && currentService.status === "pending" ? (
+                      <>
+                        <button
+                          onClick={acceptService}
+                          className="flex-1 py-3 px-4 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all duration-300 flex items-center justify-center gap-2 shadow-lg bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/20 active:scale-95 animate-pulse"
+                        >
+                          <PhoneCall size={13} className="animate-bounce" />
+                          ATENDER CHAMADA
+                        </button>
 
-                    <button
-                      onClick={triggerPanic}
-                      disabled={panicLoading}
-                      className="w-12 h-12 rounded-xl flex items-center justify-center transition-all bg-red-650 hover:bg-red-700 text-white shadow-lg active:scale-90 flex-shrink-0 animate-pulse border border-red-500/30"
-                      title="S.O.S de Emergência"
-                    >
-                      <AlertTriangle size={18} />
-                    </button>
+                        <button
+                          onClick={rejectService}
+                          className="w-12 h-12 rounded-xl flex items-center justify-center transition-all bg-rose-600 hover:bg-rose-700 text-white shadow-lg active:scale-95 flex-shrink-0 border border-rose-500/30 animate-pulse"
+                          title="Recusar Chamada"
+                        >
+                          <XCircle size={18} />
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          onClick={handleStartShift}
+                          className={cn(
+                            "flex-1 py-3 px-4 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all duration-300 flex items-center justify-center gap-2 shadow-lg",
+                            isOnline 
+                              ? "bg-emerald-600 text-white shadow-emerald-950/20 active:bg-emerald-700" 
+                              : "bg-white text-slate-950 shadow-black/20 active:bg-slate-100"
+                          )}
+                        >
+                          <Power size={13} />
+                          {isOnline ? "Terminar Turno" : "Iniciar Turno"}
+                        </button>
+
+                        <button
+                          onClick={triggerPanic}
+                          disabled={panicLoading}
+                          className="w-12 h-12 rounded-xl flex items-center justify-center transition-all bg-red-650 hover:bg-red-700 text-white shadow-lg active:scale-90 flex-shrink-0 animate-pulse border border-red-500/30"
+                          title="S.O.S de Emergência"
+                        >
+                          <AlertTriangle size={18} />
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
 
@@ -1480,30 +1763,63 @@ export default function DriverView({ user }: DriverViewProps) {
                                 Valor
                               </p>
                               <p className="text-[15px] font-black text-emerald-600">
-                                {currentService.price || 2500}Kz
+                                {currentService.price || 0}Kz
                               </p>
                             </div>
                           </div>
 
                           <div className="flex flex-col gap-2">
-                            <div className="flex items-center gap-2">
-                              <button className="flex-1 bg-slate-100 text-slate-600 p-3 rounded-xl font-bold text-[11px] transition-all hover:bg-slate-200">
-                                NAVEGAR
-                              </button>
-                              <button
-                                onClick={finishService}
-                                className="flex-1 bg-brand-primary text-white p-3 rounded-xl font-bold text-[11px] transition-all hover:bg-brand-secondary shadow-lg shadow-brand-primary/20"
-                              >
-                                FINALIZAR
-                              </button>
-                            </div>
-                            <button
-                              onClick={() => setIsTransferModalOpen(true)}
-                              className="w-full bg-slate-100 hover:bg-slate-200 p-3 rounded-xl font-bold text-[11px] transition-all flex items-center justify-center gap-2 border border-slate-200 shadow-sm text-slate-700"
-                            >
-                              <Users size={14} className="text-slate-500" />
-                              DELEGAR / ENCAMINHAR CLIENTE
-                            </button>
+                            {currentService.status === "pending" ? (
+                              <div className="space-y-3">
+                                <div className="bg-amber-50 border border-amber-200 p-3.5 rounded-2xl flex items-center gap-3 animate-pulse">
+                                  <PhoneCall size={18} className="text-amber-600 animate-bounce shrink-0" />
+                                  <div className="leading-tight">
+                                    <p className="text-[10px] font-black text-amber-800 uppercase tracking-wider">
+                                      Chamada em Espera • <WaitingTimer timestamp={currentService.timestamp} className="underline" />
+                                    </p>
+                                    <p className="text-[9px] font-bold text-amber-600 uppercase">
+                                      Toque em Atender para iniciar a corrida
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={rejectService}
+                                    className="flex-1 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-500 py-3.5 rounded-xl font-black text-[11px] uppercase tracking-wider transition-all border border-slate-200"
+                                  >
+                                    Recusar
+                                  </button>
+                                  <button
+                                    onClick={acceptService}
+                                    className="flex-[2] bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-wider transition-all shadow-lg shadow-emerald-500/30 flex items-center justify-center gap-2 animate-pulse"
+                                  >
+                                    <PhoneCall size={14} className="animate-bounce" />
+                                    ATENDER CHAMADA
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="flex items-center gap-2">
+                                  <button className="flex-1 bg-slate-100 text-slate-600 p-3 rounded-xl font-bold text-[11px] transition-all hover:bg-slate-200">
+                                    NAVEGAR
+                                  </button>
+                                  <button
+                                    onClick={finishService}
+                                    className="flex-1 bg-brand-primary text-white p-3 rounded-xl font-bold text-[11px] transition-all hover:bg-brand-secondary shadow-lg shadow-brand-primary/20"
+                                  >
+                                    FINALIZAR
+                                  </button>
+                                </div>
+                                <button
+                                  onClick={() => setIsTransferModalOpen(true)}
+                                  className="w-full bg-slate-100 hover:bg-slate-200 p-3 rounded-xl font-bold text-[11px] transition-all flex items-center justify-center gap-2 border border-slate-200 shadow-sm text-slate-700"
+                                >
+                                  <Users size={14} className="text-slate-500" />
+                                  DELEGAR / ENCAMINHAR CLIENTE
+                                </button>
+                              </>
+                            )}
                           </div>
                         </div>
                       )}
@@ -1513,7 +1829,16 @@ export default function DriverView({ user }: DriverViewProps) {
                   {/* Quick Actions (Call/Chat) */}
                   {currentService && (
                     <div className="grid grid-cols-2 gap-3">
-                      <button className="flex items-center justify-center gap-3 bg-white border border-slate-200 p-4 rounded-2xl text-slate-700 transition-all hover:bg-slate-50 group">
+                      <button 
+                        onClick={() => {
+                          if (currentService.customerPhone) {
+                            window.open(`tel:${currentService.customerPhone}`, '_self');
+                          } else {
+                            alert("Cliente não tem número de telemóvel associado.");
+                          }
+                        }}
+                        className="flex items-center justify-center gap-3 bg-white border border-slate-200 p-4 rounded-2xl text-slate-700 transition-all hover:bg-slate-50 group"
+                      >
                         <div className="p-2 bg-blue-50 text-blue-600 rounded-lg group-hover:bg-blue-100">
                           <Phone size={18} />
                         </div>
@@ -1521,7 +1846,10 @@ export default function DriverView({ user }: DriverViewProps) {
                           Ligar Cliente
                         </span>
                       </button>
-                      <button className="flex items-center justify-center gap-3 bg-white border border-slate-200 p-4 rounded-2xl text-slate-700 transition-all hover:bg-slate-50 group">
+                      <button 
+                        onClick={() => setIsMessagesModalOpen(true)}
+                        className="flex items-center justify-center gap-3 bg-white border border-slate-200 p-4 rounded-2xl text-slate-700 transition-all hover:bg-slate-50 group"
+                      >
                         <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg group-hover:bg-emerald-100">
                           <MessageCircle size={18} />
                         </div>
@@ -1562,7 +1890,7 @@ export default function DriverView({ user }: DriverViewProps) {
                             </span>
                             <span className="w-1 h-1 bg-slate-200 rounded-full" />
                             <p className="text-[10px] text-emerald-600 font-black italic">
-                              {(trip.price || 2500).toLocaleString()} Kz
+                              {(trip.price || 0).toLocaleString()} Kz
                             </p>
                           </div>
                         </div>
@@ -1872,6 +2200,73 @@ export default function DriverView({ user }: DriverViewProps) {
                   )}
                 </div>
               </div>
+            ) : activeInternalTab === "settings" ? (
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-sm font-black text-slate-800 uppercase tracking-tighter">
+                    Ajustes de Notificação
+                  </h3>
+                  <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider mt-1">
+                    Configure o som para novas chamadas
+                  </p>
+                </div>
+
+                <div className="bg-white rounded-3xl p-6 border border-slate-100 space-y-4">
+                  <div className="space-y-3">
+                    {ringtones.map((ring) => (
+                      <button
+                        key={ring.id}
+                        onClick={() => {
+                          setSelectedRingtone(ring.id);
+                          localStorage.setItem('driver_ringtone', ring.id);
+                          playPreview(ring.url);
+                        }}
+                        className={cn(
+                          "w-full p-4 rounded-2xl border flex items-center justify-between transition-all active:scale-95",
+                          selectedRingtone === ring.id
+                            ? "bg-brand-primary/5 border-brand-primary shadow-sm"
+                            : "bg-slate-50 border-slate-100 hover:border-slate-200"
+                        )}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={cn(
+                            "w-8 h-8 rounded-full flex items-center justify-center",
+                            selectedRingtone === ring.id ? "bg-brand-primary text-white" : "bg-slate-200 text-slate-400"
+                          )}>
+                            <PhoneIncoming size={14} />
+                          </div>
+                          <span className={cn(
+                            "text-xs font-black uppercase",
+                            selectedRingtone === ring.id ? "text-brand-primary" : "text-slate-600"
+                          )}>
+                            {ring.name}
+                          </span>
+                        </div>
+                        {selectedRingtone === ring.id && (
+                          <div className="flex items-center gap-1.5 bg-brand-primary text-white px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest">
+                            <CheckCircle2 size={10} />
+                            Ativo
+                          </div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="bg-amber-50 border border-amber-100 p-4 rounded-2xl flex items-start gap-3">
+                    <Bell size={16} className="text-amber-500 shrink-0" />
+                    <p className="text-[9px] text-amber-700 font-bold uppercase leading-relaxed">
+                      O toque escolhido tocará continuamente no seu telemóvel sempre que houver uma nova chamada pendente para aceitar.
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={() => setActiveInternalTab("dashboard")}
+                    className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl active:scale-95 transition-all"
+                  >
+                    Guardar e Voltar
+                  </button>
+                </div>
+              </div>
             ) : (
               <div className="space-y-6">
                 <div className="bg-slate-900 rounded-3xl p-6 text-white relative overflow-hidden">
@@ -1902,6 +2297,15 @@ export default function DriverView({ user }: DriverViewProps) {
                       </p>
                     </div>
                   </div>
+
+                  {pendingRevenues.length > 0 && (
+                    <div className="bg-blue-50 border border-blue-100 p-3 rounded-2xl flex items-center gap-3 mb-4">
+                      <Clock size={16} className="text-blue-500 shrink-0 animate-pulse" />
+                      <p className="text-[10px] text-blue-700 font-bold">
+                        Tens {pendingRevenues.length} faturamento(s) a aguardar aprovação da central.
+                      </p>
+                    </div>
+                  )}
 
                   <form onSubmit={submitRevenue} className="space-y-4">
                     <div className="grid grid-cols-2 gap-3">
@@ -2430,7 +2834,7 @@ export default function DriverView({ user }: DriverViewProps) {
                     </label>
                     <input
                       type="text"
-                      placeholder="Ex: Sr. Carlos António"
+                      placeholder="Ex: Sr. Ze Suana"
                       value={transferCustomerName}
                       onChange={(e) => setTransferCustomerName(e.target.value)}
                       className="w-full bg-slate-100 rounded-xl px-3 py-2 text-xs font-black text-slate-800 outline-none border border-slate-200 uppercase"
@@ -2499,6 +2903,32 @@ export default function DriverView({ user }: DriverViewProps) {
             </div>
           )}
         </AnimatePresence>
+
+        {isWhatsAppOpen && (
+          <div className="absolute inset-0 z-[60] flex items-end p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsWhatsAppOpen(false)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+            />
+            <motion.div
+              initial={{ y: 300, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 300, opacity: 0 }}
+              className="relative w-full bg-white rounded-[2.5rem] p-6 space-y-6 shadow-2xl z-20 flex flex-col max-h-[85%]"
+            >
+              <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+                <h2 className="text-xl font-black uppercase tracking-tighter">Central WhatsApp</h2>
+                <button onClick={() => setIsWhatsAppOpen(false)} className="p-2 hover:bg-slate-100 rounded-full">
+                  <X size={20} />
+                </button>
+              </div>
+              <WhatsAppMonitor isDriverView={true} isMechanicView={false} />
+            </motion.div>
+          </div>
+        )}
 
         {/* Delegate / Transfer Customer Modal Overlay */}
         <AnimatePresence>
@@ -2591,12 +3021,21 @@ export default function DriverView({ user }: DriverViewProps) {
                 initial={{ y: 300, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 exit={{ y: 300, opacity: 0 }}
-                className="relative w-full bg-white rounded-[2.5rem] p-8 space-y-8 shadow-2xl"
+                className="relative w-full bg-white rounded-[2.5rem] p-8 space-y-8 shadow-2xl overflow-hidden"
               >
-                <div className="text-center space-y-2">
+                <div className="absolute top-4 right-4">
+                   <button 
+                     onClick={forceDismissService}
+                     className="w-10 h-10 flex flex-col items-center justify-center bg-slate-100 text-slate-500 rounded-full active:scale-95 transition-all text-[8px] font-black uppercase"
+                   >
+                     <XCircle size={16} className="mb-0.5" />
+                     Sair
+                   </button>
+                </div>
+                <div className="text-center space-y-2 pt-4">
                   <div className={cn(
                     "w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 border-2",
-                    currentService?.type === "direct_referral"
+                    (currentService?.type === "direct_referral" || currentService?.isForwarded)
                       ? "bg-orange-500/10 border-orange-500/20 text-orange-500"
                       : "bg-brand-primary/10 border-brand-primary/20 text-brand-primary"
                   )}>
@@ -2606,10 +3045,10 @@ export default function DriverView({ user }: DriverViewProps) {
                     />
                   </div>
                   <h3 className="text-2xl font-black text-slate-900 tracking-tighter uppercase leading-none">
-                    {currentService?.type === "direct_referral" ? "Chamada Recebida!" : "Novo Serviço!"}
+                    {(currentService?.type === "direct_referral" || currentService?.isForwarded) ? "Chamada Recebida!" : "Novo Serviço!"}
                   </h3>
                   <p className="text-sm font-medium text-slate-500 uppercase tracking-widest">
-                    {currentService?.type === "direct_referral" 
+                    {(currentService?.type === "direct_referral" || currentService?.isForwarded) 
                       ? `De: ${currentService.transferredBy?.name || "Colega de Turno"}`
                       : "Pedido da Central PSM"
                     }
@@ -2617,11 +3056,11 @@ export default function DriverView({ user }: DriverViewProps) {
                 </div>
 
                 <div className="space-y-4 bg-slate-50 p-6 rounded-3xl border border-slate-100">
-                  {currentService?.type === "direct_referral" && (
+                  {(currentService?.type === "direct_referral" || currentService?.isForwarded) && (
                     <div className="bg-orange-50 border border-orange-200 p-3 rounded-2xl text-left mb-2">
                       <p className="text-[9px] font-black text-orange-800 uppercase tracking-wide">💡 NOTA DE REENCAMINHAMENTO</p>
                       <p className="text-[10px] text-orange-700 font-bold leading-tight mt-1">
-                        O colega {currentService.transferredBy?.name} reencaminhou este cliente direto por estar muito ocupado com outras corridas de momento.
+                        O colega {currentService.transferredBy?.name || "de turno"} reencaminhou este cliente direto por estar muito ocupado com outras corridas de momento ou em Manutenção.
                       </p>
                     </div>
                   )}
@@ -2665,15 +3104,16 @@ export default function DriverView({ user }: DriverViewProps) {
                 <div className="flex gap-4">
                   <button
                     onClick={rejectService}
-                    className="flex-1 py-5 rounded-2xl bg-slate-100 text-slate-400 font-black text-xs uppercase tracking-widest transition-all active:scale-95"
+                    className="flex-1 py-5 rounded-3xl bg-slate-100 hover:bg-slate-200 text-slate-500 font-black text-xs uppercase tracking-widest transition-all active:scale-95 border border-slate-200"
                   >
                     Recusar
                   </button>
                   <button
                     onClick={acceptService}
-                    className="flex-2 py-5 rounded-3xl bg-emerald-500 text-white font-black text-xs uppercase tracking-widest shadow-xl shadow-emerald-200 transition-all active:scale-95"
+                    className="flex-[2] py-5 rounded-3xl bg-emerald-500 hover:bg-emerald-600 text-white font-black text-xs uppercase tracking-widest shadow-xl shadow-emerald-200 transition-all active:scale-95 flex items-center justify-center gap-2 animate-pulse"
                   >
-                    Aceitar Serviço
+                    <PhoneCall size={16} className="animate-bounce" />
+                    ATENDER CHAMADA
                   </button>
                 </div>
               </motion.div>

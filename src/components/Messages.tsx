@@ -19,11 +19,15 @@ import { cn } from '../lib/utils';
 import { format } from 'date-fns';
 import { WhatsAppMonitor } from './WhatsAppMonitor';
 
-import { collection, onSnapshot, addDoc, query, orderBy, limit, serverTimestamp, getDocs, deleteDoc, doc } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, query, orderBy, limit, serverTimestamp, getDocs, deleteDoc, doc, where } from 'firebase/firestore';
 import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
 import { smsService } from '../services/smsService';
 
-export default function Messages() {
+interface MessagesProps {
+  isAdmin?: boolean;
+}
+
+export default function Messages({ isAdmin = false }: MessagesProps) {
   const [messages, setMessages] = useState<any[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -33,6 +37,7 @@ export default function Messages() {
   const [whatsAppLink, setWhatsAppLink] = useState('');
   const [drivers, setDrivers] = useState<any[]>([]);
   const [selectedDriverId, setSelectedDriverId] = useState('all');
+  const [registeredUsers, setRegisteredUsers] = useState<any[]>([]);
 
   const channels = [
     { id: 'all', name: 'Todos os Canais', color: 'text-slate-400', type: 'system' },
@@ -51,6 +56,12 @@ export default function Messages() {
       }
     });
 
+    // Listen for driver users
+    const qUsers = query(collection(db, 'users'), where('role', '==', 'driver'));
+    const unsubUsers = onSnapshot(qUsers, (snapshot) => {
+      setRegisteredUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'users'));
+
     // Listen for messages
     const qMessages = query(collection(db, 'messages'), orderBy('timestamp', 'desc'), limit(50));
     const unsubMessages = onSnapshot(qMessages, (snapshot) => {
@@ -58,7 +69,7 @@ export default function Messages() {
     }, (error) => handleFirestoreError(error, OperationType.GET, 'messages'));
 
     // Listen for active drivers
-    const qDrivers = query(collection(db, 'drivers'));
+    const qDrivers = query(collection(db, 'drivers_master'));
     const unsubDrivers = onSnapshot(qDrivers, (snapshot) => {
       const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setDrivers(docs);
@@ -82,8 +93,9 @@ export default function Messages() {
       unsubMessages();
       unsubDrivers();
       unsubSettings();
+      unsubUsers();
     };
-  }, []);
+  }, [registeredUsers.length]); // Re-run effect dependencies safely
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -95,13 +107,24 @@ export default function Messages() {
     // Target numbers determination
     let targets = activeNumbers;
     let targetName = 'Frota Geral';
+    let targetUids: string[] = [];
 
     if (selectedDriverId !== 'all') {
       const drv = drivers.find(d => d.id === selectedDriverId);
       if (drv) {
         targets = [drv.phone, drv.secondaryPhone, drv.phoneNumber].filter(Boolean);
         targetName = drv.name;
+        // Find matching driver in users collection to include their AUTH uid
+        const matchingUser = registeredUsers.find(
+          u => u.name?.trim().toLowerCase() === drv.name?.trim().toLowerCase()
+        );
+        if (matchingUser) {
+          targetUids = [matchingUser.uid || matchingUser.id];
+        }
       }
+    } else {
+      // Send to all registered driver users so they can see this broadcast
+      targetUids = registeredUsers.map(u => u.uid || u.id).filter(Boolean);
     }
     
     try {
@@ -113,8 +136,12 @@ export default function Messages() {
         channelId: selectedChannel === 'all' ? 'logistics' : selectedChannel,
         targetId: selectedDriverId,
         targetName: targetName,
-        timestamp: serverTimestamp(),
-        targetsCount: targets.length
+        timestamp: new Date().toISOString(), // Accurate and matches DriverView parsing
+        targetsCount: targets.length,
+        targets: targetUids, // Targets list of Driver Accounts
+        status: 'unread', // Mark as unread so notifications bell shows it
+        title: channel.name, // Display title
+        subject: channel.name // Compatibility subject for bell popup
       });
 
       if (targets.length > 0) {
@@ -289,7 +316,7 @@ export default function Messages() {
                    )}
                 </div>
                 <div className="flex-1 p-6 overflow-hidden">
-                   <WhatsAppMonitor />
+                   <WhatsAppMonitor isAdmin={isAdmin} />
                 </div>
                 <div className="p-6 bg-slate-50 border-t border-slate-100">
                    <p className="text-[10px] text-slate-500 font-bold leading-relaxed italic text-center">

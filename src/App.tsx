@@ -44,6 +44,7 @@ import RentACar from './components/RentACar';
 import CompanyPhones from './components/CompanyPhones';
 import ProfileEdit from './components/ProfileEdit';
 import UserManual from './components/UserManual';
+import CallSmsDossier from './components/CallSmsDossier';
 
 import { 
   AlertCircle, 
@@ -65,7 +66,19 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [dbError, setDbError] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 1024 : false);
-  const [viewPreference, setViewPreference] = useState<'auto' | 'mobile' | 'desktop'>('auto');
+  const [viewPreference, setViewPreference] = useState<'auto' | 'mobile' | 'desktop'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('view_preference');
+      if (saved && ['auto', 'mobile', 'desktop'].includes(saved)) {
+        return saved as any;
+      }
+    }
+    return 'auto';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('view_preference', viewPreference);
+  }, [viewPreference]);
   const [isProfileEditOpen, setIsProfileEditOpen] = useState(false);
   const [globalSettings, setGlobalSettings] = useState<any>(null);
 
@@ -379,8 +392,9 @@ export default function App() {
           {activeTab === 'psm_phones' && (isAdmin || isOperator ? <CompanyPhones /> : <Dashboard user={userProfile} />)}
           {activeTab === 'manual' && <UserManual />}
           {activeTab === 'settings' && (isAdmin ? <Settings /> : <Dashboard user={userProfile} />)}
-          {activeTab === 'messages' && (isAdmin || isOperator ? <Messages /> : <Dashboard user={userProfile} />)}
-          {activeTab === 'baileys_gateway' && (isAdmin || isOperator ? <WhatsAppMonitor /> : <Dashboard user={userProfile} />)}
+          {activeTab === 'messages' && (isAdmin || isOperator ? <Messages isAdmin={isAdmin} /> : <Dashboard user={userProfile} />)}
+          {activeTab === 'call_sms_dossier' && (isAdmin || isOperator ? <CallSmsDossier /> : <Dashboard user={userProfile} />)}
+          {activeTab === 'baileys_gateway' && (isAdmin || isOperator ? <WhatsAppMonitor isAdmin={isAdmin} /> : <Dashboard user={userProfile} />)}
         </Layout>
       </div>
     </ThemeProvider>
