@@ -201,29 +201,9 @@ export function WhatsAppMonitor({ isMechanicView = false, isDriverView = false, 
 
   // Auto-detect and heal backend API URL to prevent stale container endpoints
   useEffect(() => {
-    const storedBackend = localStorage.getItem('taxi_wa_backend_api_url');
-    const isCloudRun = window.location.hostname.endsWith('.run.app') || 
-                       window.location.hostname === 'localhost' || 
-                       window.location.hostname === '127.0.0.1';
-    
-    if (isCloudRun) {
-      // If we are on Cloud Run, the backend runs in the exact same container,
-      // so we don't need any absolute URL. If there is a stale URL stored, clear it.
-      if (storedBackend && storedBackend.includes('.run.app') && !storedBackend.includes(window.location.hostname)) {
-        setBackendApiUrl('');
-        localStorage.removeItem('taxi_wa_backend_api_url');
-        console.log("[Auto-Pilot] Endereço de backend obsoleto limpo para usar rotas relativas.");
-      }
-    } else {
-      // For static firebase hosting, default to current origin
-      if (!storedBackend) {
-        if (window.location.hostname.endsWith('.web.app') || window.location.hostname.endsWith('.firebaseapp.com')) {
-          const defaultBackend = window.location.origin;
-          setBackendApiUrl(defaultBackend);
-          localStorage.setItem('taxi_wa_backend_api_url', defaultBackend);
-        }
-      }
-    }
+    localStorage.removeItem('taxi_wa_backend_api_url');
+    setBackendApiUrl('');
+    console.log("[Auto-Pilot] Endereço de backend limpo para forçar rotas relativas.");
   }, []);
 
   // Novos Estados Reais do Servidor Baileys
@@ -250,8 +230,9 @@ export function WhatsAppMonitor({ isMechanicView = false, isDriverView = false, 
   // Poll Baileys status from server every 2 seconds
   useEffect(() => {
     const fetchStatus = async () => {
+      const urlToFetch = getApiUrl("/api/whatsapp/baileys/status");
       try {
-        const urlToFetch = getApiUrl("/api/whatsapp/baileys/status");
+        console.log(`[Baileys Tracker] Fetching from: ${urlToFetch}`);
         const res = await fetch(urlToFetch);
         if (res.ok) {
           const contentType = res.headers.get("content-type");
@@ -262,8 +243,9 @@ export function WhatsAppMonitor({ isMechanicView = false, isDriverView = false, 
             console.warn("[Baileys Tracker] Resposta não-JSON (re-direcionado pelo host estático)");
           }
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error("Erro ao buscar log centralizado do Baileys:", err);
+        alert(`Erro ao conectar ao servidor Baileys (${urlToFetch}): ${err.message}`);
       }
     };
 

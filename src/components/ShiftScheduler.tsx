@@ -157,27 +157,14 @@ export default function ShiftScheduler({ user }: { user: UserProfile }) {
     try {
       const nextDay = addDays(parseISO(shift.date), 1);
       const targetDate = format(nextDay, 'yyyy-MM-dd');
-      
-      const qDate = query(collection(db, 'driver_scales'), where('date', '==', targetDate));
-      const dateSnap = await getDocs(qDate);
-      
-      let conflictMsg = "";
-      dateSnap.forEach(docSnap => {
-        const s = docSnap.data();
-        if (s.status === 'Folga' || s.status === 'Suspenso') return;
-        
-        if (s.prefix === shift.prefix) {
-          conflictMsg = `A viatura ${shift.prefix} já está escalada para o dia ${targetDate}.`;
-        } else if (s.driverId === shift.driverId) {
-          conflictMsg = `Este motorista já está escalado para o dia ${targetDate}.`;
-        }
-      });
 
-      if (conflictMsg) {
-        alert(conflictMsg);
+      // Validar conflito antes de clonar
+      const isConflict = shifts.some(s => s.date === targetDate && s.prefix === shift.prefix);
+      if (isConflict) {
+        alert("Atenção: A viatura já possui uma escala definida para o dia de destino.");
         return;
       }
-
+      
       const data = {
         driverId: shift.driverId,
         driverName: shift.driverName,
@@ -198,26 +185,16 @@ export default function ShiftScheduler({ user }: { user: UserProfile }) {
     if (!formData.driverId || !formData.prefix || !formData.date) return;
 
     try {
-      if (!editingShift) {
-        const qDate = query(collection(db, 'driver_scales'), where('date', '==', formData.date));
-        const dateSnap = await getDocs(qDate);
-        
-        let conflictMsg = "";
-        dateSnap.forEach(docSnap => {
-          const s = docSnap.data();
-          if (s.status === 'Folga' || s.status === 'Suspenso') return;
-          
-          if (s.prefix === formData.prefix) {
-            conflictMsg = `A viatura ${formData.prefix} já está escalada para o dia ${formData.date}.`;
-          } else if (s.driverId === formData.driverId) {
-            conflictMsg = `Este motorista já está escalado para o dia ${formData.date}.`;
-          }
-        });
+      // Validação de conflito de escala para prevenir duas atribuições à mesma viatura no mesmo dia
+      const isConflict = shifts.some(shift => 
+        shift.date === formData.date && 
+        shift.prefix === formData.prefix && 
+        (!editingShift || shift.id !== editingShift.id)
+      );
 
-        if (conflictMsg) {
-          alert(conflictMsg);
-          return;
-        }
+      if (isConflict) {
+        alert("Atenção: Esta viatura já possui um turno atribuído para esta data.");
+        return;
       }
 
       const data = {

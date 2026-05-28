@@ -1252,7 +1252,7 @@ export default function Dashboard({ user }: { user: any }) {
             </motion.div>
           )}
 
-          <div className="bg-white dark:bg-slate-900 rounded-[2.25rem] border border-slate-200 dark:border-white/5 shadow-sm overflow-hidden h-[500px] flex flex-col group">
+          <div className="bg-white dark:bg-slate-900 rounded-[2.25rem] border border-slate-200 dark:border-white/5 shadow-sm overflow-hidden h-[650px] flex flex-col group">
              <div className="px-8 py-6 border-b border-slate-100 dark:border-white/5 flex items-center justify-between">
                 <div>
                    <h3 className="font-black text-sm text-slate-900 dark:text-white uppercase tracking-widest italic flex items-center gap-3 text-brand-primary">

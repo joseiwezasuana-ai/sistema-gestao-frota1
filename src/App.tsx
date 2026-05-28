@@ -45,6 +45,8 @@ import CompanyPhones from './components/CompanyPhones';
 import ProfileEdit from './components/ProfileEdit';
 import UserManual from './components/UserManual';
 import CallSmsDossier from './components/CallSmsDossier';
+import PassengerFlow from './components/PassengerFlow';
+import PassengerManagement from './components/PassengerManagement';
 
 import { 
   AlertCircle, 
@@ -64,6 +66,7 @@ export default function App() {
   const [userProfile, setUserProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [showPublicPassengerFlow, setShowPublicPassengerFlow] = useState(false);
   const [dbError, setDbError] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 1024 : false);
   const [viewPreference, setViewPreference] = useState<'auto' | 'mobile' | 'desktop'>(() => {
@@ -176,6 +179,9 @@ export default function App() {
         
         if (profileSnap.exists()) {
           const profile = profileSnap.data();
+          if (profile && profile.role === 'operador') {
+            profile.role = 'operator';
+          }
           setUserProfile(profile);
           // If driver, reset tab or handle specific view
           if (profile.role === 'driver') {
@@ -277,6 +283,16 @@ export default function App() {
   }
 
   if (!user) {
+    if (showPublicPassengerFlow) {
+      return (
+        <ThemeProvider>
+           <ConnectivityBanner />
+           <div className="min-h-screen relative w-full overflow-hidden">
+              <PassengerFlow isPublicApp={true} />
+           </div>
+        </ThemeProvider>
+      );
+    }
     const handleGoogleLogin = async () => {
       // Direct call to avoid popup blocking
       return signInWithPopup(auth, googleProvider);
@@ -284,7 +300,7 @@ export default function App() {
     return (
       <ThemeProvider>
         <ConnectivityBanner />
-        <Login key="login-view" onGoogleLogin={handleGoogleLogin} />
+        <Login key="login-view" onGoogleLogin={handleGoogleLogin} onPassengerFlow={() => setShowPublicPassengerFlow(true)} />
       </ThemeProvider>
     );
   }
@@ -304,6 +320,7 @@ export default function App() {
   const isMecanico = userProfile?.role === 'mecanico';
   const isContabilista = userProfile?.role === 'contabilista';
   const isOperator = isAdmin || userProfile?.role === 'operator';
+  const shouldNotifyAlert = isAdmin || userProfile?.role === 'operator';
 
   // Admin, Operators, and Accounting roles get a specialized Mobile View on small screens
   // We check for viewPreference first, then fallback to isMobile if auto
@@ -315,7 +332,7 @@ export default function App() {
       <ThemeProvider>
         <ConnectivityBanner />
         <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
-          <AlertNotificationManager />
+          {shouldNotifyAlert && <AlertNotificationManager />}
           <StaffMobileView 
             user={userProfile} 
             onLogout={() => signOut(auth)} 
@@ -332,7 +349,7 @@ export default function App() {
       <ThemeProvider>
         <ConnectivityBanner />
         <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
-          <AlertNotificationManager />
+          {shouldNotifyAlert && <AlertNotificationManager />}
           <MechanicView user={userProfile} />
         </div>
       </ThemeProvider>
@@ -344,7 +361,7 @@ export default function App() {
       <ThemeProvider>
         <ConnectivityBanner />
         <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
-          <AlertNotificationManager />
+          {shouldNotifyAlert && <AlertNotificationManager />}
           <DriverView user={userProfile} />
         </div>
       </ThemeProvider>
@@ -364,7 +381,7 @@ export default function App() {
           onToggleMobile={() => setViewPreference('mobile')}
           onEditProfile={() => setIsProfileEditOpen(true)}
         >
-          <AlertNotificationManager />
+          {shouldNotifyAlert && <AlertNotificationManager />}
           <ProfileEdit 
             user={userProfile} 
             isOpen={isProfileEditOpen} 
@@ -382,6 +399,8 @@ export default function App() {
           {activeTab === 'fleet' && (isAdmin || isOperator || isMecanico || isContabilista ? <FleetManagement user={userProfile} /> : <Dashboard user={userProfile} />)}
           {activeTab === 'monitors' && <RealTimeMonitor user={userProfile} />}
           {activeTab === 'revenue' && (isAdmin || isOperator || isContabilista ? <RevenueManagement user={userProfile} /> : <Dashboard user={userProfile} />)}
+          {activeTab === 'passenger_preview' && <PassengerFlow />}
+          {activeTab === 'passengers' && (isAdmin || isOperator ? <PassengerManagement user={userProfile} /> : <Dashboard user={userProfile} />)}
           {activeTab === 'driver_preview' && <DriverView user={userProfile} />}
           {activeTab === 'map' && <RealTimeMap />}
           {activeTab === 'gps_timeline' && <GPSTimeline />}

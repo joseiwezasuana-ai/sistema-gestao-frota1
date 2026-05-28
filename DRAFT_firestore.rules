@@ -39,7 +39,7 @@ service cloud.firestore {
       return data.keys().hasAll(['driverId', 'amount', 'date', 'status', 'timestamp']) &&
              data.driverId == request.auth.uid &&
              data.amount is number &&
-             data.status == 'vended_by_driver' &&
+             data.status == 'pending_approval' &&
              data.timestamp is string;
     }
 

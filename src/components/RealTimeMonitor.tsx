@@ -86,9 +86,9 @@ export default function RealTimeMonitor({ user }: RealTimeMonitorProps) {
   useEffect(() => {
     if (!user) return;
     const tabsList = [
-      { id: 'psm', roles: ['admin', 'operator', 'contabilista', 'mecanico'] },
-      { id: 'unitel', roles: ['admin', 'operator', 'contabilista', 'mecanico'] },
-      { id: 'map', roles: ['admin', 'operator', 'mecanico'] },
+      { id: 'psm', roles: ['admin', 'operator', 'mecanico'] },
+      { id: 'unitel', roles: ['admin', 'operator', 'mecanico'] },
+      { id: 'map', roles: ['admin', 'operator', 'mecanico', 'contabilista'] },
       { id: 'gps_timeline', roles: ['admin', 'operator'] },
       { id: 'sos', roles: ['admin', 'operator'] },
     ];
@@ -268,6 +268,7 @@ export default function RealTimeMonitor({ user }: RealTimeMonitorProps) {
     }
     setSendingDispatch(true);
     try {
+      // 1. Log to SMS logs
       await addDoc(collection(db, 'sms_logs'), {
         from: 'PSM CENTRAL DISPATCH',
         driverName: driverName,
@@ -277,6 +278,33 @@ export default function RealTimeMonitor({ user }: RealTimeMonitorProps) {
         status: 'dispatch_sent',
         toPhone: driverPhone
       });
+
+      // 2. Update the specific active panic_alerts document log
+      if (dispatchSmsId) {
+        await updateDoc(doc(db, 'panic_alerts', dispatchSmsId), {
+          dispatchMessage: dispatchContent,
+          dispatchedAt: new Date().toISOString(),
+          dispatchStatus: 'despachado'
+        });
+
+        // 3. Find the alert item and also notify with a driver-visible message
+        const alertObj = panicAlerts.find(a => a.id === dispatchSmsId);
+        if (alertObj && alertObj.driverId) {
+          await addDoc(collection(db, 'messages'), {
+            from: 'PSM CENTRAL DISPATCH',
+            category: 'security',
+            type: 'danger',
+            title: '⚠️ AUXÍLIO S.O.S DESPACHADO',
+            content: dispatchContent,
+            targets: [alertObj.driverId],
+            driverId: alertObj.driverId,
+            prefix: prefix,
+            status: 'unread',
+            timestamp: new Date().toISOString()
+          });
+        }
+      }
+
       setDispatchSmsId(null);
       setDispatchContent('');
       alert(`Comando de auxílio despachado para ${driverName}!`);
@@ -378,9 +406,9 @@ export default function RealTimeMonitor({ user }: RealTimeMonitorProps) {
 
           <div className="flex flex-wrap bg-slate-800/50 p-1.5 rounded-xl border border-slate-700/50 gap-1.5">
              {[
-               { id: 'psm', label: 'Histórico PSM COMERCIAL', icon: Phone, color: 'bg-brand-primary', roles: ['admin', 'operator', 'contabilista', 'mecanico'] },
-               { id: 'unitel', label: 'Monitoria Taxicontrol', icon: Wifi, color: 'bg-amber-500', roles: ['admin', 'operator', 'contabilista', 'mecanico'] },
-               { id: 'map', label: 'Geolocalização Live', icon: MapIcon, color: 'bg-indigo-600', roles: ['admin', 'operator', 'mecanico'] },
+               { id: 'psm', label: 'Histórico PSM COMERCIAL', icon: Phone, color: 'bg-brand-primary', roles: ['admin', 'operator', 'mecanico'] },
+               { id: 'unitel', label: 'Monitoria Taxicontrol', icon: Wifi, color: 'bg-amber-500', roles: ['admin', 'operator', 'mecanico'] },
+               { id: 'map', label: 'Geolocalização Live', icon: MapIcon, color: 'bg-indigo-600', roles: ['admin', 'operator', 'mecanico', 'contabilista'] },
                { id: 'gps_timeline', label: 'Auditoria GPS', icon: HistoryIcon, color: 'bg-teal-600', roles: ['admin', 'operator'] },
                { id: 'sos', label: 'Gestão de S.O.S 🚨', icon: ShieldAlert, color: 'bg-rose-700', roles: ['admin', 'operator'] },
              ]

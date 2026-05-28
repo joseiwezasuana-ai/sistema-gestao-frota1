@@ -931,7 +931,7 @@ export default function AccountingManager({ user }: { user?: any }) {
           </div>
 
           <div className="flex bg-slate-100 p-1 rounded-xl shadow-inner border border-slate-200">
-            {(user?.role === 'operator' || isAdmin) && (
+            {(user?.role === 'operator' || user?.role === 'contabilista' || isAdmin) && (
               <button
                 onClick={() => setActiveView("revenue")}
                 className={cn(

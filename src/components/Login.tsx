@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LogIn, Car, User, Key, ArrowRight, Shield, AlertCircle, Loader2, CheckCircle2, ShieldCheck, ChevronRight, MessageSquare, MoreVertical, X, Globe, Lock } from 'lucide-react';
+import { LogIn, Car, User, Key, ArrowRight, Shield, AlertCircle, Loader2, CheckCircle2, ShieldCheck, ChevronRight, ChevronDown, ChevronUp, MessageSquare, MoreVertical, X, Globe, Lock } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, signInWithRedirect } from 'firebase/auth';
 import { db, auth, googleProvider, withTimeout } from '../lib/firebase';
@@ -7,10 +7,12 @@ import { collection, query, where, getDocs, updateDoc, doc, setDoc, serverTimest
 
 interface LoginProps {
   onGoogleLogin: () => void | Promise<any>;
+  onPassengerFlow?: () => void;
 }
 
-export default function Login({ onGoogleLogin }: LoginProps) {
+export default function Login({ onGoogleLogin, onPassengerFlow }: LoginProps) {
   const [loginMethod, setLoginMethod] = useState<'cover' | 'google' | 'credentials' | 'register' | 'recover'>('cover');
+  const [isRestrictedAreaExpanded, setIsRestrictedAreaExpanded] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [id, setId] = useState('');
   const [password, setPassword] = useState('');
@@ -374,7 +376,7 @@ export default function Login({ onGoogleLogin }: LoginProps) {
                     <div className="p-2 bg-slate-100 rounded-xl group-hover:bg-brand-primary/10 group-hover:text-brand-primary transition-colors">
                       <Globe size={16} />
                     </div>
-                    <span className="text-xs font-bold text-slate-700">Google Cloud</span>
+                    <span className="text-xs font-bold text-slate-700">Administração</span>
                   </button>
                   <button 
                     onClick={() => handleMethodChange('credentials')}
@@ -383,7 +385,20 @@ export default function Login({ onGoogleLogin }: LoginProps) {
                     <div className="p-2 bg-slate-100 rounded-xl group-hover:bg-brand-primary/10 group-hover:text-brand-primary transition-colors">
                       <LogIn size={16} />
                     </div>
-                    <span className="text-xs font-bold text-slate-700">ID Central</span>
+                    <span className="text-xs font-bold text-slate-700">Colaborador</span>
+                  </button>
+                  <button 
+                    onClick={() => {
+                       if(onPassengerFlow) {
+                          onPassengerFlow();
+                       }
+                    }}
+                    className="w-full flex items-center gap-3 p-3 hover:bg-slate-50 rounded-2xl transition-colors group"
+                  >
+                    <div className="p-2 bg-slate-100 rounded-xl group-hover:bg-brand-primary/10 group-hover:text-brand-primary transition-colors">
+                      <Car size={16} />
+                    </div>
+                    <span className="text-xs font-bold text-slate-700">Passageiro VIP</span>
                   </button>
                   <button 
                     onClick={() => handleMethodChange('register')}
@@ -392,7 +407,7 @@ export default function Login({ onGoogleLogin }: LoginProps) {
                     <div className="p-2 bg-slate-100 rounded-xl group-hover:bg-brand-primary/10 group-hover:text-brand-primary transition-colors">
                       <ShieldCheck size={16} />
                     </div>
-                    <span className="text-xs font-bold text-slate-700">Ativar ID</span>
+                    <span className="text-xs font-bold text-slate-700">Autenticar colaborador</span>
                   </button>
                 </motion.div>
               )}
@@ -435,31 +450,122 @@ export default function Login({ onGoogleLogin }: LoginProps) {
             {loginMethod === 'cover' ? (
               <motion.div 
                 key="cover"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
+                initial={{ opacity: 0, scale: 0.98 }}
+                animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
-                className="text-center space-y-8"
+                className="w-full space-y-6"
               >
-                <div className="space-y-4">
-                  <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter italic">Bem-vindo ao TaxiControl</h2>
-                  <p className="text-[11px] text-slate-400 font-bold uppercase tracking-[0.2em] leading-relaxed max-w-[280px] mx-auto">
-                    Aceda ao Hub de Controlo Operacional de Frota PS Moreira Luena. Sessão Protegida.
-                  </p>
+                {/* 1 - AREA RESTRITA Section */}
+                <div className="bg-slate-50 border border-slate-200 rounded-[2rem] p-5 space-y-4">
+                  <div 
+                    onClick={() => setIsRestrictedAreaExpanded(!isRestrictedAreaExpanded)}
+                    className="flex items-center justify-between border-b border-slate-200 pb-2.5 cursor-pointer hover:opacity-80 transition-opacity select-none"
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-slate-900 flex items-center justify-center text-white font-mono text-xs font-black">1</div>
+                      <div>
+                        <h4 className="text-xs font-black uppercase tracking-widest text-slate-800">ÁREA RESTRITA</h4>
+                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Acesso Operacional e Administrativo</p>
+                      </div>
+                    </div>
+                    <div className="pr-1 text-slate-400">
+                      {isRestrictedAreaExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                    </div>
+                  </div>
+
+                  <AnimatePresence initial={false}>
+                    {isRestrictedAreaExpanded && (
+                      <motion.div 
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="space-y-2 overflow-hidden"
+                      >
+                        {/* Administração */}
+                        <button 
+                          onClick={() => handleMethodChange('google')}
+                          className="w-full flex items-center justify-between p-3 bg-white border border-slate-100 rounded-xl hover:border-brand-primary hover:bg-slate-50 transition-all group active:scale-[0.98]"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0 group-hover:scale-110 transition-transform">
+                              <Shield size={16} />
+                            </div>
+                            <div className="text-left">
+                              <p className="text-[11px] font-black uppercase tracking-tight text-slate-800">Administração</p>
+                              <p className="text-[8px] text-slate-400 font-bold uppercase tracking-wider">Login Seguro com Google</p>
+                            </div>
+                          </div>
+                          <ChevronRight size={14} className="text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+                        </button>
+
+                        {/* Colaborador */}
+                        <button 
+                          onClick={() => handleMethodChange('credentials')}
+                          className="w-full flex items-center justify-between p-3 bg-white border border-slate-100 rounded-xl hover:border-brand-primary hover:bg-slate-50 transition-all group active:scale-[0.98]"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-lg bg-pink-50 flex items-center justify-center text-pink-600 shrink-0 group-hover:scale-110 transition-transform">
+                              <LogIn size={16} />
+                            </div>
+                            <div className="text-left">
+                              <p className="text-[11px] font-black uppercase tracking-tight text-slate-800">Colaborador</p>
+                              <p className="text-[8px] text-slate-400 font-bold uppercase tracking-wider">Entrar com ID e Palavra-passe</p>
+                            </div>
+                          </div>
+                          <ChevronRight size={14} className="text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+                        </button>
+
+                        {/* Autenticar */}
+                        <button 
+                          onClick={() => handleMethodChange('register')}
+                          className="w-full flex items-center justify-between p-3 bg-white border border-slate-100 rounded-xl hover:border-brand-primary hover:bg-slate-50 transition-all group active:scale-[0.98]"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 shrink-0 group-hover:scale-110 transition-transform">
+                              <Key size={16} />
+                            </div>
+                            <div className="text-left">
+                              <p className="text-[11px] font-black uppercase tracking-tight text-slate-800">Autenticar Colaborador</p>
+                              <p className="text-[8px] text-slate-400 font-bold uppercase tracking-wider">Ativar Conta com Código original</p>
+                            </div>
+                          </div>
+                          <ChevronRight size={14} className="text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+                        </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
 
-                <div className="pt-6">
+                {/* 2 - PASSAGEIRO VIP Section */}
+                <div className="bg-slate-50 border border-slate-200 rounded-[2rem] p-5 space-y-4">
+                  <div className="flex items-center gap-2 border-b border-slate-200 pb-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-amber-500 flex items-center justify-center text-slate-950 font-mono text-xs font-black">2</div>
+                    <div>
+                      <h4 className="text-xs font-black uppercase tracking-widest text-slate-800">PASSAGEIRO VIP</h4>
+                      <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Portal Público de Pedidos</p>
+                    </div>
+                  </div>
+
                   <button 
-                    onClick={() => setShowMenu(true)}
-                    className="group relative inline-flex items-center gap-4 px-10 py-5 bg-slate-900 text-white rounded-3xl font-black text-[11px] uppercase tracking-widest hover:bg-black transition-all shadow-2xl shadow-slate-900/30 active:scale-95"
+                    onClick={() => {
+                      if (onPassengerFlow) {
+                        onPassengerFlow();
+                      }
+                    }}
+                    className="w-full flex items-center justify-between p-4 bg-slate-900 hover:bg-black text-white hover:text-white rounded-2xl shadow-xl transition-all group active:scale-[0.98]"
                   >
-                    Entrar no Sistema
-                    <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-amber-500/15 flex items-center justify-center text-amber-500 shrink-0 group-hover:scale-110 transition-transform">
+                        <Car size={16} />
+                      </div>
+                      <div className="text-left">
+                        <p className="text-[11px] font-black uppercase tracking-wider text-amber-500">ACEDER COMO PASSAGEIRO VIP</p>
+                        <p className="text-[8.5px] text-slate-400 font-extrabold uppercase tracking-tight">Pedir táxi agora sem login</p>
+                      </div>
+                    </div>
+                    <ChevronRight size={16} className="text-amber-500 group-hover:translate-x-0.5 transition-transform" />
                   </button>
-                  
-                  <p className="mt-8 text-[9px] text-slate-400 font-bold uppercase tracking-[0.3em] flex items-center justify-center gap-2">
-                    <Lock size={10} className="text-emerald-500" />
-                    PROTOCOLO DE SEGURANÇA ATIVO
-                  </p>
                 </div>
               </motion.div>
             ) : (
@@ -472,7 +578,7 @@ export default function Login({ onGoogleLogin }: LoginProps) {
               >
                 <div className="mb-8 flex items-center justify-between">
                   <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter italic">
-                    {loginMethod === 'google' ? 'Google Cloud' : loginMethod === 'credentials' ? 'ID Central' : loginMethod === 'recover' ? 'Recuperar Acesso' : 'Ativação ID'}
+                    {loginMethod === 'google' ? 'Administração' : loginMethod === 'credentials' ? 'Colaborador' : loginMethod === 'recover' ? 'Recuperar Acesso' : 'Autenticar colaborador'}
                   </h3>
                   <button 
                     onClick={() => handleMethodChange('cover')}

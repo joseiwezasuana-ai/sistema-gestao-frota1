@@ -373,7 +373,7 @@ export default function RealTimeMap() {
         </div>
       </div>
 
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-6 min-h-[500px]">
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-6 min-h-[650px]">
         <div className="lg:col-span-3 bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden relative z-0">
           {showGoogleError && (
             <div className="absolute inset-0 z-10 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-8 text-center">

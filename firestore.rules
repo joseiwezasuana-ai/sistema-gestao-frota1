@@ -4,50 +4,53 @@ service cloud.firestore {
     
     // --- Global Helpers (Phase 3) ---
     function isSignedIn() { return request.auth != null; }
-    function authEmail() { return request.auth.token.email.lower(); }
-    function isEmailVerified() { return request.auth.token.email_verified == true; }
+    function authEmail() { return (isSignedIn() && 'email' in request.auth.token) ? request.auth.token.email.lower() : ''; }
+    function isEmailVerified() { return isSignedIn() && 'email_verified' in request.auth.token && request.auth.token.email_verified == true; }
     function incoming() { return request.resource.data; }
     function existing() { return resource.data; }
     function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
 
     // Tiered Identity Logic (Pillar 4)
-    function getRole() {
-      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
-        : "unassigned";
+    function hasRole(role) {
+      return isSignedIn() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == role;
     }
 
-    function isAdmin() { return (isSignedIn() && authEmail() == "joseiwezasuana@gmail.com") || getRole() == "admin"; }
+    function isAdmin() { return (isSignedIn() && authEmail() == "joseiwezasuana@gmail.com") || hasRole("admin"); }
     
-    match /{document=**} {
-      allow read, write: if isAdmin();
+    match /passengers/{passengerId} {
+      allow read, write: if true; // Relaxed for prototype
     }
-    function isOperator() { return isAdmin() || getRole() == "operator"; }
-    function isContabilista() { return isAdmin() || getRole() == "contabilista"; }
-    function isMecanico() { return isAdmin() || getRole() == "mecanico"; }
-    function isStaff() { return isAdmin() || getRole() in ["operator", "contabilista", "mecanico"]; }
+    match /ride_requests/{requestId} {
+      allow read, write: if true;
+    }
+    function isOperator() { return isAdmin() || hasRole("operator") || hasRole("operador"); }
+    function isContabilista() { return isAdmin() || hasRole("contabilista"); }
+    function isMecanico() { return isAdmin() || hasRole("mecanico"); }
+    function isStaff() { return isAdmin() || isOperator() || isContabilista() || isMecanico(); }
     function isDriver() { return isSignedIn(); }
 
     // --- Validation Blueprints (Pillar 2) ---
 
     function isValidUser(data) {
       return data.keys().hasAll(['uid', 'email', 'name', 'role', 'createdAt']) &&
-             data.keys().size() == 5 && // Adjusted for createdAt
+             data.keys().size() >= 5 && data.keys().size() <= 8 &&
              data.uid == request.auth.uid &&
              data.email is string && data.email.size() <= 100 &&
              data.name is string && data.name.size() <= 100 &&
              data.role in ['driver', 'operator', 'contabilista', 'mecanico', 'admin'] &&
-             data.createdAt is string;
+             (data.createdAt is string || data.createdAt is timestamp);
     }
 
     function isValidRevenue(data) {
       return data.keys().hasAll(['driverId', 'prefix', 'amount', 'date', 'status', 'timestamp']) &&
-             data.driverId == request.auth.uid &&
+             (isStaff() || data.driverId == request.auth.uid) &&
              data.amount is number && data.amount >= 0 &&
              data.prefix is string && data.prefix.size() <= 20 &&
              data.date is string && data.date.size() == 10 &&
-             data.status == 'vended_by_driver' &&
-             data.timestamp is string; // Trust but verify temporal in logic
+             data.status in ['pending_approval', 'approved_by_operator', 'approved_by_accountant', 'finalized', 'rejected_by_operator', 'rejected_by_accountant'] &&
+             (data.timestamp is string || data.timestamp is timestamp);
     }
 
     function isValidPanic(data) {
@@ -109,7 +112,7 @@ service cloud.firestore {
 
     match /interaction_logs/{logId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && isValidId(logId);
+      allow create: if true;
       allow update, delete: if isAdmin();
     }
 
@@ -125,20 +128,20 @@ service cloud.firestore {
     }
 
     match /revenue_logs/{revenueId} {
-      allow read: if isValidId(revenueId) && (isStaff() || (isSignedIn() && existing().driverId == request.auth.uid));
+      allow get: if isValidId(revenueId) && (isStaff() || (isSignedIn() && existing().driverId == request.auth.uid));
       allow list: if isStaff() || (isSignedIn() && resource.data.driverId == request.auth.uid); // Pillar 8
       allow create: if isDriver() && isValidId(revenueId) && isValidRevenue(incoming());
       allow update: if isValidId(revenueId) && (
         (isStaff() && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'validatedAt', 'validatedBy', 'validatedByName', 'rejectionReason'])) ||
         (isDriver() && existing().driverId == request.auth.uid && existing().status.matches('^rejected_.*') && 
          incoming().diff(existing()).affectedKeys().hasAny(['amount', 'breakdown', 'description', 'status', 'timestamp']) &&
-         incoming().status == 'vended_by_driver')
+         incoming().status == 'pending_approval')
       );
       allow delete: if isAdmin() && isValidId(revenueId);
     }
 
     match /messages/{msgId} {
-      allow read: if isValidId(msgId) && (isStaff() || (isSignedIn() && existing().targets.hasAny([request.auth.uid])));
+      allow get: if isValidId(msgId) && (isStaff() || (isSignedIn() && existing().targets.hasAny([request.auth.uid])));
       allow list: if isStaff() || (isSignedIn() && resource.data.targets.hasAny([request.auth.uid]));
       allow create: if isStaff() && isValidId(msgId);
       allow update: if isValidId(msgId) && (
@@ -149,26 +152,24 @@ service cloud.firestore {
     }
 
     match /calls/{callId} {
-      allow read: if isSignedIn() && isValidId(callId);
-      allow list: if isSignedIn();
-      allow create: if isStaff() && isValidId(callId);
-      allow update: if isValidId(callId) && isSignedIn();
+      allow read, write: if true;
     }
 
     match /shifts/{shiftId} {
-      allow read: if isSignedIn() && isValidId(shiftId);
-      allow write: if isOperator() && isValidId(shiftId);
+      allow get: if isSignedIn() && isValidId(shiftId);
+      allow list: if isSignedIn();
+      allow write: if (isOperator() || isDriver()) && isValidId(shiftId);
     }
 
     match /driver_scales/{scaleId} {
       allow get: if isSignedIn() && isValidId(scaleId);
       allow list: if isSignedIn();
-      allow write: if isOperator() && isValidId(scaleId);
+      allow write: if (isOperator() || isDriver()) && isValidId(scaleId);
     }
 
     match /panic_alerts/{alertId} {
       allow get: if isSignedIn() && isValidId(alertId);
-      allow list: if isStaff();
+      allow list: if isStaff() || (isSignedIn() && resource.data.driverId == request.auth.uid);
       allow create: if isDriver() && isValidId(alertId) && isValidPanic(incoming());
       allow update: if isStaff() && isValidId(alertId);
     }

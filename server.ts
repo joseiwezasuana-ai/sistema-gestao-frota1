@@ -1587,6 +1587,12 @@ async function startServer() {
     app.get("*", async (req, res, next) => {
       if (req.path.startsWith("/api")) return next();
       
+      // Serve public folder assets first if requested directly in development
+      const publicFilePath = path.join(process.cwd(), "public", req.path);
+      if (fs.existsSync(publicFilePath) && fs.statSync(publicFilePath).isFile()) {
+        return res.sendFile(publicFilePath);
+      }
+      
       // If it's a direct resource request (e.g. tsx, ts, map, svg, png), return 404 instead of returning index.html
       if (req.path.match(/\.(ts|tsx|jsx|json|map|js\.map|css\.map|svg|png|jpg|jpeg|ico|css)$/i) || req.path.includes("/src/")) {
         return res.status(404).send("Not Found");

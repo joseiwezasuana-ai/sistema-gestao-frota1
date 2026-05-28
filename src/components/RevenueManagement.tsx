@@ -48,6 +48,7 @@ interface RevenueLog {
     cash: number;
     transfer: number;
     expenses: number;
+    appRides?: number;
   };
   timestamp: any;
   validatedAt?: string;
@@ -79,10 +80,10 @@ export default function RevenueManagement({ user }: { user: any }) {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       let data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as RevenueLog));
       
-      // Accountant restriction: Only see revenues ready for their stage or finalized/paid
+      // Accountant restriction: Only see revenues ready for their stage (approved by admin) or finalized/paid
       // @ts-ignore
       if (isContabilista && !isAdmin) {
-        data = data.filter(r => ['approved_by_operator', 'approved_by_accountant', 'finalized', 'paid_to_staff'].includes(r.status));
+        data = data.filter(r => ['approved_by_accountant', 'finalized', 'paid_to_staff'].includes(r.status));
       }
       
       setRevenues(data);
@@ -156,8 +157,8 @@ export default function RevenueManagement({ user }: { user: any }) {
 
       await updateDoc(revRef, updateData);
 
-      // 1. Unbind driver if approved by operator (or finalized)
-      if (newStatus === 'approved_by_operator' || newStatus === 'finalized') {
+      // 1. Unbind driver if approved/rejected by operator (or finalized)
+      if (newStatus === 'approved_by_operator' || newStatus === 'rejected_by_operator' || newStatus === 'finalized') {
         const q = query(collection(db, 'drivers'), where('driverId', '==', revenue.driverId));
         const snap = await getDocs(q);
         if (!snap.empty) {
@@ -174,17 +175,19 @@ export default function RevenueManagement({ user }: { user: any }) {
         }
 
         // Notify driver of approval
-        await addDoc(collection(db, 'messages'), {
-          type: 'success',
-          category: 'revenue_approval',
-          title: 'Renda Aprovada',
-          content: `A sua renda do dia ${revenue.date} foi validada com sucesso pelo operador. Obrigado!`,
-          targets: [revenue.driverId],
-          driverId: revenue.driverId,
-          prefix: revenue.prefix,
-          status: 'unread',
-          timestamp: new Date().toISOString()
-        });
+        if (revenue.driverId) {
+          await addDoc(collection(db, 'messages'), {
+            type: 'success',
+            category: 'revenue_approval',
+            title: 'Renda Aprovada',
+            content: `A sua renda do dia ${revenue.date} foi validada com sucesso pelo profissional operador. Obrigado!`,
+            targets: [revenue.driverId],
+            driverId: revenue.driverId,
+            prefix: revenue.prefix,
+            status: 'unread',
+            timestamp: new Date().toISOString()
+          });
+        }
       }
 
       // 2. Notify driver if rejected
@@ -227,7 +230,7 @@ export default function RevenueManagement({ user }: { user: any }) {
     const reason = window.prompt("Porquê está a reprovar esta renda? (Opcional)");
     if (reason === null) return; // Cancelled prompt
     
-    const nextStatus = currentStatus === 'pending_approval' ? 'rejected_by_operator' : 'rejected_by_accountant';
+    const nextStatus = currentStatus === 'approved_by_accountant' ? 'rejected_by_accountant' : 'rejected_by_operator';
     handleStatusChange(revenueId, nextStatus, reason);
   };
 
@@ -288,10 +291,10 @@ export default function RevenueManagement({ user }: { user: any }) {
     switch (status) {
       case 'pending_approval': return { label: 'Pendente Operador', color: 'bg-amber-50 text-amber-600 border-amber-100', icon: Clock };
       case 'rejected_by_operator': return { label: 'Reprovado Operador', color: 'bg-red-50 text-red-600 border-red-100', icon: XCircle };
-      case 'rejected_by_accountant': return { label: 'Reprovado Contab.', color: 'bg-red-50 text-red-600 border-red-100', icon: XCircle };
-      case 'approved_by_operator': return { label: 'Pendente Contab.', color: 'bg-blue-50 text-blue-600 border-blue-100', icon: Clock };
-      case 'approved_by_accountant': return { label: 'Em Análise Admin', color: 'bg-purple-50 text-purple-600 border-purple-100', icon: Search };
-      case 'finalized': return { label: 'Finalizado', color: 'bg-emerald-50 text-emerald-600 border-emerald-100', icon: CheckCircle2 };
+      case 'rejected_by_accountant': return { label: 'Reprovado Contab.', color: 'bg-rose-50 text-rose-600 border-rose-100', icon: XCircle };
+      case 'approved_by_operator': return { label: 'Pendente Admin', color: 'bg-blue-50 text-blue-600 border-blue-100', icon: Clock };
+      case 'approved_by_accountant': return { label: 'Pendente Contab.', color: 'bg-purple-50 text-purple-600 border-purple-100', icon: Clock };
+      case 'finalized': return { label: 'Finalizado (Auditado)', color: 'bg-emerald-50 text-emerald-600 border-emerald-100', icon: CheckCircle2 };
       case 'paid_to_staff': return { label: 'Pago (Histórico)', color: 'bg-slate-200 text-slate-500 border-slate-300', icon: ShieldCheck };
       default: return { label: status, color: 'bg-slate-50 text-slate-500', icon: Clock };
     }
@@ -313,8 +316,8 @@ export default function RevenueManagement({ user }: { user: any }) {
   });
 
   const canApproveOperator = (status: string) => (isOperator || isAdmin) && status === 'pending_approval';
-  const canApproveAccountant = (status: string) => (isContabRole || isAdmin) && status === 'approved_by_operator';
-  const canApproveFinal = (status: string) => isAdmin && status === 'approved_by_accountant';
+  const canApproveAdmin = (status: string) => isAdmin && status === 'approved_by_operator';
+  const canApproveAccountant = (status: string) => (isContabRole || isAdmin) && status === 'approved_by_accountant';
 
   const stats = {
     totalFinalized: revenues
@@ -548,6 +551,12 @@ export default function RevenueManagement({ user }: { user: any }) {
                             <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Transferência:</span>
                             <span className="text-[11px] font-bold text-slate-700">{(rev.breakdown?.transfer || 0).toLocaleString()} Kz</span>
                          </div>
+                         {(rev.breakdown?.appRides ?? 0) > 0 && (
+                           <div className="flex items-center justify-between border-t border-slate-50 pt-1.5 mt-1 col-span-2">
+                             <span className="text-[9px] font-black text-emerald-500 uppercase tracking-widest">Saldo (App):</span>
+                             <span className="text-[11px] font-black text-emerald-600">+{(rev.breakdown?.appRides || 0).toLocaleString()} Kz</span>
+                           </div>
+                         )}
                          {rev.breakdown?.expenses > 0 && (
                            <div className="flex items-center justify-between border-t border-slate-50 pt-1.5 mt-1 col-span-2">
                              <span className="text-[9px] font-black text-rose-500 uppercase tracking-widest">Saídas / Despesas:</span>
@@ -587,7 +596,23 @@ export default function RevenueManagement({ user }: { user: any }) {
                               onClick={() => handleStatusChange(rev.id, 'approved_by_operator')}
                               className="bg-brand-primary text-white px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider shadow-lg shadow-blue-600/20 active:scale-95 transition-all hover:bg-blue-700"
                             >
-                              Aprovar Ok
+                              Validar Operador
+                            </button>
+                          </>
+                        )}
+                        {canApproveAdmin(rev.status) && (
+                          <>
+                            <button 
+                              onClick={() => handleReject(rev.id, rev.status)}
+                              className="px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider text-rose-600 bg-rose-50 border border-rose-100 hover:bg-rose-100 transition-all"
+                            >
+                              Reprovar
+                            </button>
+                            <button 
+                              onClick={() => handleStatusChange(rev.id, 'approved_by_accountant')}
+                              className="bg-purple-600 text-white px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider shadow-lg shadow-purple-600/20 active:scale-95 transition-all hover:bg-purple-700"
+                            >
+                              Entregar Contab.
                             </button>
                           </>
                         )}
@@ -600,20 +625,12 @@ export default function RevenueManagement({ user }: { user: any }) {
                               Reprovar
                             </button>
                             <button 
-                              onClick={() => handleStatusChange(rev.id, 'approved_by_accountant')}
-                              className="bg-amber-500 text-white px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider shadow-lg shadow-amber-500/20 active:scale-95 transition-all hover:bg-amber-600"
+                              onClick={() => handleStatusChange(rev.id, 'finalized')}
+                              className="bg-emerald-600 text-white px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider shadow-lg shadow-emerald-500/20 active:scale-95 transition-all hover:bg-emerald-700"
                             >
-                              Validar Contab.
+                              Auditar & Finalizar
                             </button>
                           </>
-                        )}
-                        {canApproveFinal(rev.status) && (
-                          <button 
-                            onClick={() => handleStatusChange(rev.id, 'finalized')}
-                            className="bg-emerald-600 text-white px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider shadow-lg shadow-emerald-500/20 active:scale-95 transition-all hover:bg-emerald-700"
-                          >
-                            Finalizar Admin
-                          </button>
                         )}
                         {rev.status === 'finalized' && (
                           <div className="flex items-center gap-2">
@@ -716,6 +733,7 @@ export default function RevenueManagement({ user }: { user: any }) {
                               <span>TPA: {(rev.breakdown?.tpa || 0).toLocaleString()} Kz</span>
                               <span>Din: {(rev.breakdown?.cash || 0).toLocaleString()} Kz</span>
                               <span>Trans: {(rev.breakdown?.transfer || 0).toLocaleString()} Kz</span>
+                              {(rev.breakdown?.appRides ?? 0) > 0 && <span>App: {(rev.breakdown?.appRides || 0).toLocaleString()} Kz</span>}
                               <span className="text-rose-500 italic">Desp: {(rev.breakdown?.expenses || 0).toLocaleString()} Kz</span>
                             </div>
                           </td>

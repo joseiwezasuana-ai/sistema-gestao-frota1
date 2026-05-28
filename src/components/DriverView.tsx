@@ -36,7 +36,9 @@ import {
   RefreshCw,
   Zap,
   MessageSquare,
+  Layout,
 } from "lucide-react";
+import RevenueManagement from "./RevenueManagement";
 import { WhatsAppMonitor } from "./WhatsAppMonitor";
 import WaitingTimer from './WaitingTimer';
 import { motion, AnimatePresence } from "motion/react";
@@ -58,6 +60,7 @@ import {
   arrayUnion,
   addDoc,
   getDocs,
+  getDoc,
 } from "firebase/firestore";
 
 import { auth } from "../lib/firebase";
@@ -94,10 +97,72 @@ export default function DriverView({ user }: DriverViewProps) {
   const [isOnline, setIsOnline] = useState(false);
   const [isWhatsAppOpen, setIsWhatsAppOpen] = useState(false);
   const [currentService, setCurrentService] = useState<any>(null);
+  const currentServiceRef = useRef<any>(null);
+  useEffect(() => {
+    currentServiceRef.current = currentService;
+  }, [currentService]);
   const [otherDrivers, setOtherDrivers] = useState<any[]>([]);
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
   const [transferLoading, setTransferLoading] = useState(false);
   const [isNewCallTransferModalOpen, setIsNewCallTransferModalOpen] = useState(false);
+  const [proposedPrice, setProposedPrice] = useState("");
+
+  const attendCall = async () => {
+    if (!currentService?.id) return;
+    try {
+      const callRef = doc(db, "calls", currentService.id);
+      await updateDoc(callRef, {
+        status: "connected",
+        responseHistory: arrayUnion({
+          driverId: user?.uid,
+          action: "attended",
+          timestamp: new Date().toISOString()
+        })
+      });
+      setCurrentService({ ...currentService, status: "connected" });
+      setProposedPrice(""); // reset any custom price when answering
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `calls/${currentService.id}`);
+    }
+  };
+
+  const sendPriceOffer = async (priceInputInput?: number) => {
+    const finalPrice = priceInputInput || Number(proposedPrice);
+    if (!finalPrice || finalPrice <= 0) {
+      alert("Por favor, introduza um preço válido.");
+      return;
+    }
+
+    if (!currentService?.id) return;
+
+    try {
+      const callRef = doc(db, "calls", currentService.id);
+      await updateDoc(callRef, {
+        status: "price_sent",
+        price: finalPrice,
+        responseHistory: arrayUnion({
+          action: "price_offered",
+          price: finalPrice,
+          timestamp: new Date().toISOString(),
+          driverId: user?.uid || "unknown",
+          driverName: user?.name || "Driver",
+        }),
+      });
+
+      setCurrentService({ ...currentService, status: "price_sent", price: finalPrice });
+      setProposedPrice("");
+      setShowNotification(false);
+      alert(`Proposta de preço de ${finalPrice.toLocaleString()} Kz enviada ao passageiro.`);
+    } catch (error: any) {
+      alert("Erro ao propor preço: " + error.message);
+    }
+  };
+
+  const setModalOpenLogged = (val: boolean) => {
+    if (val) console.trace("Modal transfer aberto");
+    setIsNewCallTransferModalOpen(val);
+  };
+
   const [transferCustomerPhone, setTransferCustomerPhone] = useState("");
   const [transferCustomerName, setTransferCustomerName] = useState("");
   const [transferPickupAddress, setTransferPickupAddress] = useState("");
@@ -183,12 +248,37 @@ export default function DriverView({ user }: DriverViewProps) {
 
     return () => unsubscribe();
   }, [user?.uid]);
+
+  const [passengerRidesConfirmed, setPassengerRidesConfirmed] = useState<any[]>([]);
+  const [passengerRidesTotal, setPassengerRidesTotal] = useState(0);
+
+  // Sync passenger rides in real-time
+  useEffect(() => {
+    if (!user?.name) return;
+    const q = query(
+      collection(db, "ride_requests"),
+      where("driverName", "==", user.name),
+      where("status", "in", ["confirmed", "completed"])
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setPassengerRidesConfirmed(list);
+      const total = list.reduce((acc, curr: any) => acc + (Number(curr.price) || 0), 0);
+      setPassengerRidesTotal(total);
+    }, (error) => {
+      console.warn("Fallowing listener of passenger rides:", error);
+    });
+
+    return () => unsubscribe();
+  }, [user?.name]);
+
   const [showNotification, setShowNotification] = useState(false);
   const [recentCalls, setRecentCalls] = useState<any[]>([]);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isMessagesModalOpen, setIsMessagesModalOpen] = useState(false);
   const [activeInternalTab, setActiveInternalTab] = useState<
-    "dashboard" | "history" | "wallet" | "contracts" | "settings"
+    "dashboard" | "history" | "wallet" | "contracts" | "settings" | "rendas"
   >("dashboard");
   const [selectedRingtone, setSelectedRingtone] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -213,6 +303,8 @@ export default function DriverView({ user }: DriverViewProps) {
     audioRef.current.play().catch(e => console.warn(e));
   };
   const [showPanicModal, setShowPanicModal] = useState(false);
+  const [localPassengerOffline, setLocalPassengerOffline] = useState(false);
+  const [activePanicAlert, setActivePanicAlert] = useState<any | null>(null);
   const [panicLoading, setPanicLoading] = useState(false);
   const [isContractModalOpen, setIsContractModalOpen] = useState(false);
   const [contractLoading, setContractLoading] = useState(false);
@@ -282,13 +374,43 @@ export default function DriverView({ user }: DriverViewProps) {
     const q = query(
       collection(db, "messages"),
       where("targets", "array-contains", user.uid),
-      where("status", "==", "unread"),
-      orderBy("timestamp", "desc"),
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      setUnreadMessages(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const messages = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const unreadFiltered = messages
+        .filter((msg: any) => msg.status === "unread")
+        .sort((a: any, b: any) => {
+          const tA = a.timestamp ? (a.timestamp.seconds ? a.timestamp.seconds * 1000 : new Date(a.timestamp).getTime()) : 0;
+          const tB = b.timestamp ? (b.timestamp.seconds ? b.timestamp.seconds * 1000 : new Date(b.timestamp).getTime()) : 0;
+          return tB - tA;
+        });
+      setUnreadMessages(unreadFiltered);
     }, (error) => handleFirestoreError(error, OperationType.GET, "messages"));
+
+    return () => unsubscribe();
+  }, [user?.uid]);
+
+  // Listen for any active panic S.O.S alert of this driver
+  useEffect(() => {
+    if (!user?.uid) return;
+    const q = query(
+      collection(db, "panic_alerts"),
+      where("driverId", "==", user.uid),
+      where("status", "==", "active")
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      if (!snapshot.empty) {
+        // Take the latest active alert
+        const activeDoc = snapshot.docs[0];
+        setActivePanicAlert({ id: activeDoc.id, ...activeDoc.data() });
+        setShowPanicModal(true); // Automatically trigger overlay
+      } else {
+        setActivePanicAlert(null);
+        setShowPanicModal(false);
+      }
+    }, (error) => handleFirestoreError(error, OperationType.GET, "panic_alerts"));
 
     return () => unsubscribe();
   }, [user?.uid]);
@@ -599,13 +721,44 @@ export default function DriverView({ user }: DriverViewProps) {
     }
   };
 
+  const acknowledgeRescue = async () => {
+    if (!activePanicAlert?.id) return;
+    try {
+      await updateDoc(doc(db, "panic_alerts", activePanicAlert.id), {
+        driverAcknowledge: true,
+        acknowledgedAt: new Date().toISOString()
+      });
+      alert("Recebimento de ajuda confirmado! Fique no local em segurança.");
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const resolvePanicFromDriver = async () => {
+    if (!activePanicAlert?.id) return;
+    if (!window.confirm("Deseja mesmo cancelar o S.O.S? Confirme que está em total segurança.")) return;
+    try {
+      await updateDoc(doc(db, "panic_alerts", activePanicAlert.id), {
+        status: "resolved",
+        resolvedAt: new Date(),
+        resolvedBy: "Motorista (Estou Seguro)",
+        notes: "O próprio motorista encerrou o S.O.S a partir da sua Cabine de Controlo."
+      });
+      setActivePanicAlert(null);
+      setShowPanicModal(false);
+      alert("S.O.S encerrado com sucesso.");
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const submitRevenue = async (e: React.FormEvent) => {
     e.preventDefault();
     const tpa = Number(revenueDetails.tpa) || 0;
     const cash = Number(revenueDetails.cash) || 0;
     const transfer = Number(revenueDetails.transfer) || 0;
     const expenses = Number(revenueDetails.expenses) || 0;
-    const total = tpa + cash + transfer - expenses;
+    const total = tpa + cash + transfer + passengerRidesTotal - expenses;
 
     if (total <= 0 && expenses === 0) {
       alert("Por favor, insira um valor de renda ou uma despesa.");
@@ -632,6 +785,7 @@ export default function DriverView({ user }: DriverViewProps) {
           cash,
           transfer,
           expenses,
+          appRides: passengerRidesTotal,
         },
         description: revenueDetails.description,
         date: editingRevenueId 
@@ -672,24 +826,32 @@ export default function DriverView({ user }: DriverViewProps) {
     // Simplificar a query para evitar problemas de índices compostos (FAILED_PRECONDITION)
     const q = query(
       collection(db, "calls"),
-      where("status", "in", ["pending", "active"])
+      where("status", "in", ["pending", "connected", "price_sent", "confirmed", "active"])
     );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const handleSync = (snapshot: any) => {
       // Filtrar chamadas atribuídas a este motorista localmente para evitar erros de índice do Firestore
-      const activeDocs = snapshot.docs.filter((doc) => {
+      const activeDocs = snapshot.docs.filter((doc: any) => {
         if (hiddenCallIdsRef.current.includes(doc.id)) return false;
+        
+        // Se já é o serviço atual ativo sendo monitorado, mantemos na lista para evitar quedas por re-render/resubscribe
+        if (currentServiceRef.current?.id && doc.id === currentServiceRef.current.id) return true;
+        
         const d = doc.data();
+        const callDriverName = (d.driverName || "").toLowerCase().trim();
+        const loggedDriverName = (user?.name || "").toLowerCase().trim();
+        const isNameMatch = callDriverName !== "" && loggedDriverName !== "" && callDriverName === loggedDriverName;
+        
         return (
-          d.driverId === user.uid ||
-          d.driverId === (assignedVehicle?.id || "no_vehicle_id") ||
-          d.driverId === (assignedVehicle?.driverId || "no_driver_id") ||
-          d.driverName === (user.name || "no_name")
+          isNameMatch ||
+          (d.driverId && user?.uid && d.driverId === user.uid) ||
+          (assignedVehicle?.id && d.driverId === assignedVehicle.id) ||
+          (assignedVehicle?.driverId && d.driverId === assignedVehicle.driverId)
         );
       });
       
       // Ordenar por timestamp desc localmente
-      activeDocs.sort((a, b) => {
+      activeDocs.sort((a: any, b: any) => {
         const tA = a.data().timestamp || "";
         const tB = b.data().timestamp || "";
         return tB.localeCompare(tA);
@@ -699,22 +861,65 @@ export default function DriverView({ user }: DriverViewProps) {
         const callDoc = activeDocs[0];
         const callData = { id: callDoc.id, ...callDoc.data() };
         if (callData.status === "pending") {
+          console.log("Serviço pendente detectado:", callData);
+          setCurrentService(callData);
+          setShowNotification(true);
+        } else if (callData.status === "connected") {
+          console.log("Serviço conectado detectado:", callData);
+          setCurrentService(callData);
+          setShowNotification(true);
+        } else if (callData.status === "price_sent") {
+          console.log("Proposta de preço enviada, a aguardar passageiro:", callData);
+          setCurrentService(callData);
+          setShowNotification(true);
+        } else if (callData.status === "confirmed") {
+          console.log("Corrida confirmada pelo passageiro:", callData);
           setCurrentService(callData);
           setShowNotification(true);
         } else if (callData.status === "active") {
           setCurrentService(callData);
-          setShowNotification(false);
+          setShowNotification(true);
         } else {
           setCurrentService(null);
           setShowNotification(false);
         }
       } else {
-        setCurrentService(null);
-        setShowNotification(false);
+        // Para evitar race conditions e desconexões prematuras ao limpar o estado
+        if (currentServiceRef.current?.id) {
+          getDoc(doc(db, "calls", currentServiceRef.current.id)).then((docSnap) => {
+            if (docSnap.exists()) {
+              const statusStr = docSnap.data().status;
+              if (["completed", "cancelled", "rejected", "ignored"].includes(statusStr)) {
+                setCurrentService(null);
+                setShowNotification(false);
+              } else {
+                console.log("A chamada ainda está ativa no banco de dados, mantendo visual em cache para resre-alinhamento.");
+              }
+            } else {
+              setCurrentService(null);
+              setShowNotification(false);
+            }
+          }).catch(() => {
+            setCurrentService(null);
+            setShowNotification(false);
+          });
+        } else {
+          setCurrentService(null);
+          setShowNotification(false);
+        }
       }
-    }, (error) => handleFirestoreError(error, OperationType.GET, "calls"));
+    };
 
-    return () => unsubscribe();
+    // 1) Real-time Stream Subscriber (Highly robust native channel)
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      handleSync(snapshot);
+    }, (error) => {
+      console.warn("Real-time stream error on driver:", error);
+    });
+
+    return () => {
+      unsubscribe();
+    };
   }, [user?.uid, assignedVehicle?.id, assignedVehicle?.driverId, user?.name]);
 
   // Listen for other active and available drivers in the fleet
@@ -1183,23 +1388,19 @@ export default function DriverView({ user }: DriverViewProps) {
   };
 
   return (
-    <div className="flex flex-col w-full h-full min-h-screen bg-slate-50">
-      <div className="relative w-full h-full flex flex-col overflow-hidden">
-        {/* Notch - hidden as requested */}
-        <div className="hidden absolute top-0 left-1/2 -translate-x-1/2 w-32 h-6 bg-slate-800 rounded-b-2xl z-50"></div>
-
-        {/* Screen Content */}
-        <div className="relative h-full bg-slate-50 flex flex-col font-sans overflow-y-auto custom-scrollbar">
-          {/* Status Bar App Style */}
-          <div className="px-6 py-2 flex items-center justify-between text-[11px] font-bold text-slate-400">
-            <span>9:41</span>
-            <div className="flex items-center gap-1.5">
-              <Activity size={10} />
-              <span>PSM Live</span>
-            </div>
+    <div className="flex flex-col w-full h-screen h-[100dvh] bg-slate-50 relative overflow-hidden font-sans">
+      {/* Non-scrollable header and status bar zone */}
+      <div className="bg-slate-50 shrink-0 z-40 border-b border-slate-100">
+        {/* Status Bar App Style */}
+        <div className="px-6 py-2 flex items-center justify-between text-[11px] font-bold text-slate-400">
+          <span>9:41</span>
+          <div className="flex items-center gap-1.5">
+            <Activity size={10} />
+            <span>PSM Live</span>
           </div>
+        </div>
 
-          <header className="px-6 py-4 flex items-center justify-between bg-white border-b border-slate-100 sticky top-0 z-40">
+        <header className="px-4 py-4 flex items-center justify-between bg-white">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-brand-primary/10 flex items-center justify-center border border-brand-primary/20">
                 <Shield size={20} className="text-brand-primary" />
@@ -1284,6 +1485,7 @@ export default function DriverView({ user }: DriverViewProps) {
               </AnimatePresence>
             </div>
           </header>
+        </div>
 
       <AnimatePresence>
         {isMessagesModalOpen && (
@@ -1299,7 +1501,7 @@ export default function DriverView({ user }: DriverViewProps) {
               initial={{ y: 300, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 300, opacity: 0 }}
-              className="relative w-full bg-white rounded-t-[2.5rem] sm:rounded-[2.5rem] p-6 space-y-6 shadow-2xl z-20 flex flex-col h-[90%] max-h-[90vh] sm:max-w-md overflow-hidden"
+              className="relative w-full bg-white rounded-t-[2.5rem] sm:rounded-[2.5rem] p-4 sm:p-6 space-y-4 sm:space-y-6 shadow-2xl z-20 flex flex-col h-[90%] max-h-[90vh] sm:max-w-full overflow-hidden"
             >
               <div className="flex justify-between items-center pb-2 border-b border-slate-100">
                 <h2 className="text-xl font-black uppercase tracking-tighter">Mensagens ({unreadMessages.length})</h2>
@@ -1322,6 +1524,15 @@ export default function DriverView({ user }: DriverViewProps) {
                       title="Marcar como lida"
                     >
                       <CheckCircle2 size={16} />
+                    </button>
+                    <button
+                      onClick={() => {
+                        setIsMessagesModalOpen(false);
+                        setIsWhatsAppOpen(true);
+                      }}
+                      className="mt-3 w-full bg-slate-900 text-white rounded-xl py-2 text-[10px] uppercase font-black tracking-widest hover:bg-slate-800 transition-colors"
+                    >
+                      Responder
                     </button>
                   </div>
                 ))}
@@ -1351,7 +1562,7 @@ export default function DriverView({ user }: DriverViewProps) {
               initial={{ y: 300, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 300, opacity: 0 }}
-              className="relative w-full bg-white rounded-t-[2.5rem] sm:rounded-[2.5rem] p-6 space-y-6 shadow-2xl z-20 flex flex-col h-[98%] max-h-[98vh] sm:max-w-4xl"
+              className="relative w-full bg-white rounded-t-[2.5rem] sm:rounded-[2.5rem] p-4 sm:p-6 space-y-4 sm:space-y-6 shadow-2xl z-20 flex flex-col h-[98%] max-h-[98vh] sm:max-w-full"
             >
               <div className="flex justify-between items-center pb-2 border-b border-slate-100">
                 <h2 className="text-xl font-black uppercase tracking-tighter">Central WhatsApp</h2>
@@ -1365,7 +1576,7 @@ export default function DriverView({ user }: DriverViewProps) {
         )}
       </AnimatePresence>
 
-      <main className="flex-1 px-6 py-6 space-y-6">
+      <main className="flex-1 overflow-y-auto custom-scrollbar px-4 sm:px-6 py-6 pb-28 space-y-6 w-full bg-slate-50">
             <AnimatePresence>
               {showSafetyCheck && (
                 <motion.div 
@@ -1401,8 +1612,312 @@ export default function DriverView({ user }: DriverViewProps) {
               )}
             </AnimatePresence>
 
-            {activeInternalTab === "dashboard" ? (
+            {currentService ? (
+              // INTERFACE ÚNICA DE INTERAÇÃO DO SERVIÇO (DEDICATED FULL SCREEN CALL UI)
+              <div className="space-y-6 max-w-2xl mx-auto py-2">
+                <div className="bg-slate-900 text-white rounded-[2.5rem] border-4 border-slate-950 p-6 sm:p-8 space-y-6 shadow-2xl overflow-hidden relative">
+                  
+                  {/* Decorative ambient GPS grid */}
+                  <div className="absolute inset-0 opacity-5 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:16px_16px] pointer-events-none" />
+
+                  {/* Header Call state overlay */}
+                  <div className="flex items-center justify-between border-b border-dashed border-white/10 pb-4 relative z-10">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-ping shrink-0" />
+                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                        SISTEMA OPERACIONAL PSM
+                      </span>
+                    </div>
+                    <span className={cn(
+                      "px-3 py-1 font-black text-[9.5px] rounded-full uppercase tracking-widest text-center",
+                      currentService.status === "pending" && "bg-amber-500 text-slate-950 animate-pulse",
+                      currentService.status === "connected" && "bg-amber-400 text-slate-950 animate-pulse",
+                      currentService.status === "price_sent" && "bg-blue-500 text-white",
+                      currentService.status === "confirmed" && "bg-emerald-500 text-white",
+                      currentService.status === "active" && "bg-emerald-500 text-white"
+                    )}>
+                      {currentService.status === "pending" && "📞 CHAMADA PENDENTE"}
+                      {currentService.status === "connected" && "🎙️ VOZ ESTABELECIDA"}
+                      {currentService.status === "price_sent" && "💬 PROPOSTA ENVIADA"}
+                      {currentService.status === "confirmed" && "✨ PREÇO CONFIRMADO"}
+                      {currentService.status === "active" && "🚀 VIAGEM EM CURSO"}
+                    </span>
+                  </div>
+
+                  {/* Operational Status Display indicator */}
+                  <div className="text-center space-y-2 relative z-10 py-2">
+                    <div className="w-16 h-16 rounded-full bg-slate-950 border-2 border-brand-primary/20 text-brand-primary flex items-center justify-center mx-auto mb-2 relative">
+                      <Phone size={24} className={cn(
+                        currentService.status === "pending" && "animate-bounce text-amber-500",
+                        currentService.status === "connected" && "animate-pulse text-emerald-400",
+                        currentService.status === "price_sent" && "text-blue-400",
+                        currentService.status === "confirmed" && "scale-110 text-emerald-400 animate-bounce",
+                        currentService.status === "active" && "text-emerald-400 animate-pulse"
+                      )} />
+                    </div>
+                    <h3 className="text-xl font-black tracking-tight uppercase leading-none text-white">
+                      {currentService.status === "pending" && "Recebendo Pedido..."}
+                      {currentService.status === "connected" && "Conversando em Tempo Real"}
+                      {currentService.status === "price_sent" && "Aguardando Confirmação"}
+                      {currentService.status === "confirmed" && "Embarque Autorizado"}
+                      {currentService.status === "active" && "Viagem Selecionada"}
+                    </h3>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                      {currentService.status === "active" ? "Viatura em Movimento no Luena" : "Negociação de Super Táxi"}
+                    </p>
+                  </div>
+
+                  {/* Interactive GPS Router Map placeholder for Unique Interface */}
+                  <div className="bg-slate-950/60 rounded-3xl overflow-hidden border border-white/5 shadow-inner relative h-36">
+                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-slate-900 to-slate-955" />
+                    <div className="absolute inset-x-0 bottom-2 text-center z-10">
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-2">
+                        Rota de Viagem em Direto
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Customer Block and Trip Info */}
+                  <div className="space-y-4 bg-white/5 p-6 rounded-3xl border border-white/5 relative z-10">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                        Passageiro / Nome
+                      </span>
+                      <span className="text-sm font-black text-white uppercase italic">
+                        {currentService?.customerName || currentService?.passengerName || "Cliente Particular"}
+                      </span>
+                    </div>
+
+                    <div className="pt-2 border-t border-white/5">
+                      <p className="text-[8.5px] font-black text-slate-400 uppercase tracking-widest mb-1">PONTO DE RECOLHA</p>
+                      <p className="text-xs font-semibold text-slate-200 leading-tight">
+                        {currentService?.pickupAddress || currentService?.pickup || "Luena Central"}
+                      </p>
+                    </div>
+
+                    <div className="pt-2 border-t border-white/5">
+                      <p className="text-[8.5px] font-black text-slate-400 uppercase tracking-widest mb-1">PONTO DE DESTINO</p>
+                      <p className="text-xs font-semibold text-slate-200 leading-tight">
+                        {currentService?.destinationAddress || currentService?.destination || "Bairro Kamanongue"}
+                      </p>
+                    </div>
+
+                    {currentService.price && (
+                      <div className="pt-2 border-t border-white/5 flex justify-between items-center">
+                        <span className="text-[8.5px] font-black text-emerald-400 uppercase tracking-widest">Preço Definido</span>
+                        <span className="text-base font-black text-emerald-400 font-mono">
+                          {Number(currentService.price).toLocaleString()} Kz
+                        </span>
+                      </div>
+                    )}
+
+                    {currentService.boardingToken && (
+                      <div className="pt-2 border-t border-white/5 flex justify-between items-center bg-emerald-950/20 px-3 py-2 rounded-xl border border-emerald-500/10">
+                        <span className="text-[8.5px] font-black text-emerald-400 uppercase tracking-widest">TOKEN DE EMBARQUE:</span>
+                        <span className="text-sm font-mono font-black text-emerald-400 tracking-wider">
+                          {currentService.boardingToken}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Operational Controls by Status */}
+                  <div className="space-y-4 pt-2 relative z-10 border-t border-dashed border-white/10">
+                    {currentService.status === "pending" && (
+                      <div className="flex gap-3">
+                        <button
+                          onClick={rejectService}
+                          className="flex-1 py-4 bg-white/10 hover:bg-white/20 transition-all text-white border border-white/10 rounded-2xl font-black text-xs uppercase tracking-wider"
+                        >
+                          Rejeitar (15s)
+                        </button>
+                        <button
+                          onClick={attendCall}
+                          className="flex-[2] py-4 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-xs uppercase tracking-widest rounded-2xl shadow-xl shadow-emerald-500/10 flex items-center justify-center gap-2 animate-bounce"
+                        >
+                          <PhoneCall size={14} className="animate-bounce" />
+                          Atender Chamada
+                        </button>
+                      </div>
+                    )}
+
+                    {currentService.status === "connected" && (
+                      <div className="space-y-4">
+                        <div className="bg-emerald-500/5 border border-emerald-500/20 p-4 rounded-2xl text-center">
+                          <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">Chamada Atendida (Conversão Estável)</p>
+                          <p className="text-[9px] text-slate-400 mt-0.5 uppercase font-bold">Defina o valor da corrida ou recuse se necessário.</p>
+                        </div>
+                        <div className="space-y-3 bg-white/5 p-4 rounded-2xl border border-white/5">
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">
+                            Propor Preço da Viagem (AKZ)
+                          </p>
+                          <div className="flex gap-2 font-sans">
+                            <input
+                              type="number"
+                              placeholder="Ex: 2500"
+                              value={proposedPrice}
+                              onChange={(e) => setProposedPrice(e.target.value)}
+                              className="flex-1 bg-black text-white border border-white/10 rounded-xl px-4 py-3 text-sm font-black focus:outline-none focus:border-brand-primary"
+                            />
+                            <button
+                              onClick={() => sendPriceOffer()}
+                              className="px-6 py-3 bg-[#10b981] text-slate-950 font-black text-xs uppercase rounded-xl transition-all hover:bg-emerald-600 shadow-md font-sans"
+                            >
+                              PROPOR
+                            </button>
+                          </div>
+                          <div className="flex gap-2 justify-between">
+                            {[1500, 2000, 2500, 3000].map((val) => (
+                              <button
+                                key={val}
+                                onClick={() => sendPriceOffer(val)}
+                                className="flex-1 bg-white/5 hover:bg-white/10 border border-white/5 py-2 rounded-xl text-xs text-white font-black transition-all"
+                              >
+                                {val.toLocaleString()}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <button
+                          onClick={rejectService}
+                          className="w-full py-3 bg-red-650/15 hover:bg-red-600 text-white hover:text-white border border-red-500/20 rounded-2xl text-xs uppercase font-black tracking-widest transition-colors"
+                        >
+                          Cancelar Serviço
+                        </button>
+                      </div>
+                    )}
+
+                    {currentService.status === "price_sent" && (
+                      <div className="space-y-4">
+                        <div className="bg-blue-500/10 border border-blue-500/20 p-4 rounded-2xl flex items-center justify-center gap-3">
+                          <RefreshCw size={18} className="text-blue-400 animate-spin shrink-0" />
+                          <div className="text-left leading-tight">
+                            <p className="text-[10px] font-black text-blue-400 uppercase tracking-wider">
+                              PROPOSTA ENVIADA COM SUCESSO
+                            </p>
+                            <p className="text-[9px] text-slate-400 uppercase mt-0.5 font-bold">
+                              Aguardando aprovação de {currentService.price?.toLocaleString()} Kz pelo passageiro...
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={rejectService}
+                          className="w-full bg-slate-950 hover:bg-slate-900 border border-white/5 text-slate-400 py-3 rounded-2xl font-bold text-xs uppercase tracking-wider transition-all"
+                        >
+                          Cancelar Serviço
+                        </button>
+                      </div>
+                    )}
+
+                    {currentService.status === "confirmed" && (
+                      <div className="space-y-4">
+                        <div className="bg-emerald-500/10 border border-[#10b981]/30 p-4 rounded-2xl text-center space-y-1">
+                          <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">
+                            PREÇO ACORDADO E APENAS FALTA EMBARCAR!
+                          </p>
+                          <p className="text-[9px] text-slate-400 uppercase font-bold">
+                            Carregue no botão para dar início à viagem no Luena.
+                          </p>
+                        </div>
+                        <button
+                          onClick={acceptService}
+                          className="w-full bg-emerald-500 hover:bg-emerald-600 text-slate-950 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-xl shadow-emerald-500/30 flex items-center justify-center gap-2 animate-bounce"
+                        >
+                          <PhoneCall size={14} />
+                          INICIAR CORRIDA ACORDADA ({currentService.price?.toLocaleString()} Kz)
+                        </button>
+                      </div>
+                    )}
+
+                    {currentService.status === "active" && (
+                      <div className="space-y-4">
+                        <div className="bg-[#10b981]/15 p-4 rounded-2xl border border-emerald-500/30 text-center">
+                          <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest animate-pulse">VIAGEM DE SUPER TÁXI ATIVA</p>
+                          <p className="text-[9px] text-slate-400 uppercase mt-0.5 font-bold">Conduza com segurança pelas estradas do Luena-Moxico.</p>
+                        </div>
+                        <button
+                          onClick={finishService}
+                          className="w-full py-4 bg-emerald-500 hover:bg-[#059669] transition-all text-slate-950 font-black text-xs uppercase tracking-widest rounded-2xl flex items-center justify-center gap-2 shadow-xl shadow-emerald-500/30 active:scale-95 animate-pulse"
+                        >
+                          <CheckCircle2 size={14} />
+                          Encerrar Viagem & Carregar Renda ({currentService.price?.toLocaleString()} Kz)
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* COMMUNICATIVE INTERACTION ACCORDING TO USER REQUIREMENT:
+                      "e remove os botoes (Ligar Cliente Chat (APP)) esses botoes so aparece se o cliente sair da linha/offline." */}
+                  <div className="pt-4 border-t border-dashed border-white/10 space-y-3 relative z-10">
+                    
+                    {/* Simulator switch to mock offline passenger for easy verification */}
+                    <div className="flex items-center justify-between bg-white/5 p-3 rounded-2xl border border-white/5">
+                      <div className="text-left">
+                        <p className="text-[9px] font-black text-slate-300 uppercase tracking-wide">
+                          Simulador de Estado (Linha Web-Call)
+                        </p>
+                        <p className="text-[8px] text-slate-400 uppercase font-black">
+                          { (currentService.status === "active" || localPassengerOffline || currentService.passengerOffline) 
+                            ? "🔴 Passageiro saiu da linha / offline" 
+                            : "🟢 Passageiro na linha / online"
+                          }
+                        </p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          checked={localPassengerOffline}
+                          onChange={(e) => setLocalPassengerOffline(e.target.checked)}
+                          className="sr-only peer" 
+                        />
+                        <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:width-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                      </label>
+                    </div>
+
+                    {(currentService.status === "active" || localPassengerOffline || currentService.passengerOffline) ? (
+                      <div className="space-y-2.5 animate-fade-in">
+                        <div className="bg-rose-500/10 border border-rose-500/20 p-3.5 rounded-2xl text-center">
+                          <span className="text-[10px] font-black text-rose-400 uppercase tracking-widest block mb-0.5">⚠️ Passageiro Desconectado / Offline</span>
+                          <span className="text-[8.5px] text-slate-300 uppercase tracking-wider block font-bold">O passageiro saiu da linha ou está sem internet. Use os botões abaixo para ligar normal ou enviar chat tradicional.</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3 font-sans">
+                          <button 
+                            onClick={() => {
+                              if (currentService.customerPhone || currentService.passengerPhone) {
+                                window.open(`tel:${currentService.customerPhone || currentService.passengerPhone}`, '_self');
+                              } else {
+                                alert("Cliente não tem número de telemóvel associado.");
+                              }
+                            }}
+                            className="flex items-center justify-center gap-2 bg-white text-slate-800 p-3.5 rounded-2xl transition-all hover:bg-slate-100 font-extrabold text-[10.5px] uppercase tracking-wider"
+                          >
+                            <Phone size={14} className="text-blue-600 animate-pulse" />
+                            Ligar Cliente
+                          </button>
+                          <button 
+                            onClick={async () => {
+                              setIsMessagesModalOpen(true);
+                            }}
+                            className="flex items-center justify-center gap-2 bg-white text-slate-800 p-3.5 rounded-2xl transition-all hover:bg-slate-100 font-extrabold text-[10.5px] uppercase tracking-wider"
+                          >
+                            <MessageSquare size={14} className="text-emerald-500 animate-pulse" />
+                            Chat (APP)
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="bg-emerald-500/10 border border-emerald-500/20 p-3 rounded-2xl text-center">
+                        <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest block">🎙️ Comunicação de Voz Ativa Dedicada</span>
+                        <span className="text-[8px] text-slate-400 uppercase tracking-wider block font-bold mt-0.5">Fale diretamente com o cliente. Canais de emergência ocultos até o cliente desligar ou ficar offline.</span>
+                      </div>
+                    )}
+                  </div>
+
+                </div>
+              </div>
+            ) : activeInternalTab === "dashboard" ? (
               <div className="space-y-4">
+
                 {/* Warning Cards for Pending Items (Previous Shift Focus) - Consolidated Collapsible Alert Center */}
                 {((!loadingShiftCheck && lastAssignedShift && (!lastShiftRevenueSubmitted || lastShiftPendingContracts > 0)) || rejectedRevenues.length > 0) ? (
                   <div className="bg-rose-50 border border-rose-200/60 rounded-2xl p-4 shadow-sm">
@@ -1441,7 +1956,7 @@ export default function DriverView({ user }: DriverViewProps) {
                               </div>
                             </div>
                             <button
-                              onClick={() => { setActiveInternalTab("wallet"); setIsAlertsCollapsed(true); }}
+                              onClick={() => { setActiveInternalTab("rendas"); setIsAlertsCollapsed(true); }}
                               className="bg-red-600 text-white px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest shadow-md shadow-red-200"
                             >
                               Declarar
@@ -1496,7 +2011,7 @@ export default function DriverView({ user }: DriverViewProps) {
                                     expenses: rev.breakdown?.expenses?.toString() || "",
                                     description: rev.description || "",
                                   });
-                                  setActiveInternalTab("wallet");
+                                  setActiveInternalTab("rendas");
                                   setIsAlertsCollapsed(true);
                                 }}
                                 className="px-2.5 py-1 bg-rose-600 text-white rounded text-[8px] font-black uppercase tracking-wider"
@@ -1691,7 +2206,7 @@ export default function DriverView({ user }: DriverViewProps) {
                 </div>
 
                   {/* Current Ride / Map Placeholder */}
-                  {isOnline && (
+                  {(isOnline || currentService) && (
                     <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm">
                       <div className="h-48 bg-slate-100 relative group overflow-hidden">
                         {/* Fake Map */}
@@ -1729,93 +2244,252 @@ export default function DriverView({ user }: DriverViewProps) {
                       </div>
 
                       {currentService && (
-                        <div className="p-6 space-y-5 border-t border-slate-100">
-                          <div className="flex items-start gap-4">
-                            <div className="flex flex-col items-center gap-1.5 pt-1">
-                              <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white ring-1 ring-emerald-500/30" />
-                              <div className="w-0.5 h-8 bg-slate-200" />
-                              <div className="w-2.5 h-2.5 rounded-full bg-brand-primary border-2 border-white ring-1 ring-brand-primary/20" />
-                            </div>
-                            <div className="flex-1 space-y-4">
-                              <div>
-                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
-                                  Recolha
-                                </p>
-                                <p className="text-[13px] font-bold text-slate-800 leading-tight truncate">
-                                  {currentService.pickupAddress}
-                                </p>
-                              </div>
-                              <div>
-                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
-                                  Destino
-                                </p>
-                                <p className="text-[13px] font-bold text-slate-800 leading-tight truncate">
-                                  {currentService.destinationAddress}
-                                </p>
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
-                                Valor
-                              </p>
-                              <p className="text-[15px] font-black text-emerald-600">
-                                {currentService.price || 0}Kz
-                              </p>
+                        <div className={cn(
+                          "p-6 space-y-5 border-t border-slate-200 dark:border-white/10 rounded-2xl transition-all duration-500",
+                          currentService.status === "pending" && "border-amber-500/40 bg-slate-900 text-white shadow-xl shadow-amber-500/5",
+                          currentService.status === "connected" && "border-amber-500/40 bg-slate-900 text-white shadow-xl shadow-amber-500/5",
+                          currentService.status === "price_sent" && "border-blue-500/40 bg-slate-900 text-white shadow-xl",
+                          currentService.status === "confirmed" && "border-emerald-500/40 bg-slate-900 text-white shadow-xl shadow-emerald-500/10 animate-pulse",
+                          currentService.status === "active" && "border-emerald-500/40 bg-slate-900 text-white shadow-xl"
+                        )}>
+                          
+                          {/* Header Call state */}
+                          <div className="flex items-center justify-between border-b border-dashed border-white/10 pb-3">
+                            <span className={cn(
+                              "px-2.5 py-1 font-black text-[9px] rounded-lg uppercase tracking-wider",
+                              currentService.status === "pending" && "bg-amber-500 text-slate-950 animate-pulse",
+                              currentService.status === "connected" && "bg-amber-500 text-slate-950 animate-pulse",
+                              currentService.status === "price_sent" && "bg-blue-500 text-white",
+                              currentService.status === "confirmed" && "bg-emerald-500 text-white",
+                              currentService.status === "active" && "bg-emerald-500 text-white"
+                            )}>
+                              {currentService.status === "pending" && "📞 CHAMADA RECEBIDA (PENDENTE)"}
+                              {currentService.status === "connected" && "📞 TELEFONEMA ESTABELECIDO"}
+                              {currentService.status === "price_sent" && "💬 PROPOSTA ENVIADA"}
+                              {currentService.status === "confirmed" && "✨ PREÇO CONFIRMADO!"}
+                              {currentService.status === "active" && "🚀 VIAGEM EM ANDAMENTO"}
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="relative flex h-2.5 w-2.5">
+                                <span className={cn(
+                                  "animate-ping absolute inline-flex h-full w-full rounded-full opacity-75",
+                                  ["confirmed", "active"].includes(currentService.status) ? "bg-emerald-400" : "bg-amber-400"
+                                )}></span>
+                                <span className={cn(
+                                  "relative inline-flex rounded-full h-2.5 w-2.5",
+                                  ["confirmed", "active"].includes(currentService.status) ? "bg-emerald-500" : "bg-amber-500"
+                                )}></span>
+                              </span>
+                              <span className="text-[10px] font-mono font-black text-slate-400 uppercase tracking-widest">
+                                SIMULAÇÃO DOCK ACTIVE
+                              </span>
                             </div>
                           </div>
 
-                          <div className="flex flex-col gap-2">
-                            {currentService.status === "pending" ? (
-                              <div className="space-y-3">
-                                <div className="bg-amber-50 border border-amber-200 p-3.5 rounded-2xl flex items-center gap-3 animate-pulse">
-                                  <PhoneCall size={18} className="text-amber-600 animate-bounce shrink-0" />
-                                  <div className="leading-tight">
-                                    <p className="text-[10px] font-black text-amber-800 uppercase tracking-wider">
-                                      Chamada em Espera • <WaitingTimer timestamp={currentService.timestamp} className="underline" />
-                                    </p>
-                                    <p className="text-[9px] font-bold text-amber-600 uppercase">
-                                      Toque em Atender para iniciar a corrida
-                                    </p>
-                                  </div>
+                          {/* Passenger and Service details */}
+                          <div className="text-xs space-y-2.5 bg-white/5 p-4 rounded-xl border border-white/5">
+                            <div className="flex justify-between border-b border-white/5 pb-1.5">
+                              <span className="text-slate-400 uppercase font-black text-[9px]">Passageiro:</span>
+                              <span className="text-white font-black">
+                                {currentService.customerName || currentService.passengerName || "Passageiro de Teste"}
+                              </span>
+                            </div>
+                            <div className="flex justify-between border-b border-white/5 pb-1.5 col-span-2">
+                              <span className="text-slate-400 uppercase font-black text-[9px]">Contacto:</span>
+                              <span className="text-white font-mono font-bold">
+                                {currentService.customerPhone || currentService.passengerPhone || "+244 9XX XXX XXX"}
+                              </span>
+                            </div>
+                            <div className="flex justify-between border-b border-white/5 pb-1.5">
+                              <span className="text-slate-400 uppercase font-black text-[9px]">Partida (Moxico):</span>
+                              <span className="text-white font-extrabold truncate max-w-[180px]">
+                                {currentService.pickupAddress || currentService.pickup || "Luena Central"}
+                              </span>
+                            </div>
+                            <div className="flex justify-between border-b border-white/5 pb-1.5">
+                              <span className="text-slate-400 uppercase font-black text-[9px]">Destino Final:</span>
+                              <span className="text-white font-extrabold truncate max-w-[180px]">
+                                {currentService.destinationAddress || currentService.destination || "Bairro Kamanongue"}
+                              </span>
+                            </div>
+                            
+                            {currentService.price && (
+                              <div className="flex justify-between border-b border-white/5 pb-1.5">
+                                <span className="text-emerald-400 uppercase font-black text-[9px]">Valor Oferecido:</span>
+                                <span className="text-emerald-400 font-black text-sm font-mono leading-none">
+                                  {Number(currentService.price).toLocaleString()} Kz
+                                </span>
+                              </div>
+                            )}
+
+                            {currentService.boardingToken && (
+                              <div className="flex justify-between bg-emerald-500/10 p-2.5 rounded-lg border border-emerald-500/20 items-center">
+                                <span className="text-emerald-400 uppercase font-black text-[8px] tracking-wider">Código de Embarque (Segurança):</span>
+                                <span className="text-emerald-400 font-mono font-black text-sm tracking-widest">{currentService.boardingToken}</span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Call state actions - Simulation style */}
+                          <div className="space-y-3.5 pt-1">
+                            
+                            {/* PENDING State: Calling... */}
+                            {currentService.status === "pending" && (
+                              <div className="space-y-4">
+                                <div className="bg-amber-500/10 p-4 rounded-xl border border-amber-500/20 flex flex-col items-center text-center gap-1">
+                                  <PhoneCall size={20} className="text-amber-500 animate-bounce" />
+                                  <p className="text-[10px] font-black text-amber-400 uppercase tracking-widest">
+                                    Telemóvel do Motorista a Tocar!
+                                  </p>
+                                  <p className="text-[8.5px] text-slate-400 uppercase tracking-wider">
+                                    Atenda a chamada para estabelecer conversação ou envie o preço directamente.
+                                  </p>
                                 </div>
-                                <div className="flex items-center gap-2">
+
+                                <div className="flex gap-2">
                                   <button
                                     onClick={rejectService}
-                                    className="flex-1 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-500 py-3.5 rounded-xl font-black text-[11px] uppercase tracking-wider transition-all border border-slate-200"
+                                    className="flex-1 py-3 px-4 bg-rose-600/20 hover:bg-rose-600 transition-colors text-white hover:text-white border border-rose-500/30 rounded-xl font-black text-[10px] uppercase tracking-wider"
                                   >
                                     Recusar
                                   </button>
                                   <button
-                                    onClick={acceptService}
-                                    className="flex-[2] bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-wider transition-all shadow-lg shadow-emerald-500/30 flex items-center justify-center gap-2 animate-pulse"
+                                    onClick={attendCall}
+                                    className="flex-[2] py-3 px-4 bg-emerald-500 hover:bg-emerald-600 transition-all text-slate-950 font-black text-[10px] uppercase tracking-widest rounded-xl shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-1.5 animate-pulse"
                                   >
-                                    <PhoneCall size={14} className="animate-bounce" />
-                                    ATENDER CHAMADA
+                                    <PhoneCall size={12} className="animate-bounce" />
+                                    Atender Chamada
                                   </button>
                                 </div>
                               </div>
-                            ) : (
-                              <>
-                                <div className="flex items-center gap-2">
-                                  <button className="flex-1 bg-slate-100 text-slate-600 p-3 rounded-xl font-bold text-[11px] transition-all hover:bg-slate-200">
-                                    NAVEGAR
-                                  </button>
-                                  <button
-                                    onClick={finishService}
-                                    className="flex-1 bg-brand-primary text-white p-3 rounded-xl font-bold text-[11px] transition-all hover:bg-brand-secondary shadow-lg shadow-brand-primary/20"
-                                  >
-                                    FINALIZAR
-                                  </button>
+                            )}
+
+                            {/* CONNECTED state: established, can offer price */}
+                            {(currentService.status === "connected") && (
+                              <div className="space-y-3">
+                                <div className="bg-emerald-500/10 p-4 rounded-xl border border-emerald-500/20 text-center space-y-1">
+                                  <div className="flex items-center justify-center gap-2">
+                                    <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />
+                                    <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">Telefonema Estabelecido (Voz Ativa)</span>
+                                  </div>
+                                  <p className="text-[8.5px] text-slate-400 uppercase">Proponha o valor adequado para esta viagem abaixo.</p>
+                                </div>
+
+                                <div className="space-y-3 bg-white/5 p-4 rounded-xl border border-white/5">
+                                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">
+                                    Propor Preço da Viagem (AKZ)
+                                  </p>
+                                  <div className="flex gap-2">
+                                    <input
+                                      type="number"
+                                      placeholder="Ex: 2500"
+                                      value={proposedPrice}
+                                      onChange={(e) => setProposedPrice(e.target.value)}
+                                      className="flex-1 bg-black text-white border border-white/10 rounded-lg px-3 py-2 text-xs font-black focus:outline-none focus:border-brand-primary"
+                                    />
+                                    <button
+                                      onClick={() => sendPriceOffer()}
+                                      className="px-5 py-2 bg-[#10b981] text-slate-950 font-black text-[10px] uppercase rounded-lg transition-all hover:bg-emerald-600"
+                                    >
+                                      Propor
+                                    </button>
+                                  </div>
+                                  <div className="flex gap-1.5 justify-between">
+                                    {[1500, 2000, 2500, 3000].map((val) => (
+                                      <button
+                                        key={val}
+                                        onClick={() => sendPriceOffer(val)}
+                                        className="flex-1 bg-white/5 hover:bg-white/10 border border-white/5 py-1.5 rounded-lg text-[9px] text-white font-black transition-all"
+                                      >
+                                        {val.toLocaleString()}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                <button
+                                  onClick={rejectService}
+                                  className="w-full py-2.5 bg-slate-950 hover:bg-slate-900 text-slate-400 hover:text-white border border-white/5 rounded-xl text-[9px] uppercase font-bold tracking-wider transition-colors"
+                                >
+                                  Cancelar Serviço
+                                </button>
+                              </div>
+                            )}
+
+                            {/* PRICE SENT state: Waiting for passenger approval */}
+                            {currentService.status === "price_sent" && (
+                              <div className="space-y-3">
+                                <div className="bg-blue-500/10 border border-blue-500/20 p-4 rounded-xl flex items-center justify-center gap-3">
+                                  <RefreshCw size={15} className="text-blue-400 animate-spin shrink-0" />
+                                  <div className="text-left leading-tight">
+                                    <p className="text-[10px] font-black text-blue-400 uppercase tracking-wider">
+                                      Proposta de Preço Enviada
+                                    </p>
+                                    <p className="text-[8.5px] text-slate-400 uppercase mt-0.5">
+                                      A aguardar que o passageiro aprove os {currentService.price?.toLocaleString()} Kz...
+                                    </p>
+                                  </div>
                                 </div>
                                 <button
-                                  onClick={() => setIsTransferModalOpen(true)}
-                                  className="w-full bg-slate-100 hover:bg-slate-200 p-3 rounded-xl font-bold text-[11px] transition-all flex items-center justify-center gap-2 border border-slate-200 shadow-sm text-slate-700"
+                                  onClick={rejectService}
+                                  className="w-full bg-slate-950 hover:bg-slate-900 border border-white/5 text-slate-400 py-3 rounded-xl font-bold text-[10px] uppercase tracking-wider transition-all"
                                 >
-                                  <Users size={14} className="text-slate-500" />
-                                  DELEGAR / ENCAMINHAR CLIENTE
+                                  Cancelar Serviço
                                 </button>
-                              </>
+                              </div>
                             )}
+
+                            {/* CONFIRMED state: Passenger approved the offered price */}
+                            {currentService.status === "confirmed" && (
+                              <div className="space-y-3">
+                                <div className="bg-emerald-500/10 border border-[#10b981]/30 p-4 rounded-xl flex flex-col items-center text-center gap-1">
+                                  <div className="w-1.5 h-1.5 bg-[#10b981] rounded-full animate-ping" />
+                                  <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">
+                                    Corrida Confirmada pelo Passageiro!
+                                  </p>
+                                  <p className="text-[8.5px] text-slate-400 uppercase">
+                                    O preço de {currentService.price?.toLocaleString()} Kz foi acordado e validado de forma segura!
+                                  </p>
+                                </div>
+                                <button
+                                  onClick={acceptService}
+                                  className="w-full bg-emerald-500 hover:bg-emerald-600 text-slate-950 py-4 rounded-xl font-black text-[11px] uppercase tracking-widest transition-all shadow-lg shadow-emerald-500/30 flex items-center justify-center gap-1.5 animate-pulse"
+                                >
+                                  <PhoneCall size={12} />
+                                  INICIAR CORRIDA ACORDADA ({currentService.price?.toLocaleString()} Kz)
+                                </button>
+                              </div>
+                            )}
+
+                            {/* ACTIVE state: Ride in progress */}
+                            {currentService.status === "active" && (
+                              <div className="space-y-4">
+                                <div className="bg-[#10b981]/15 p-4 rounded-xl border border-emerald-500/30 text-center space-y-1">
+                                  <div className="flex items-center justify-center gap-2">
+                                    <span className="w-2 h-2 bg-emerald-500 rounded-full animate-ping" />
+                                    <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">Viagem de Super Táxi Ativa</span>
+                                  </div>
+                                  <p className="text-[8.5px] text-slate-400 uppercase">Siga a rota GPS até ao destino pretendido do passageiro.</p>
+                                </div>
+
+                                <button
+                                  onClick={finishService}
+                                  className="w-full py-4 bg-emerald-500 hover:bg-[#059669] transition-all text-slate-950 font-black text-[11px] uppercase tracking-widest rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/30 active:scale-95 animate-pulse"
+                                >
+                                  <CheckCircle2 size={13} />
+                                  Encerrar Viagem & Carregar Renda ({currentService.price?.toLocaleString()} Kz)
+                                </button>
+
+                                <button
+                                  onClick={() => setIsTransferModalOpen(true)}
+                                  className="w-full bg-slate-950 border border-white/5 hover:bg-slate-900 text-slate-300 py-3 rounded-xl font-black text-[9.5px] uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                                >
+                                  <Users size={12} className="text-slate-500" />
+                                  DELEGAR / ESCALAR MOTORISTA
+                                </button>
+                              </div>
+                            )}
+
                           </div>
                         </div>
                       )}
@@ -2196,6 +2870,272 @@ export default function DriverView({ user }: DriverViewProps) {
                   )}
                 </div>
               </div>
+            ) : activeInternalTab === "rendas" ? (
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-sm font-black text-slate-800 uppercase tracking-tighter">
+                    Declaração de Renda Diária
+                  </h3>
+                  <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider mt-1 font-sans">
+                    Declare o faturamento do dia para validação.
+                  </p>
+                </div>
+
+                {/* Sincronizado cards and automatics */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 font-sans">
+                  <div className="bg-slate-900 rounded-[2rem] p-6 text-white relative overflow-hidden shadow-md">
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/20 blur-3xl rounded-full -mr-16 -mt-16" />
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest relative z-10">
+                      Balanço Total Sincronizado
+                    </p>
+                    <h2 className="text-3xl font-black mt-2 relative z-10 tracking-tight">
+                      {(earnings || 0).toLocaleString()} <span className="text-sm text-slate-400 font-medium font-mono">Kz</span>
+                    </h2>
+                    <div className="mt-4 flex items-center gap-1.5 text-[9px] font-bold text-emerald-400 relative z-10 uppercase tracking-wider">
+                      <CheckCircle2 size={11} className="animate-pulse" />
+                      <span>Sincronizado com Central Luena</span>
+                    </div>
+                  </div>
+
+                  <div className="bg-white rounded-[2rem] p-6 border border-slate-100 flex flex-col justify-between shadow-sm">
+                    <div>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">
+                        Renda das Corridas Concluídas (App)
+                      </p>
+                      <h3 className="text-3xl font-black mt-2 text-emerald-600 tracking-tight">
+                        {(passengerRidesTotal || 0).toLocaleString()} <span className="text-sm text-emerald-550 font-medium font-mono">Kz</span>
+                      </h3>
+                    </div>
+                    <div className="mt-4 bg-emerald-50 text-emerald-700 p-2.5 rounded-xl text-[8.5px] font-bold uppercase tracking-wider text-center border border-emerald-100">
+                      Este campo não é editável e reflete o total automático das corridas concluídas com sucesso.
+                    </div>
+                  </div>
+                </div>
+
+                {/* Form Entrega de Renda */}
+                <div className="bg-white rounded-[2rem] p-6 border border-slate-100 space-y-4 shadow-sm">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="p-2.5 bg-brand-primary/10 text-brand-primary rounded-2xl">
+                      <Wallet size={18} />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black text-slate-800 uppercase tracking-widest leading-none">
+                        Entrega de Renda
+                      </h4>
+                      <p className="text-[9px] text-slate-400 font-bold mt-1 uppercase tracking-wider">
+                        Declare o faturamento do dia para validação.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Always show the uneditable Passenger rides total field */}
+                  <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-2xl space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[9.5px] font-black text-emerald-800 uppercase tracking-widest">
+                        💾 Corridas do Aplicativo (Sucesso Automático)
+                      </label>
+                      <span className="text-[8px] bg-emerald-500/10 text-emerald-600 px-2 py-0.5 rounded-full font-black uppercase tracking-wider">
+                        Não Editável
+                      </span>
+                    </div>
+                    
+                    <input
+                      type="text"
+                      readOnly
+                      disabled
+                      value={`${(passengerRidesTotal || 0).toLocaleString()} Kz`}
+                      className="w-full px-4 py-3 bg-emerald-50/50 border border-emerald-100 rounded-xl text-xs font-black text-emerald-800 focus:outline-none font-mono"
+                    />
+
+                    {passengerRidesConfirmed.length > 0 && (
+                      <div className="space-y-1.5 max-h-32 overflow-y-auto pr-1 mt-1 custom-scrollbar">
+                        {passengerRidesConfirmed.map((ride, idx) => (
+                          <div key={idx} className="bg-white/80 border border-emerald-500/10 p-2 rounded-xl flex items-center justify-between">
+                            <div className="min-w-0 flex-1">
+                              <p className="text-[9px] font-black text-slate-800 uppercase truncate">{ride.passengerName}</p>
+                              <p className="text-[8px] text-slate-500 font-bold uppercase truncate">{ride.pickup} ➔ {ride.destination}</p>
+                            </div>
+                            <span className="text-[10px] font-black text-emerald-600 shrink-0 font-mono">
+                              {(Number(ride.price) || 0).toLocaleString()} Kz
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <p className="text-[8px] text-emerald-600 font-bold uppercase">
+                      Este total é sincronizado automaticamente e integrado na sua prestação de contas de hoje.
+                    </p>
+                  </div>
+
+                  {pendingRevenues.length > 0 && !editingRevenueId ? (
+                    <div className="bg-amber-50 border border-amber-200 p-5 rounded-2xl flex flex-col items-center text-center space-y-3">
+                      <div className="p-3 bg-amber-100 text-amber-600 rounded-full animate-pulse">
+                        <Clock size={24} />
+                      </div>
+                      <h4 className="text-xs font-black text-amber-800 uppercase tracking-widest leading-none">
+                        Aguardando Validação do Operador
+                      </h4>
+                      <p className="text-[10px] text-amber-700 font-bold leading-relaxed px-2">
+                        José Iweza Suana (JIS), deves aguardar que o Operador ou Administrador valide a sua renda actual antes de submeter uma nova declaração.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      {editingRevenueId && (
+                        <div className="bg-rose-50 border border-rose-100 p-3 rounded-2xl flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-2">
+                            <AlertTriangle size={14} className="text-rose-500" />
+                            <p className="text-[10px] text-rose-700 font-bold uppercase tracking-wide">
+                              A corrigir renda rejeitada...
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingRevenueId(null);
+                              setRevenueDetails({ tpa: "", cash: "", transfer: "", expenses: "", description: "" });
+                            }}
+                            className="text-[9px] font-black uppercase text-rose-600 hover:text-rose-800"
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      )}
+                      <form onSubmit={submitRevenue} className="space-y-4">
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">
+                              TPA (Cartão)
+                            </label>
+                            <input
+                              type="number"
+                              placeholder="0"
+                              value={revenueDetails.tpa}
+                              onChange={(e) =>
+                                setRevenueDetails({
+                                  ...revenueDetails,
+                                  tpa: e.target.value,
+                                })
+                              }
+                              className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-emerald-500 text-slate-800 font-mono"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">
+                              Numerário (Cache)
+                            </label>
+                            <input
+                              type="number"
+                              placeholder="0"
+                              value={revenueDetails.cash}
+                              onChange={(e) =>
+                                setRevenueDetails({
+                                  ...revenueDetails,
+                                  cash: e.target.value,
+                                })
+                              }
+                              className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-emerald-500 text-slate-800 font-mono"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">
+                              Transferências
+                            </label>
+                            <input
+                              type="number"
+                              placeholder="0"
+                              value={revenueDetails.transfer}
+                              onChange={(e) =>
+                                setRevenueDetails({
+                                  ...revenueDetails,
+                                  transfer: e.target.value,
+                                })
+                              }
+                              className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-emerald-500 text-slate-800 font-mono"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-black text-red-500 uppercase tracking-widest ml-1">
+                              Saídas / Gastos
+                            </label>
+                            <input
+                              type="number"
+                              placeholder="0"
+                              value={revenueDetails.expenses}
+                              onChange={(e) =>
+                                setRevenueDetails({
+                                  ...revenueDetails,
+                                  expenses: e.target.value,
+                                })
+                              }
+                              className="w-full px-4 py-2.5 bg-red-50 border border-red-100 rounded-xl text-xs font-bold outline-none focus:border-red-400 text-red-600 font-mono"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">
+                            Notas da Saída
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="Ex: Combustível, Refeição..."
+                            value={revenueDetails.description}
+                            onChange={(e) =>
+                                setRevenueDetails({
+                                  ...revenueDetails,
+                                  description: e.target.value,
+                                })
+                            }
+                            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-slate-400"
+                          />
+                        </div>
+
+                        <div className="pt-2 border-t border-slate-100 pt-4 font-sans">
+                          <div className="flex items-center justify-between mb-4 px-1">
+                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                              Líquido a Entregar:
+                            </span>
+                            <span className="text-lg font-black text-emerald-600 font-mono">
+                              {(
+                                (Number(revenueDetails?.tpa) || 0) +
+                                (Number(revenueDetails?.cash) || 0) +
+                                (Number(revenueDetails?.transfer) || 0) +
+                                passengerRidesTotal -
+                                (Number(revenueDetails?.expenses) || 0)
+                              ).toLocaleString()}{" "}
+                              Kz
+                            </span>
+                          </div>
+                          <button
+                            type="submit"
+                            disabled={revenueLoading}
+                            className={cn(
+                              "w-full py-4 rounded-2xl text-[10.5px] font-black uppercase tracking-widest transition-all shadow-lg active:scale-95",
+                              revenueSuccess
+                                ? "bg-emerald-500 text-white shadow-emerald-200"
+                                : "bg-slate-900 text-white shadow-slate-200 disabled:opacity-50",
+                            )}
+                          >
+                            {revenueLoading ? (
+                              <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin mx-auto" />
+                            ) : revenueSuccess ? (
+                              "Declarado com Sucesso!"
+                            ) : (
+                              "Declarar Renda Detalhada"
+                            )}
+                          </button>
+                        </div>
+                      </form>
+                    </>
+                  )}
+                </div>
+              </div>
             ) : activeInternalTab === "settings" ? (
               <div className="space-y-6">
                 <div>
@@ -2207,7 +3147,7 @@ export default function DriverView({ user }: DriverViewProps) {
                   </p>
                 </div>
 
-                <div className="bg-white rounded-3xl p-6 border border-slate-100 space-y-4">
+                <div className="bg-white rounded-3xl p-6 border border-slate-100 space-y-4 font-sans">
                   <div className="space-y-3">
                     {ringtones.map((ring) => (
                       <button
@@ -2264,230 +3204,9 @@ export default function DriverView({ user }: DriverViewProps) {
                 </div>
               </div>
             ) : (
-              <div className="space-y-6">
-                <div className="bg-slate-900 rounded-3xl p-6 text-white relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/20 blur-3xl rounded-full -mr-16 -mt-16" />
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest relative z-10">
-                    Balanço Total
-                  </p>
-                  <h2 className="text-3xl font-black mt-1 relative z-10">
-                    {(earnings || 0).toLocaleString()} Kz
-                  </h2>
-                  <div className="mt-4 flex items-center gap-2 text-[10px] font-bold text-emerald-400 relative z-10">
-                    <Activity size={10} />
-                    <span>Sincronizado com Central Luena</span>
-                  </div>
-                </div>
-
-                <div className="bg-white rounded-3xl p-6 border border-slate-100 space-y-4">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="p-2 bg-brand-primary/10 text-brand-primary rounded-xl">
-                      <Wallet size={18} />
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-black text-slate-800 uppercase tracking-widest leading-none">
-                        Entrega de Renda
-                      </h4>
-                      <p className="text-[9px] text-slate-400 font-bold mt-1">
-                        Declare o faturamento do dia para validação.
-                      </p>
-                    </div>
-                  </div>
-
-                  {pendingRevenues.length > 0 && (
-                    <div className="bg-blue-50 border border-blue-100 p-3 rounded-2xl flex items-center gap-3 mb-4">
-                      <Clock size={16} className="text-blue-500 shrink-0 animate-pulse" />
-                      <p className="text-[10px] text-blue-700 font-bold">
-                        Tens {pendingRevenues.length} faturamento(s) a aguardar aprovação da central.
-                      </p>
-                    </div>
-                  )}
-
-                  <form onSubmit={submitRevenue} className="space-y-4">
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">
-                          TPA (Cartão)
-                        </label>
-                        <input
-                          type="number"
-                          placeholder="0"
-                          value={revenueDetails.tpa}
-                          onChange={(e) =>
-                            setRevenueDetails({
-                              ...revenueDetails,
-                              tpa: e.target.value,
-                            })
-                          }
-                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-emerald-500"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">
-                          Numerário (Cache)
-                        </label>
-                        <input
-                          type="number"
-                          placeholder="0"
-                          value={revenueDetails.cash}
-                          onChange={(e) =>
-                            setRevenueDetails({
-                              ...revenueDetails,
-                              cash: e.target.value,
-                            })
-                          }
-                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-emerald-500"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">
-                          Transferências
-                        </label>
-                        <input
-                          type="number"
-                          placeholder="0"
-                          value={revenueDetails.transfer}
-                          onChange={(e) =>
-                            setRevenueDetails({
-                              ...revenueDetails,
-                              transfer: e.target.value,
-                            })
-                          }
-                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-emerald-500"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[9px] font-black text-red-400 uppercase tracking-widest ml-1">
-                          Saídas / Gastos
-                        </label>
-                        <input
-                          type="number"
-                          placeholder="0"
-                          value={revenueDetails.expenses}
-                          onChange={(e) =>
-                            setRevenueDetails({
-                              ...revenueDetails,
-                              expenses: e.target.value,
-                            })
-                          }
-                          className="w-full px-4 py-2.5 bg-red-50 border border-red-100 rounded-xl text-xs font-bold outline-none focus:border-red-400 text-red-600"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">
-                        Notas da Saída
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="Ex: Combustível, Refeição..."
-                        value={revenueDetails.description}
-                        onChange={(e) =>
-                          setRevenueDetails({
-                            ...revenueDetails,
-                            description: e.target.value,
-                          })
-                        }
-                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-bold outline-none focus:border-slate-400"
-                      />
-                    </div>
-
-                    <div className="pt-2">
-                      <div className="flex items-center justify-between mb-2 px-1">
-                        <span className="text-[10px] font-black text-slate-500 uppercase">
-                          Líquido a Entregar:
-                        </span>
-                        <span className="text-sm font-black text-emerald-600">
-                          {(
-                            (Number(revenueDetails?.tpa) || 0) +
-                            (Number(revenueDetails?.cash) || 0) +
-                            (Number(revenueDetails?.transfer) || 0) -
-                            (Number(revenueDetails?.expenses) || 0)
-                          ).toLocaleString()}{" "}
-                          Kz
-                        </span>
-                      </div>
-                      <button
-                        type="submit"
-                        disabled={revenueLoading}
-                        className={cn(
-                          "w-full py-3.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg",
-                          revenueSuccess
-                            ? "bg-emerald-500 text-white shadow-emerald-200"
-                            : "bg-slate-900 text-white shadow-slate-200 disabled:opacity-50",
-                        )}
-                      >
-                        {revenueLoading ? (
-                          <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin mx-auto" />
-                        ) : revenueSuccess ? (
-                          "Declarado com Sucesso!"
-                        ) : (
-                          "Declarar Renda Detalhada"
-                        )}
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              </div>
+              null
             )}
           </main>
-
-          {/* Tab Bar Sim */}
-          <footer className="h-16 bg-white border-t border-slate-100 flex items-center justify-around px-6 flex-shrink-0">
-            <button
-              onClick={() => setActiveInternalTab("dashboard")}
-              className={cn(
-                "flex flex-col items-center gap-1",
-                activeInternalTab === "dashboard"
-                  ? "text-brand-primary"
-                  : "text-slate-300",
-              )}
-            >
-              <Activity size={20} />
-              <span className="text-[9px] font-black uppercase">Painel</span>
-            </button>
-            <button
-              onClick={() => setActiveInternalTab("history")}
-              className={cn(
-                "flex flex-col items-center gap-1",
-                activeInternalTab === "history"
-                  ? "text-brand-primary"
-                  : "text-slate-300",
-              )}
-            >
-              <History size={20} />
-              <span className="text-[9px] font-black uppercase">Viagens</span>
-            </button>
-            <button
-              onClick={() => setActiveInternalTab("contracts")}
-              className={cn(
-                "flex flex-col items-center gap-1",
-                activeInternalTab === "contracts"
-                  ? "text-brand-primary"
-                  : "text-slate-300",
-              )}
-            >
-              <FileSignature size={20} />
-              <span className="text-[9px] font-black uppercase">Contratos</span>
-            </button>
-            <button
-              onClick={() => setActiveInternalTab("wallet")}
-              className={cn(
-                "flex flex-col items-center gap-1",
-                activeInternalTab === "wallet"
-                  ? "text-brand-primary"
-                  : "text-slate-300",
-              )}
-            >
-              <Wallet size={20} />
-              <span className="text-[9px] font-black uppercase">Rendas</span>
-            </button>
-          </footer>
-        </div>
 
         {/* Panic Modal */}
         <AnimatePresence>
@@ -2497,31 +3216,84 @@ export default function DriverView({ user }: DriverViewProps) {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="absolute inset-0 bg-red-600/90 backdrop-blur-xl"
+                className="absolute inset-0 bg-slate-950/95 backdrop-blur-2xl"
               />
               <motion.div
                 initial={{ scale: 0.8, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 0.8, opacity: 0 }}
-                className="relative space-y-6"
+                className="relative space-y-6 max-w-md w-full"
               >
-                <div className="w-24 h-24 bg-white/20 rounded-full flex items-center justify-center mx-auto border-4 border-white/30 animate-pulse">
-                  <AlertTriangle size={48} className="text-white" />
+                <div className="w-24 h-24 bg-red-650/40 rounded-full flex items-center justify-center mx-auto border-4 border-red-500 animate-pulse">
+                  <AlertTriangle size={48} className="text-red-500" />
                 </div>
                 <div className="space-y-2">
-                  <h2 className="text-3xl font-black text-white uppercase tracking-tighter">
-                    ALERTA ENVIADO!
+                  <h2 className="text-4xl font-black text-red-500 tracking-tighter italic animate-bounce">
+                    S.O.S ATIVO!
                   </h2>
-                  <p className="text-white/80 text-sm font-bold uppercase tracking-widest">
-                    A Central no Luena já recebeu o seu sinal de socorro.
+                  <p className="text-white font-bold text-sm uppercase tracking-widest px-4">
+                    Sinal de emergência emitido para a Central Geral no Luena-Moxico!
                   </p>
                 </div>
-                <button
-                  onClick={() => setShowPanicModal(false)}
-                  className="bg-white text-red-600 px-8 py-3 rounded-full font-black text-xs uppercase tracking-widest shadow-2xl"
-                >
-                  FECHAR AVISO
-                </button>
+
+                {/* Real-Time Live Status Feedback */}
+                <div className="bg-slate-900/80 border border-slate-800 p-6 rounded-3xl mx-auto text-left space-y-4 shadow-3xl">
+                  <div>
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-550 block mb-1">Canais Operacionais</span>
+                    <div className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
+                      <span className="text-xs font-black text-emerald-400 uppercase tracking-widest">Servidor Firebase Live (Ativo)</span>
+                    </div>
+                  </div>
+
+                  {activePanicAlert?.dispatchMessage ? (
+                    <div className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-2xl space-y-2">
+                      <p className="text-[9px] font-black text-amber-500 uppercase tracking-widest leading-none">🚑 MENSAGEM DO DESPACHADOR CENTRAL:</p>
+                      <p className="text-xs font-black text-white leading-relaxed">
+                        "{activePanicAlert.dispatchMessage}"
+                      </p>
+                      <p className="text-[9px] text-slate-400">Enviada às: {activePanicAlert.dispatchedAt ? format(new Date(activePanicAlert.dispatchedAt), 'HH:mm') : 'Agora'}</p>
+                    </div>
+                  ) : (
+                    <div className="bg-slate-950/50 p-4 rounded-2xl border border-slate-850 text-center">
+                      <p className="text-xs text-slate-400 font-bold uppercase tracking-wide animate-pulse">
+                        ⌛ Central Operativa a analisar localização...
+                      </p>
+                      <p className="text-[9px] text-slate-600 mt-1 uppercase">A ajuda será despachada e as ordens aparecerão aqui.</p>
+                    </div>
+                  )}
+
+                  {activePanicAlert?.driverAcknowledge && (
+                    <div className="flex items-center gap-2 text-emerald-400 text-[10px] font-black uppercase tracking-widest justify-center bg-emerald-500/10 p-2.5 rounded-xl border border-emerald-500/10">
+                      ✓ Confirmou o recebimento da ajuda!
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex flex-col gap-2.5 px-4 w-full">
+                  {activePanicAlert?.dispatchMessage && !activePanicAlert?.driverAcknowledge && (
+                    <button
+                      onClick={acknowledgeRescue}
+                      className="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl active:scale-95 transition-all"
+                    >
+                      ✓ Confirmar Recebimento do Socorro
+                    </button>
+                  )}
+
+                  <button
+                    onClick={resolvePanicFromDriver}
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl active:scale-95 transition-all"
+                  >
+                    Estou Seguro / Cancelar Emergência
+                  </button>
+
+                  <button
+                    onClick={() => setShowPanicModal(false)}
+                    className="w-full bg-slate-900 border border-slate-800 text-slate-400 py-3.5 rounded-2xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all"
+                  >
+                    Minimizar Janela SOS
+                  </button>
+                </div>
               </motion.div>
             </div>
           )}
@@ -2716,7 +3488,7 @@ export default function DriverView({ user }: DriverViewProps) {
                     </button>
 
                     {contractFormData.location && (
-                      <div className="mt-4 rounded-2xl overflow-hidden border border-slate-200 h-32 relative group">
+                      <div className="mt-4 rounded-2xl overflow-hidden border border-slate-200 h-[450px] sm:h-[500px] md:h-[550px] relative group w-full">
                         {/* @ts-ignore */}
                         <MapContainer 
                           center={[contractFormData.location.lat, contractFormData.location.lng]} 
@@ -2901,19 +3673,19 @@ export default function DriverView({ user }: DriverViewProps) {
         </AnimatePresence>
 
         {isWhatsAppOpen && (
-          <div className="absolute inset-0 z-[60] flex items-end p-4">
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsWhatsAppOpen(false)}
-              className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+              className="fixed inset-0 bg-slate-950/70 backdrop-blur-md"
             />
             <motion.div
-              initial={{ y: 300, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 300, opacity: 0 }}
-              className="relative w-full bg-white rounded-[2.5rem] p-6 space-y-6 shadow-2xl z-20 flex flex-col max-h-[85%]"
+              initial={{ scale: 0.95, opacity: 0, y: 30 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 30 }}
+              className="relative w-full max-w-lg bg-white rounded-[2.5rem] p-6 space-y-6 shadow-2xl z-20 flex flex-col max-h-[90vh]"
             >
               <div className="flex justify-between items-center pb-2 border-b border-slate-100">
                 <h2 className="text-xl font-black uppercase tracking-tighter">Central WhatsApp</h2>
@@ -2929,19 +3701,19 @@ export default function DriverView({ user }: DriverViewProps) {
         {/* Delegate / Transfer Customer Modal Overlay */}
         <AnimatePresence>
           {isTransferModalOpen && (
-            <div className="absolute inset-0 z-[60] flex items-end p-4">
+            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 onClick={() => setIsTransferModalOpen(false)}
-                className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+                className="fixed inset-0 bg-slate-950/70 backdrop-blur-md"
               />
               <motion.div
-                initial={{ y: 300, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                exit={{ y: 300, opacity: 0 }}
-                className="relative w-full bg-white rounded-[2.5rem] p-6 space-y-6 shadow-2xl z-20 flex flex-col max-h-[85%]"
+                initial={{ scale: 0.95, opacity: 0, y: 30 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.95, opacity: 0, y: 30 }}
+                className="relative w-full max-w-lg bg-white rounded-[2.5rem] p-6 space-y-6 shadow-2xl z-20 flex flex-col max-h-[90vh]"
               >
                 <div className="flex justify-between items-center pb-2 border-b border-slate-100">
                   <div>
@@ -3006,18 +3778,19 @@ export default function DriverView({ user }: DriverViewProps) {
         {/* Incoming Service Notification Modal Overlay */}
         <AnimatePresence>
           {showNotification && (
-            <div className="absolute inset-0 z-[60] flex items-end p-4">
+            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+                onClick={forceDismissService}
+                className="fixed inset-0 bg-slate-950/70 backdrop-blur-md"
               />
               <motion.div
-                initial={{ y: 300, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                exit={{ y: 300, opacity: 0 }}
-                className="relative w-full bg-white rounded-[2.5rem] p-8 space-y-8 shadow-2xl overflow-hidden"
+                initial={{ scale: 0.95, opacity: 0, y: 30 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.95, opacity: 0, y: 30 }}
+                className="relative w-full max-w-lg bg-white rounded-[2.5rem] p-6 sm:p-8 space-y-6 sm:space-y-8 shadow-2xl overflow-y-auto max-h-[90vh] no-scrollbar z-10"
               >
                 <div className="absolute top-4 right-4">
                    <button 
@@ -3065,25 +3838,25 @@ export default function DriverView({ user }: DriverViewProps) {
                       Passageiro
                     </span>
                     <span className="text-[11px] font-bold text-slate-800">
-                      {currentService?.customerName || "Cliente Particular"}
+                      {currentService?.customerName || currentService?.passengerName || "Cliente Particular"}
                     </span>
                   </div>
-                  {currentService?.customerPhone && (
+                  {(currentService?.customerPhone || currentService?.passengerPhone) && (
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
                         Telemóvel
                       </span>
                       <span className="text-[11px] font-black text-slate-800 tracking-wider">
-                        {currentService.customerPhone}
+                        {currentService.customerPhone || currentService.passengerPhone}
                       </span>
                     </div>
                   )}
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                      Estimativa
+                      Valor
                     </span>
                     <span className="text-[11px] font-black text-emerald-600 uppercase">
-                      2.500 AKZ
+                      {currentService?.price ? `${currentService.price.toLocaleString()} AKZ` : "A Propor Preço"}
                     </span>
                   </div>
                   <div className="pt-4 border-t border-slate-200">
@@ -3091,121 +3864,143 @@ export default function DriverView({ user }: DriverViewProps) {
                       Ponto de Recolha
                     </p>
                     <p className="text-sm font-bold text-slate-800 leading-tight">
-                      {currentService?.pickupAddress ||
-                        "Localização Detetada no Luena"}
+                      {currentService?.pickupAddress || currentService?.pickup || "Localização Detetada no Luena"}
                     </p>
                   </div>
+                  {currentService?.destinationAddress || currentService?.destination ? (
+                    <div className="pt-2 border-t border-slate-100">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+                        Ponto de Destino
+                      </p>
+                      <p className="text-sm font-bold text-slate-800 leading-tight">
+                        {currentService.destinationAddress || currentService.destination}
+                      </p>
+                    </div>
+                  ) : null}
                 </div>
 
-                <div className="flex gap-4">
-                  <button
-                    onClick={rejectService}
-                    className="flex-1 py-5 rounded-3xl bg-slate-100 hover:bg-slate-200 text-slate-500 font-black text-xs uppercase tracking-widest transition-all active:scale-95 border border-slate-200"
-                  >
-                    Recusar
-                  </button>
-                  <button
-                    onClick={acceptService}
-                    className="flex-[2] py-5 rounded-3xl bg-emerald-500 hover:bg-emerald-600 text-white font-black text-xs uppercase tracking-widest shadow-xl shadow-emerald-200 transition-all active:scale-95 flex items-center justify-center gap-2 animate-pulse"
-                  >
-                    <PhoneCall size={16} className="animate-bounce" />
-                    ATENDER CHAMADA
-                  </button>
-                </div>
+                {currentService?.status === "pending" ? (
+                  <div className="pt-4 border-t border-slate-200 flex gap-4">
+                    <button
+                      onClick={rejectService}
+                      className="flex-1 py-5 rounded-3xl bg-slate-100 hover:bg-slate-200 text-slate-500 font-black text-xs uppercase tracking-widest transition-all active:scale-95 border border-slate-200"
+                    >
+                      Rejeitar (15s)
+                    </button>
+                    <button
+                      onClick={attendCall}
+                      className="flex-[2] py-5 rounded-3xl bg-emerald-500 hover:bg-emerald-400 text-white font-black text-xs uppercase tracking-widest transition-all active:scale-95 shadow-xl shadow-emerald-500/20 animate-pulse flex items-center justify-center gap-2"
+                    >
+                      <PhoneCall size={16} className="animate-bounce" />
+                      Atender Chamada
+                    </button>
+                  </div>
+                ) : currentService?.status === "connected" ? (
+                  <div className="pt-4 border-t border-slate-200 space-y-4">
+                    <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-2xl text-center">
+                      <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Chamada Atendida</p>
+                      <p className="text-xs font-bold text-emerald-800 mt-0.5">Indique o preço ou reencaminhe</p>
+                    </div>
+                    <div className="space-y-3">
+                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                        Propor Preço da Viagem (AKZ)
+                      </p>
+                      <div className="flex gap-2">
+                        <input
+                          type="number"
+                          placeholder="Ex: 2500"
+                          value={proposedPrice}
+                          onChange={(e) => setProposedPrice(e.target.value)}
+                          className="flex-1 bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-primary"
+                        />
+                        <button
+                          onClick={() => sendPriceOffer()}
+                          className="px-5 py-3 rounded-xl bg-slate-950 border border-slate-900 hover:bg-slate-900 text-white font-black text-xs uppercase tracking-wider transition-all shadow-lg"
+                        >
+                          PROPOR
+                        </button>
+                      </div>
+                      <div className="flex gap-1.5 justify-between">
+                        {[1500, 2000, 2500, 3000].map((val) => (
+                          <button
+                            key={val}
+                            onClick={() => sendPriceOffer(val)}
+                            className="flex-1 bg-white hover:bg-slate-100 py-2 rounded-lg text-[10px] font-black text-slate-600 transition-all border border-slate-200 shadow-sm"
+                          >
+                            {val.toLocaleString()} Kz
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    
+                    <div className="pt-2">
+                      <button 
+                        onClick={() => setIsNewCallTransferModalOpen(true)}
+                        className="w-full flex items-center justify-center gap-2 py-4 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-2xl border border-slate-200 transition-all text-xs font-black uppercase tracking-widest"
+                      >
+                        <RefreshCw size={14} />
+                        Reencaminhar a Colega
+                      </button>
+                    </div>
+                  </div>
+                ) : currentService?.status === "confirmed" ? (
+                  <div className="flex gap-4">
+                    <button
+                      onClick={rejectService}
+                      className="flex-1 py-5 rounded-3xl bg-slate-100 hover:bg-slate-200 text-slate-500 font-black text-xs uppercase tracking-widest transition-all active:scale-95 border border-slate-200"
+                    >
+                      Recusar
+                    </button>
+                    <button
+                      onClick={acceptService}
+                      className="flex-[2] py-5 rounded-3xl bg-emerald-500 hover:bg-emerald-600 text-white font-black text-xs uppercase tracking-widest shadow-xl shadow-emerald-200 transition-all active:scale-95 flex items-center justify-center gap-2 animate-pulse"
+                    >
+                      <PhoneCall size={16} />
+                      INICIAR CORRIDA ACORDADA ({currentService.price?.toLocaleString()} Kz)
+                    </button>
+                  </div>
+                ) : currentService?.status === "price_sent" ? (
+                  <div className="space-y-3">
+                    <div className="bg-blue-50 border border-blue-200 p-4 rounded-3xl text-center">
+                      <p className="text-xs font-black text-blue-800 uppercase tracking-widest animate-pulse">A AGUARDAR O PASSAGEIRO VIP...</p>
+                      <p className="text-[10px] text-blue-600 font-bold mt-1 uppercase">O preço proposto de {currentService.price?.toLocaleString()} Kz foi enviado. Tem o controlo na consola.</p>
+                    </div>
+                    <button
+                      onClick={() => setShowNotification(false)}
+                      className="w-full py-4 rounded-3xl bg-slate-900 hover:bg-black text-white font-black text-xs uppercase tracking-widest transition-all"
+                    >
+                      Ver no Painel Posterior
+                    </button>
+                  </div>
+                ) : null}
               </motion.div>
             </div>
           )}
         </AnimatePresence>
-      </div>
 
-      {/* Side Legend for the Applet Interface */}
-      <div className="hidden xl:block ml-12 max-w-sm space-y-8 animate-in fade-in slide-in-from-right duration-700">
-        <div className="space-y-2">
-          <div className="inline-flex items-center gap-2 px-3 py-1 bg-brand-primary/10 text-brand-primary rounded-full">
-            <Smartphone size={14} />
-            <span className="text-[10px] font-black uppercase tracking-widest">
-              Interface do Motorista
-            </span>
-          </div>
-          <h1 className="text-3xl font-black text-slate-900 leading-[1.1] tracking-tighter">
-            Login & Tarefas do Motorista
-          </h1>
-          <p className="text-slate-500 text-sm font-medium leading-relaxed">
-            Esta é a vista que os seus motoristas em Luena terão nos seus
-            telemóveis. Simples, robusta e focada no serviço.
-          </p>
+      {/* Bottom Navigation */}
+      {!currentService && (
+        <div className="fixed bottom-0 left-0 w-full bg-white border-t border-slate-200 flex justify-around items-center py-3 z-[100] shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
+          {[
+            { id: 'dashboard', label: 'Painel', icon: Layout },
+            { id: 'history', label: 'Viagens', icon: History },
+            { id: 'contracts', label: 'Contratos', icon: FileSignature },
+            { id: 'rendas', label: 'Rendas', icon: Wallet },
+          ].map(item => (
+            <button
+              key={item.id}
+              onClick={() => setActiveInternalTab(item.id as any)}
+              className={cn(
+                "flex flex-col items-center gap-1 p-2 w-16 transition-all",
+                activeInternalTab === item.id ? "text-brand-primary" : "text-slate-400"
+              )}
+            >
+              <item.icon size={20} />
+              <span className="text-[9px] font-black uppercase tracking-tighter">{item.label}</span>
+            </button>
+          ))}
         </div>
-
-        <div className="space-y-4">
-          <div className="flex gap-4 items-start">
-            <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 shadow-sm flex items-center justify-center shrink-0">
-              <Power size={18} className="text-slate-900" />
-            </div>
-            <div>
-              <h4 className="font-bold text-[13px] text-slate-900">
-                Iniciar Turno
-              </h4>
-              <p className="text-[11px] text-slate-400 font-medium">
-                O motorista entra "Em Serviço" para ficar visível na Central.
-              </p>
-            </div>
-          </div>
-          <div className="flex gap-4 items-start">
-            <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 shadow-sm flex items-center justify-center shrink-0">
-              <Bell size={18} className="text-emerald-500" />
-            </div>
-            <div>
-              <h4 className="font-bold text-[13px] text-slate-900">
-                Receção Automática
-              </h4>
-              <p className="text-[11px] text-slate-400 font-medium">
-                Pedidos enviados pela Central aparecem como notificações
-                críticas.
-              </p>
-            </div>
-          </div>
-          <div className="flex gap-4 items-start">
-            <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 shadow-sm flex items-center justify-center shrink-0">
-              <AlertTriangle size={18} className="text-red-500" />
-            </div>
-            <div>
-              <h4 className="font-bold text-[13px] text-slate-900">
-                Botão de Pânico
-              </h4>
-              <p className="text-[11px] text-slate-400 font-medium">
-                Em caso de perigo, o motorista emite um S.O.S imediato para a
-                central.
-              </p>
-            </div>
-          </div>
-          <div className="flex gap-4 items-start">
-            <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 shadow-sm flex items-center justify-center shrink-0">
-              <Wallet size={18} className="text-indigo-500" />
-            </div>
-            <div>
-              <h4 className="font-bold text-[13px] text-slate-900">
-                Entrega de Renda
-              </h4>
-              <p className="text-[11px] text-slate-400 font-medium">
-                Controlo financeiro digital da arrecadação diária.
-              </p>
-            </div>
-          </div>
-          <div className="flex gap-4 items-start">
-            <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 shadow-sm flex items-center justify-center shrink-0">
-              <Wrench size={18} className="text-slate-600" />
-            </div>
-            <div>
-              <h4 className="font-bold text-[13px] text-slate-900">
-                Saúde da Viatura
-              </h4>
-              <p className="text-[11px] text-slate-400 font-medium">
-                A Central monitoriza as manutenções necessárias para cada carro.
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
+      )}
     </div>
   );
 }

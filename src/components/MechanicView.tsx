@@ -39,7 +39,65 @@ interface MechanicViewProps {
   user: any;
 }
 
+const STAFF_PALETTES = {
+  gold: {
+    name: 'Sunset Gold',
+    color: '#f59e0b',
+    vars: {
+      '--color-brand-primary': '#f59e0b',
+      '--color-brand-secondary': '#d97706',
+    }
+  },
+  blue: {
+    name: 'Ocean Breeze',
+    color: '#3b82f6',
+    vars: {
+      '--color-brand-primary': '#3b82f6',
+      '--color-brand-secondary': '#2563eb',
+    }
+  },
+  cyberpunk: {
+    name: 'Neon Cyber',
+    color: '#d946ef',
+    vars: {
+      '--color-brand-primary': '#d946ef',
+      '--color-brand-secondary': '#c026d3',
+      '--color-slate-950': '#0a0a0a',
+      '--color-slate-900': '#171717',
+      '--color-slate-800': '#262626',
+    }
+  },
+  emerald: {
+    name: 'Emerald Classic',
+    color: '#10b981',
+    vars: {
+      '--color-brand-primary': '#10b981',
+      '--color-brand-secondary': '#059669',
+      '--color-slate-950': '#09090b',
+      '--color-slate-900': '#18181b',
+      '--color-slate-800': '#27272a',
+    }
+  },
+  default: {
+    name: 'Corporate Blue',
+    color: '#2563EB',
+    vars: {}
+  }
+};
+
 export default function MechanicView({ user }: MechanicViewProps) {
+  const [activePalette, setActivePalette] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('psm-mechanic-theme') || 'default';
+    }
+    return 'default';
+  });
+
+  const handlePaletteChange = (pal: string) => {
+    setActivePalette(pal);
+    localStorage.setItem('psm-mechanic-theme', pal);
+  };
+
   const [activeInternalTab, setActiveInternalTab] = useState<'dashboard' | 'maintenance' | 'wallet' | 'map' | 'warehouse'>('dashboard'); // Updated type
   const [mapSubTab, setMapSubTab] = useState<'map' | 'whatsapp'>('map');
   const [maintenanceSubTab, setMaintenanceSubTab] = useState<'repairs' | 'inventory'>('repairs');
@@ -312,19 +370,35 @@ export default function MechanicView({ user }: MechanicViewProps) {
   ];
 
   return (
-    <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden font-sans">
+    <div 
+      className="flex flex-col h-[100dvh] bg-slate-950 text-slate-100 overflow-hidden font-sans transition-colors duration-300"
+      style={STAFF_PALETTES[activePalette as keyof typeof STAFF_PALETTES]?.vars as any}
+    >
       {/* Header Mobile Style */}
-      <header className="bg-slate-900 border-b border-slate-800 px-6 py-5 flex items-center justify-between flex-shrink-0 shadow-lg">
+      <header className="bg-slate-900 border-b border-slate-800 px-4 sm:px-6 py-4 flex items-center justify-between flex-shrink-0 shadow-lg transition-colors duration-300">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-brand-primary rounded-xl flex items-center justify-center text-white shadow-lg overflow-hidden border border-brand-primary/20 shadow-brand-primary/25">
+          <div className="w-9 h-9 sm:w-10 sm:h-10 bg-brand-primary rounded-xl flex items-center justify-center text-white shadow-lg overflow-hidden border border-brand-primary/20 shadow-brand-primary/25 shrink-0 transition-colors duration-300">
             <Wrench size={20} />
           </div>
-          <div>
-            <h1 className="text-[11px] font-black text-slate-500 uppercase tracking-[0.2em] leading-none mb-1">Mecânico Oficial</h1>
+          <div className="min-w-0 pr-2">
+            <div className="flex items-center gap-2 mb-1">
+              <h1 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] leading-none truncate">Mecânico Oficial</h1>
+              <div className="flex gap-1 shrink-0">
+                {(Object.keys(STAFF_PALETTES)).map(key => (
+                  <button 
+                    key={key}
+                    onClick={() => handlePaletteChange(key)}
+                    className={`w-3 h-3 rounded-full border border-white/20 hover:scale-110 active:scale-95 transition-transform ${activePalette === key ? 'ring-2 ring-white/50 scale-110' : ''}`}
+                    style={{ backgroundColor: STAFF_PALETTES[key as keyof typeof STAFF_PALETTES].color }}
+                    title={STAFF_PALETTES[key as keyof typeof STAFF_PALETTES].name}
+                  />
+                ))}
+              </div>
+            </div>
             <p className="text-sm font-black text-white uppercase tracking-tighter truncate max-w-[150px]">{user?.name || 'Oficina Central'}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <button 
             onClick={() => setIsAlertsDrawerOpen(true)}
             className={cn(

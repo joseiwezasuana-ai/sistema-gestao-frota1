@@ -34,9 +34,11 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
+import { geminiService } from '../services/geminiService';
 import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
 import { signOut } from 'firebase/auth';
 import { WhatsAppMonitor } from "./WhatsAppMonitor";
+import { checkPendingIncome } from '../services/shiftCheckService';
 import RealTimeMap from "./RealTimeMap";
 import WaitingTimer from './WaitingTimer';
 import Settings from "./Settings";
@@ -49,11 +51,69 @@ interface StaffMobileViewProps {
   onExitMobile?: () => void;
 }
 
+const STAFF_PALETTES = {
+  gold: {
+    name: 'Sunset Gold',
+    color: '#f59e0b',
+    vars: {
+      '--color-brand-primary': '#f59e0b',
+      '--color-brand-secondary': '#d97706',
+    }
+  },
+  blue: {
+    name: 'Ocean Breeze',
+    color: '#3b82f6',
+    vars: {
+      '--color-brand-primary': '#3b82f6',
+      '--color-brand-secondary': '#2563eb',
+    }
+  },
+  cyberpunk: {
+    name: 'Neon Cyber',
+    color: '#d946ef',
+    vars: {
+      '--color-brand-primary': '#d946ef',
+      '--color-brand-secondary': '#c026d3',
+      '--color-slate-950': '#0a0a0a',
+      '--color-slate-900': '#171717',
+      '--color-slate-800': '#262626',
+    }
+  },
+  emerald: {
+    name: 'Emerald Classic',
+    color: '#10b981',
+    vars: {
+      '--color-brand-primary': '#10b981',
+      '--color-brand-secondary': '#059669',
+      '--color-slate-950': '#09090b',
+      '--color-slate-900': '#18181b',
+      '--color-slate-800': '#27272a',
+    }
+  },
+  default: {
+    name: 'Corporate Blue',
+    color: '#2563EB',
+    vars: {}
+  }
+};
+
 export default function StaffMobileView({ user, onLogout, onExitMobile }: StaffMobileViewProps) {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'fleet' | 'ops' | 'wallet' | 'scales'>(() => {
+  const [activePalette, setActivePalette] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('psm-staff-theme') || 'default';
+    }
+    return 'default';
+  });
+
+  const handlePaletteChange = (pal: string) => {
+    setActivePalette(pal);
+    localStorage.setItem('psm-staff-theme', pal);
+  };
+
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'fleet' | 'ops' | 'wallet' | 'scales' | 'map' | 'whatsapp'>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('staff_mobile_active_tab');
-      if (saved && ['dashboard', 'fleet', 'ops', 'wallet', 'scales'].includes(saved)) {
+      if (saved && ['dashboard', 'fleet', 'ops', 'wallet', 'scales', 'map', 'whatsapp'].includes(saved)) {
         if (saved === 'scales') {
           return 'fleet';
         }
@@ -77,6 +137,18 @@ export default function StaffMobileView({ user, onLogout, onExitMobile }: StaffM
   useEffect(() => {
     localStorage.setItem('staff_mobile_active_tab', activeTab === 'scales' ? 'fleet' : activeTab);
   }, [activeTab]);
+
+  useEffect(() => {
+    const checkStatus = async () => {
+      if (user && user.uid) {
+        const hasPending = await checkPendingIncome(user.uid);
+        if (hasPending) {
+          alert('Atenção: A sua renda do dia anterior está pendente de validação. Contacte a central para continuar.');
+        }
+      }
+    };
+    checkStatus();
+  }, [user]);
 
   const [fleetSubTab, setFleetSubTab] = useState<'vehicles' | 'scales'>(() => {
     if (typeof window !== 'undefined') {
@@ -177,7 +249,12 @@ export default function StaffMobileView({ user, onLogout, onExitMobile }: StaffM
       const { doc, updateDoc, collection, query, where, getDocs, deleteDoc, addDoc } = await import('firebase/firestore');
       const docRef = doc(db, 'revenue_logs', revenue.id);
       
-      const newStatus = user.role === 'admin' || user.role === 'contabilista' ? 'finalized' : 'approved_by_operator';
+      let newStatus = 'approved_by_operator';
+      if (user.role === 'admin') {
+        newStatus = 'approved_by_accountant';
+      } else if (user.role === 'contabilista') {
+        newStatus = 'finalized';
+      }
       
       await updateDoc(docRef, {
         status: newStatus,
@@ -202,17 +279,19 @@ export default function StaffMobileView({ user, onLogout, onExitMobile }: StaffM
       }
 
       // Notify driver of approval
-      await addDoc(collection(db, 'messages'), {
-        type: 'success',
-        category: 'revenue_approval',
-        title: 'Renda Aprovada (Mobile)',
-        content: `A sua renda do dia ${revenue.date} foi validada com sucesso via mobile. Obrigado!`,
-        targets: [revenue.driverId],
-        driverId: revenue.driverId || 'N/A',
-        prefix: revenue.prefix || 'N/A',
-        status: 'unread',
-        timestamp: new Date().toISOString()
-      });
+      if (revenue.driverId) {
+        await addDoc(collection(db, 'messages'), {
+          type: 'success',
+          category: 'revenue_approval',
+          title: 'Renda Aprovada (Mobile)',
+          content: `A sua renda do dia ${revenue.date} foi validada com sucesso via mobile. Obrigado!`,
+          targets: [revenue.driverId],
+          driverId: revenue.driverId || 'N/A',
+          prefix: revenue.prefix || 'N/A',
+          status: 'unread',
+          timestamp: new Date().toISOString()
+        });
+      }
 
       alert(`Renda do motorista ${revenue.driverName || 'N/A'} aprovada com sucesso!`);
     } catch (err: any) {
@@ -468,7 +547,7 @@ export default function StaffMobileView({ user, onLogout, onExitMobile }: StaffM
     { icon: CalendarIcon, label: 'Escalas & Turnos', onClick: () => { setActiveTab('fleet'); setFleetSubTab('scales'); } },
     { icon: Wallet, label: 'Financeiro', onClick: () => setActiveTab('wallet') },
     ...(onExitMobile ? [{ icon: Monitor, label: 'Restaurar Painel Full', onClick: onExitMobile, color: 'text-brand-primary' }] : []),
-    { icon: SettingsIcon, label: 'Definições', onClick: () => setIsSettingsOpen(true) },
+    ...((user?.role === 'admin' || user?.role === 'operator') ? [{ icon: SettingsIcon, label: 'Definições', onClick: () => setIsSettingsOpen(true) }] : []),
     { icon: FileText, label: 'Documentação', onClick: () => setIsManualOpen(true) },
     { icon: MessageSquare, label: 'Comunicações', onClick: () => {} },
     { icon: LogOut, label: 'Terminar Sessão', onClick: onLogout, color: 'text-red-500' },
@@ -488,15 +567,11 @@ export default function StaffMobileView({ user, onLogout, onExitMobile }: StaffM
 
   // Fetch AI Insights
   const fetchAiInsights = async () => {
+    if (isAiLoading) return; // Prevent concurrent requests
     setIsAiLoading(true);
     try {
-      const response = await fetch('/api/gemini/insights', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ data: stats })
-      });
-      const data = await response.json();
-      setAiInsights(data.text);
+      const insights = await geminiService.getFleetInsights(stats);
+      setAiInsights(insights);
     } catch (error) {
       console.error("AI Insight Error:", error);
       setAiInsights("Falha ao gerar insights técnicos em tempo real.");
@@ -505,29 +580,45 @@ export default function StaffMobileView({ user, onLogout, onExitMobile }: StaffM
     }
   };
 
-  useEffect(() => {
-    if (activeTab === 'dashboard' && stats.receivedCalls > 0) {
-      const timer = setTimeout(fetchAiInsights, 2000);
-      return () => clearTimeout(timer);
-    }
-  }, [activeTab, stats.activeVehicles]);
+// useEffect(() => {
+  //   if (activeTab === 'dashboard' && stats.receivedCalls > 0) {
+  //     const timer = setTimeout(fetchAiInsights, 2000);
+  //     return () => clearTimeout(timer);
+  //   }
+  // }, [activeTab, stats.activeVehicles]);
 
   return (
-    <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden font-sans">
+    <div 
+      className="flex flex-col h-[100dvh] bg-slate-950 text-slate-100 overflow-hidden font-sans transition-colors duration-300"
+      style={STAFF_PALETTES[activePalette as keyof typeof STAFF_PALETTES]?.vars as any}
+    >
       {/* Mobile Top Header */}
-      <header className="bg-slate-900 border-b border-slate-800 px-6 py-5 flex items-center justify-between shadow-lg relative z-20">
-        <div className="flex items-center gap-4">
-          <div className="w-10 h-10 bg-brand-primary rounded-xl flex items-center justify-center text-white shadow-lg rotate-3 shadow-brand-primary/25">
-             <span className="text-xl font-black italic">PS</span>
+      <header className="bg-slate-900 border-b border-slate-800 px-4 sm:px-6 py-4 flex items-center justify-between shadow-lg relative z-20 transition-colors duration-300">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 sm:w-10 sm:h-10 bg-brand-primary rounded-xl flex items-center justify-center text-white shadow-lg rotate-3 shadow-brand-primary/25 shrink-0 transition-colors duration-300">
+             <span className="text-lg sm:text-xl font-black italic">PS</span>
           </div>
-          <div>
-            <h1 className="text-[10px] font-black text-slate-500 uppercase tracking-widest leading-none mb-1">Módulo Mobile</h1>
-            <p className="text-xs font-black text-white uppercase tracking-tight italic">
+          <div className="min-w-0 pr-2">
+            <div className="flex items-center gap-2 mb-1">
+              <h1 className="text-[10px] font-black text-slate-500 uppercase tracking-widest leading-none truncate">Módulo Mobile</h1>
+              <div className="flex gap-1">
+                {(Object.keys(STAFF_PALETTES)).map(key => (
+                  <button 
+                    key={key}
+                    onClick={() => handlePaletteChange(key)}
+                    className={`w-3 h-3 rounded-full border border-white/20 hover:scale-110 active:scale-95 transition-transform ${activePalette === key ? 'ring-2 ring-white/50 scale-110' : ''}`}
+                    style={{ backgroundColor: STAFF_PALETTES[key as keyof typeof STAFF_PALETTES].color }}
+                    title={STAFF_PALETTES[key as keyof typeof STAFF_PALETTES].name}
+                  />
+                ))}
+              </div>
+            </div>
+            <p className="text-[10px] sm:text-xs font-black text-white uppercase tracking-tight italic truncate">
               {user.role === 'admin' ? 'Administrador Geral' : user.role === 'contabilista' ? 'Hub Contabilidade' : 'Operador de Campo'}
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           {onExitMobile && (
             <button 
               onClick={onExitMobile}
@@ -1209,7 +1300,7 @@ export default function StaffMobileView({ user, onLogout, onExitMobile }: StaffM
              )}
 
              {opsSubTab === 'map' && (
-               <div className="bg-slate-900 rounded-[2rem] border border-slate-800 overflow-hidden shadow-2xl h-[480px] relative">
+               <div className="bg-slate-900 rounded-[2rem] border border-slate-800 overflow-hidden shadow-2xl h-[580px] relative">
                   <div className="absolute top-4 left-4 z-10 bg-slate-950/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-800 text-[9px] font-black uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
                      <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
                      Sincronização de Satélite Ativa
@@ -1273,11 +1364,17 @@ export default function StaffMobileView({ user, onLogout, onExitMobile }: StaffM
                            <p className="text-sm font-black text-white italic tracking-tighter">{(log.amount || 0).toLocaleString()} Kz</p>
                            <span className={cn(
                              "text-[8px] font-black uppercase tracking-widest",
-                             log.status === 'finalized' || log.status === 'approved_by_operator' ? "text-emerald-500" : "text-amber-500 animate-pulse"
+                             log.status === 'finalized' ? "text-emerald-500" :
+                             log.status === 'approved_by_accountant' ? "text-purple-400 font-bold" :
+                             log.status === 'approved_by_operator' ? "text-blue-400 font-bold" : "text-amber-500 animate-pulse"
                            )}>
-                             {log.status === 'finalized' || log.status === 'approved_by_operator' ? 'Auditado/Aprovado' : 'Pendente'}
+                             {log.status === 'finalized' ? 'Auditado/Final' :
+                              log.status === 'approved_by_accountant' ? 'Pendente Contab.' :
+                              log.status === 'approved_by_operator' ? 'Pendente Admin' : 'Pendente Operador'}
                            </span>
-                           {log.status !== 'finalized' && log.status !== 'approved_by_operator' && (
+                           {((user.role === 'operator' && log.status === 'pending_approval') ||
+                             (user.role === 'admin' && (log.status === 'pending_approval' || log.status === 'approved_by_operator' || log.status === 'approved_by_accountant')) ||
+                             (user.role === 'contabilista' && log.status === 'approved_by_accountant')) && (
                              <button
                                onClick={() => handleApproveRevenue(log)}
                                className="mt-1.5 px-3 py-1 bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white rounded-lg text-[8px] font-black uppercase tracking-widest shadow-md transition-all whitespace-nowrap"
@@ -1296,28 +1393,32 @@ export default function StaffMobileView({ user, onLogout, onExitMobile }: StaffM
                    )}
                 </div>
                 
-                <button 
-                  onClick={() => {
-                    setActiveTab('fleet');
-                    setFleetSubTab('scales');
-                     setScaleFormData({
-                       driverId: '',
-                       driverName: '',
-                       prefix: '',
-                       date: new Date().toISOString().split('T')[0],
-                       shift: 'Diurno',
-                       status: 'Ativo',
-                       phone: '',
-                       secondaryPhone: ''
-                     });
-                     setIsScaleModalOpen(true);
-                  }}
-                  className="w-full bg-brand-primary hover:bg-brand-secondary text-white py-5 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-3 shadow-2xl active:scale-95 transition-all mt-4"
-                >
-                   <Calculator size={16} />
-                   Escalonar Nova Viatura
-                </button>
+
              </div>
+          </div>
+        )}
+
+        {activeTab === 'map' && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between px-1">
+              <h2 className="text-2xl font-black text-white uppercase tracking-tighter italic">Geolocalização Live</h2>
+              <div className="text-[10px] font-black text-brand-primary bg-brand-primary/10 px-3 py-1 rounded-full border border-brand-primary/25 uppercase tracking-widest italic flex items-center h-7 pt-0.5">MAPA DA FROTA</div>
+            </div>
+            <div className="h-[650px] w-full bg-slate-900 rounded-3xl overflow-hidden border border-slate-800">
+              <RealTimeMap />
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'whatsapp' && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between px-1">
+              <h2 className="text-2xl font-black text-white uppercase tracking-tighter italic">WhatsApp Monitor</h2>
+              <div className="text-[10px] font-black text-emerald-500 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/25 uppercase tracking-widest italic flex items-center h-7 pt-0.5">CONEXÃO LIVE</div>
+            </div>
+            <div className="p-2 bg-slate-900 rounded-3xl border border-slate-800">
+              <WhatsAppMonitor isMechanicView={false} />
+            </div>
           </div>
         )}
 
@@ -1332,20 +1433,40 @@ export default function StaffMobileView({ user, onLogout, onExitMobile }: StaffM
           <LayoutDashboard size={22} strokeWidth={activeTab === 'dashboard' ? 3 : 2} />
           <span className="text-[8px] font-black uppercase tracking-widest">Painel</span>
         </button>
-        <button 
-          onClick={() => setActiveTab('fleet')}
-          className={cn("flex flex-col items-center gap-1 transition-all duration-300", activeTab === 'fleet' ? "text-brand-primary scale-110" : "text-slate-500")}
-        >
-          <Truck size={22} strokeWidth={activeTab === 'fleet' ? 3 : 2} />
-          <span className="text-[8px] font-black uppercase tracking-widest">Frota</span>
-        </button>
-        <button 
-          onClick={() => setActiveTab('ops')}
-          className={cn("flex flex-col items-center gap-1 transition-all duration-300", activeTab === 'ops' ? "text-brand-primary scale-110" : "text-slate-500")}
-        >
-          <Activity size={22} strokeWidth={activeTab === 'ops' ? 3 : 2} />
-          <span className="text-[8px] font-black uppercase tracking-widest">Monitores</span>
-        </button>
+        {user?.role === 'contabilista' ? (
+          <button 
+            onClick={() => setActiveTab('map')}
+            className={cn("flex flex-col items-center gap-1 transition-all duration-300", activeTab === 'map' ? "text-brand-primary scale-110" : "text-slate-500")}
+          >
+            <Map size={22} strokeWidth={activeTab === 'map' ? 3 : 2} />
+            <span className="text-[8px] font-black uppercase tracking-widest">Mapa</span>
+          </button>
+        ) : (
+          <button 
+            onClick={() => setActiveTab('fleet')}
+            className={cn("flex flex-col items-center gap-1 transition-all duration-300", activeTab === 'fleet' ? "text-brand-primary scale-110" : "text-slate-500")}
+          >
+            <Truck size={22} strokeWidth={activeTab === 'fleet' ? 3 : 2} />
+            <span className="text-[8px] font-black uppercase tracking-widest">Frota</span>
+          </button>
+        )}
+        {user?.role === 'contabilista' ? (
+          <button 
+            onClick={() => setActiveTab('whatsapp')}
+            className={cn("flex flex-col items-center gap-1 transition-all duration-300", activeTab === 'whatsapp' ? "text-brand-primary scale-110" : "text-slate-500")}
+          >
+            <MessageSquare size={22} strokeWidth={activeTab === 'whatsapp' ? 3 : 2} fill={activeTab === 'whatsapp' ? "currentColor" : "none"} />
+            <span className="text-[8px] font-black uppercase tracking-widest">WhatsApp</span>
+          </button>
+        ) : (
+          <button 
+            onClick={() => setActiveTab('ops')}
+            className={cn("flex flex-col items-center gap-1 transition-all duration-300", activeTab === 'ops' ? "text-brand-primary scale-110" : "text-slate-500")}
+          >
+            <Activity size={22} strokeWidth={activeTab === 'ops' ? 3 : 2} />
+            <span className="text-[8px] font-black uppercase tracking-widest">Monitores</span>
+          </button>
+        )}
         <button 
           onClick={() => setActiveTab('wallet')}
           className={cn("flex flex-col items-center gap-1 transition-all duration-300", activeTab === 'wallet' ? "text-brand-primary scale-110" : "text-slate-500")}
@@ -1508,30 +1629,7 @@ export default function StaffMobileView({ user, onLogout, onExitMobile }: StaffM
                     try {
                       const { addDoc, collection, serverTimestamp, query, where, getDocs } = await import('firebase/firestore');
 
-                      // Constraint Check: the vehicle, the phone, and the driver cannot be scheduled more than once per day
-                      const scalesRef = collection(db, 'driver_scales');
-                      const qDate = query(scalesRef, where('date', '==', scaleFormData.date));
-                      const dateSnap = await getDocs(qDate);
-                      
-                      let conflictMsg = "";
-                      dateSnap.forEach(doc => {
-                        const data = doc.data();
-                        if (data.status === 'Folga' || data.status === 'Suspenso') return;
-                        
-                        if (data.prefix === scaleFormData.prefix) {
-                            conflictMsg = `A viatura ${scaleFormData.prefix} já está escalada para o dia ${scaleFormData.date}.`;
-                        } else if (data.driverId === scaleFormData.driverId) {
-                            conflictMsg = `Este motorista já está escalado para o dia ${scaleFormData.date}.`;
-                        } else if (scaleFormData.phone && data.phone === scaleFormData.phone) {
-                            conflictMsg = `O telefone ${scaleFormData.phone} já está vinculado a uma escala no dia ${scaleFormData.date}.`;
-                        }
-                      });
-
-                      if (conflictMsg) {
-                        alert(conflictMsg);
-                        return;
-                      }
-
+                      // Constraint checks bypassed for free linkage
                       await addDoc(collection(db, 'driver_scales'), {
                         driverId: scaleFormData.driverId,
                         driverName: scaleFormData.driverName,
@@ -1549,27 +1647,34 @@ export default function StaffMobileView({ user, onLogout, onExitMobile }: StaffM
                       const driverDetail = driversMaster.find(d => d.id === scaleFormData.driverId);
                       const vehicleDetail = vehiclesMaster.find(v => v.prefix === scaleFormData.prefix);
                       
-                      await addDoc(collection(db, 'drivers'), {
-                        name: driverDetail?.name || scaleFormData.driverName || '',
-                        phone: scaleFormData.phone || driverDetail?.phone || '',
-                        secondaryPhone: scaleFormData.secondaryPhone || driverDetail?.secondaryPhone || '',
-                        prefix: scaleFormData.prefix,
-                        plate: vehicleDetail?.plate || '',
-                        trackerId: vehicleDetail?.trackerId || '',
-                        driverId: scaleFormData.driverId,
-                        status: 'disponível',
-                        gps: 'Signal Good',
-                        lat: -11.7833, // Default Luena
-                        lng: 19.9167,
-                        batteryLevel: 100,
-                        recentCalls: [],
-                        rendaStatus: 'pending',
-                        callCount: 0,
-                        updatedAt: new Date().toISOString()
-                      });
+                      const isAdminOrOperator = user?.role === 'admin' || user?.role === 'operator';
+                      if (isAdminOrOperator) {
+                        await addDoc(collection(db, 'drivers'), {
+                          name: driverDetail?.name || scaleFormData.driverName || '',
+                          phone: scaleFormData.phone || driverDetail?.phone || '',
+                          secondaryPhone: scaleFormData.secondaryPhone || driverDetail?.secondaryPhone || '',
+                          prefix: scaleFormData.prefix,
+                          plate: vehicleDetail?.plate || '',
+                          trackerId: vehicleDetail?.trackerId || '',
+                          driverId: scaleFormData.driverId,
+                          status: 'disponível',
+                          gps: 'Signal Good',
+                          lat: -11.7833, // Default Luena
+                          lng: 19.9167,
+                          batteryLevel: 100,
+                          recentCalls: [],
+                          rendaStatus: 'pending',
+                          callCount: 0,
+                          updatedAt: new Date().toISOString()
+                        });
+                      }
 
                       setIsScaleModalOpen(false);
-                      alert("Escala registada com sucesso e viatura vinculada à frota em tempo real!");
+                      if (isAdminOrOperator) {
+                        alert("Escala registada com sucesso e viatura vinculada à frota em tempo real!");
+                      } else {
+                        alert("Escala guardada com sucesso! Aguarde que um Administrador ou Operador a ative na frota real.");
+                      }
                     } catch (err) {
                       handleFirestoreError(err, OperationType.WRITE, 'driver_scales');
                     }
