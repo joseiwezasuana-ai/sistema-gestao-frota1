@@ -399,9 +399,7 @@ export default function App() {
           {activeTab === 'fleet' && (isAdmin || isOperator || isMecanico || isContabilista ? <FleetManagement user={userProfile} /> : <Dashboard user={userProfile} />)}
           {activeTab === 'monitors' && <RealTimeMonitor user={userProfile} />}
           {activeTab === 'revenue' && (isAdmin || isOperator || isContabilista ? <RevenueManagement user={userProfile} /> : <Dashboard user={userProfile} />)}
-          {activeTab === 'passenger_preview' && <PassengerFlow />}
           {activeTab === 'passengers' && (isAdmin || isOperator ? <PassengerManagement user={userProfile} /> : <Dashboard user={userProfile} />)}
-          {activeTab === 'driver_preview' && <DriverView user={userProfile} />}
           {activeTab === 'map' && <RealTimeMap />}
           {activeTab === 'gps_timeline' && <GPSTimeline />}
           {activeTab === 'history' && <History />}

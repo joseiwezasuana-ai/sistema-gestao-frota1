@@ -72,8 +72,6 @@ export default function Layout({ children, user, globalSettings, activeTab, onTa
     { id: 'recruitment', label: 'Portal de Recrutamento', icon: UserPlus, roles: ['admin', 'operator', 'mecanico'] },
     { id: 'monitors', label: 'Monitores de Campo', icon: Activity, roles: ['admin', 'operator', 'contabilista', 'mecanico'] },
     { id: 'revenue', label: 'Validação de Rendas', icon: Wallet, roles: ['operator', 'contabilista', 'admin'] },
-    { id: 'driver_preview', label: 'Mobile App Simulator (Motorista)', icon: Smartphone, roles: ['admin'] },
-    { id: 'passenger_preview', label: 'Mobile App Simulator (Passageiro)', icon: Smartphone, roles: ['admin'] },
     { id: 'fleet', label: 'Frota & Escalas 24h', icon: Truck, roles: ['admin', 'operator', 'mecanico', 'contabilista'] },
     { id: 'maintenance', label: 'Gestão de Oficinas', icon: Wrench, roles: ['admin', 'operator', 'mecanico', 'contabilista'] },
     { id: 'accounting', label: 'Hub Contabilidade', icon: Calculator, roles: ['admin', 'contabilista'] },

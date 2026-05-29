@@ -367,47 +367,62 @@ export default function Login({ onGoogleLogin, onPassengerFlow }: LoginProps) {
                   initial={{ opacity: 0, scale: 0.9, y: 10 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.9, y: 10 }}
-                  className="absolute right-0 mt-3 w-52 bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden p-2"
+                  className="absolute right-0 mt-3 w-64 bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden p-3 space-y-2 z-50 text-slate-900 text-left"
                 >
-                   <button 
+                  <div className="px-3 py-1.5 border-b border-slate-100 mb-1 flex items-center gap-2">
+                    <Lock size={14} className="text-slate-500" />
+                    <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Área Restrita</span>
+                  </div>
+
+                  {/* Administração */}
+                  <button 
                     onClick={() => handleMethodChange('google')}
-                    className="w-full flex items-center gap-3 p-3 hover:bg-slate-50 rounded-2xl transition-colors group"
+                    className="w-full flex items-center justify-between p-2.5 bg-white border border-slate-50 hover:border-brand-primary/30 rounded-2xl hover:bg-slate-50 transition-all group active:scale-[0.98]"
                   >
-                    <div className="p-2 bg-slate-100 rounded-xl group-hover:bg-brand-primary/10 group-hover:text-brand-primary transition-colors">
-                      <Globe size={16} />
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0 group-hover:scale-110 transition-transform">
+                        <Shield size={16} />
+                      </div>
+                      <div className="text-left">
+                        <p className="text-[11px] font-black uppercase tracking-tight text-slate-800">Administração</p>
+                        <p className="text-[8px] text-slate-400 font-bold uppercase tracking-wider">Acesso via Google</p>
+                      </div>
                     </div>
-                    <span className="text-xs font-bold text-slate-700">Administração</span>
+                    <ChevronRight size={14} className="text-slate-400 group-hover:translate-x-0.5 transition-transform" />
                   </button>
+
+                  {/* Colaborador */}
                   <button 
                     onClick={() => handleMethodChange('credentials')}
-                    className="w-full flex items-center gap-3 p-3 hover:bg-slate-50 rounded-2xl transition-colors group"
+                    className="w-full flex items-center justify-between p-2.5 bg-white border border-slate-50 hover:border-brand-primary/30 rounded-2xl hover:bg-slate-50 transition-all group active:scale-[0.98]"
                   >
-                    <div className="p-2 bg-slate-100 rounded-xl group-hover:bg-brand-primary/10 group-hover:text-brand-primary transition-colors">
-                      <LogIn size={16} />
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-xl bg-pink-50 flex items-center justify-center text-pink-600 shrink-0 group-hover:scale-110 transition-transform">
+                        <LogIn size={16} />
+                      </div>
+                      <div className="text-left">
+                        <p className="text-[11px] font-black uppercase tracking-tight text-slate-800">Colaborador</p>
+                        <p className="text-[8px] text-slate-400 font-bold uppercase tracking-wider">Entrar com credenciais</p>
+                      </div>
                     </div>
-                    <span className="text-xs font-bold text-slate-700">Colaborador</span>
+                    <ChevronRight size={14} className="text-slate-400 group-hover:translate-x-0.5 transition-transform" />
                   </button>
-                  <button 
-                    onClick={() => {
-                       if(onPassengerFlow) {
-                          onPassengerFlow();
-                       }
-                    }}
-                    className="w-full flex items-center gap-3 p-3 hover:bg-slate-50 rounded-2xl transition-colors group"
-                  >
-                    <div className="p-2 bg-slate-100 rounded-xl group-hover:bg-brand-primary/10 group-hover:text-brand-primary transition-colors">
-                      <Car size={16} />
-                    </div>
-                    <span className="text-xs font-bold text-slate-700">Passageiro VIP</span>
-                  </button>
+
+                  {/* Autenticar */}
                   <button 
                     onClick={() => handleMethodChange('register')}
-                    className="w-full flex items-center gap-3 p-3 hover:bg-slate-50 rounded-2xl transition-colors group"
+                    className="w-full flex items-center justify-between p-2.5 bg-white border border-slate-50 hover:border-brand-primary/30 rounded-2xl hover:bg-slate-50 transition-all group active:scale-[0.98]"
                   >
-                    <div className="p-2 bg-slate-100 rounded-xl group-hover:bg-brand-primary/10 group-hover:text-brand-primary transition-colors">
-                      <ShieldCheck size={16} />
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 shrink-0 group-hover:scale-110 transition-transform">
+                        <Key size={16} />
+                      </div>
+                      <div className="text-left">
+                        <p className="text-[11px] font-black uppercase tracking-tight text-slate-800">Ativar Conta</p>
+                        <p className="text-[8px] text-slate-400 font-bold uppercase tracking-wider">Validar código de equipe</p>
+                      </div>
                     </div>
-                    <span className="text-xs font-bold text-slate-700">Autenticar colaborador</span>
+                    <ChevronRight size={14} className="text-slate-400 group-hover:translate-x-0.5 transition-transform" />
                   </button>
                 </motion.div>
               )}
@@ -455,96 +470,14 @@ export default function Login({ onGoogleLogin, onPassengerFlow }: LoginProps) {
                 exit={{ opacity: 0, scale: 0.95 }}
                 className="w-full space-y-6"
               >
-                {/* 1 - AREA RESTRITA Section */}
-                <div className="bg-slate-50 border border-slate-200 rounded-[2rem] p-5 space-y-4">
-                  <div 
-                    onClick={() => setIsRestrictedAreaExpanded(!isRestrictedAreaExpanded)}
-                    className="flex items-center justify-between border-b border-slate-200 pb-2.5 cursor-pointer hover:opacity-80 transition-opacity select-none"
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-xl bg-slate-900 flex items-center justify-center text-white font-mono text-xs font-black">1</div>
-                      <div>
-                        <h4 className="text-xs font-black uppercase tracking-widest text-slate-800">ÁREA RESTRITA</h4>
-                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Acesso Operacional e Administrativo</p>
-                      </div>
+                {/* PASSAGEIRO VIP Section - Simplified & Beautiful directly as the main view */}
+                <div className="bg-slate-50 border border-slate-200 rounded-[2.5rem] p-6 space-y-4 text-center">
+                  <div className="flex flex-col items-center gap-1 pb-2">
+                    <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center mb-1">
+                      <Car size={24} />
                     </div>
-                    <div className="pr-1 text-slate-400">
-                      {isRestrictedAreaExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                    </div>
-                  </div>
-
-                  <AnimatePresence initial={false}>
-                    {isRestrictedAreaExpanded && (
-                      <motion.div 
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
-                        transition={{ duration: 0.2 }}
-                        className="space-y-2 overflow-hidden"
-                      >
-                        {/* Administração */}
-                        <button 
-                          onClick={() => handleMethodChange('google')}
-                          className="w-full flex items-center justify-between p-3 bg-white border border-slate-100 rounded-xl hover:border-brand-primary hover:bg-slate-50 transition-all group active:scale-[0.98]"
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0 group-hover:scale-110 transition-transform">
-                              <Shield size={16} />
-                            </div>
-                            <div className="text-left">
-                              <p className="text-[11px] font-black uppercase tracking-tight text-slate-800">Administração</p>
-                              <p className="text-[8px] text-slate-400 font-bold uppercase tracking-wider">Login Seguro com Google</p>
-                            </div>
-                          </div>
-                          <ChevronRight size={14} className="text-slate-400 group-hover:translate-x-0.5 transition-transform" />
-                        </button>
-
-                        {/* Colaborador */}
-                        <button 
-                          onClick={() => handleMethodChange('credentials')}
-                          className="w-full flex items-center justify-between p-3 bg-white border border-slate-100 rounded-xl hover:border-brand-primary hover:bg-slate-50 transition-all group active:scale-[0.98]"
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-lg bg-pink-50 flex items-center justify-center text-pink-600 shrink-0 group-hover:scale-110 transition-transform">
-                              <LogIn size={16} />
-                            </div>
-                            <div className="text-left">
-                              <p className="text-[11px] font-black uppercase tracking-tight text-slate-800">Colaborador</p>
-                              <p className="text-[8px] text-slate-400 font-bold uppercase tracking-wider">Entrar com ID e Palavra-passe</p>
-                            </div>
-                          </div>
-                          <ChevronRight size={14} className="text-slate-400 group-hover:translate-x-0.5 transition-transform" />
-                        </button>
-
-                        {/* Autenticar */}
-                        <button 
-                          onClick={() => handleMethodChange('register')}
-                          className="w-full flex items-center justify-between p-3 bg-white border border-slate-100 rounded-xl hover:border-brand-primary hover:bg-slate-50 transition-all group active:scale-[0.98]"
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 shrink-0 group-hover:scale-110 transition-transform">
-                              <Key size={16} />
-                            </div>
-                            <div className="text-left">
-                              <p className="text-[11px] font-black uppercase tracking-tight text-slate-800">Autenticar Colaborador</p>
-                              <p className="text-[8px] text-slate-400 font-bold uppercase tracking-wider">Ativar Conta com Código original</p>
-                            </div>
-                          </div>
-                          <ChevronRight size={14} className="text-slate-400 group-hover:translate-x-0.5 transition-transform" />
-                        </button>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-
-                {/* 2 - PASSAGEIRO VIP Section */}
-                <div className="bg-slate-50 border border-slate-200 rounded-[2rem] p-5 space-y-4">
-                  <div className="flex items-center gap-2 border-b border-slate-200 pb-2.5">
-                    <div className="w-8 h-8 rounded-xl bg-amber-500 flex items-center justify-center text-slate-950 font-mono text-xs font-black">2</div>
-                    <div>
-                      <h4 className="text-xs font-black uppercase tracking-widest text-slate-800">PASSAGEIRO VIP</h4>
-                      <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Portal Público de Pedidos</p>
-                    </div>
+                    <h4 className="text-base font-black uppercase tracking-widest text-slate-850">PASSAGEIRO VIP</h4>
+                    <p className="text-[10px] text-slate-400 font-black uppercase tracking-wider leading-none">Portal Público de Pedidos Rápidos</p>
                   </div>
 
                   <button 
@@ -553,18 +486,18 @@ export default function Login({ onGoogleLogin, onPassengerFlow }: LoginProps) {
                         onPassengerFlow();
                       }
                     }}
-                    className="w-full flex items-center justify-between p-4 bg-slate-900 hover:bg-black text-white hover:text-white rounded-2xl shadow-xl transition-all group active:scale-[0.98]"
+                    className="w-full flex items-center justify-between p-4 bg-slate-950 hover:bg-slate-900 text-white rounded-2xl shadow-xl transition-all group active:scale-[0.98]"
                   >
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-amber-500/15 flex items-center justify-center text-amber-500 shrink-0 group-hover:scale-110 transition-transform">
+                      <div className="w-8 h-8 rounded-lg bg-amber-500/15 flex items-center justify-center text-brand-primary shrink-0 group-hover:scale-110 transition-transform">
                         <Car size={16} />
                       </div>
                       <div className="text-left">
-                        <p className="text-[11px] font-black uppercase tracking-wider text-amber-500">ACEDER COMO PASSAGEIRO VIP</p>
-                        <p className="text-[8.5px] text-slate-400 font-extrabold uppercase tracking-tight">Pedir táxi agora sem login</p>
+                        <p className="text-[11px] font-black uppercase tracking-wider text-brand-primary">ACEDER AO PORTAL VIP</p>
+                        <p className="text-[8.5px] text-slate-400 font-extrabold uppercase tracking-tight">Pedir táxi agora no Luena</p>
                       </div>
                     </div>
-                    <ChevronRight size={16} className="text-amber-500 group-hover:translate-x-0.5 transition-transform" />
+                    <ChevronRight size={16} className="text-brand-primary group-hover:translate-x-0.5 transition-transform" />
                   </button>
                 </div>
               </motion.div>

@@ -94,13 +94,20 @@ interface DriverViewProps {
 }
 
 export default function DriverView({ user }: DriverViewProps) {
-  const [isOnline, setIsOnline] = useState(false);
+  const [isOnline, setIsOnline] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem("driver_is_online");
+      return saved === "true";
+    }
+    return false;
+  });
   const [isWhatsAppOpen, setIsWhatsAppOpen] = useState(false);
   const [currentService, setCurrentService] = useState<any>(null);
   const currentServiceRef = useRef<any>(null);
   useEffect(() => {
     currentServiceRef.current = currentService;
   }, [currentService]);
+  const [lastCancelledService, setLastCancelledService] = useState<any | null>(null);
   const [otherDrivers, setOtherDrivers] = useState<any[]>([]);
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
   const [transferLoading, setTransferLoading] = useState(false);
@@ -170,11 +177,8 @@ export default function DriverView({ user }: DriverViewProps) {
   const [stars, setStars] = useState(4.8);
   const hiddenCallIdsRef = useRef<string[]>([]);
   const forceDismissService = () => {
-    if (currentService?.id) {
-       hiddenCallIdsRef.current.push(currentService.id);
-    }
+    setActiveInternalTab("dashboard");
     setShowNotification(false);
-    setCurrentService(null);
   };
   const [tripHistory, setTripHistory] = useState<any[]>([]);
 
@@ -215,7 +219,7 @@ export default function DriverView({ user }: DriverViewProps) {
     const q = query(
       collection(db, "revenue_logs"),
       where("driverId", "==", user.uid),
-      where("status", "in", ["finalized", "paid_to_staff"]),
+      where("status", "in", ["pending_approval", "approved_by_operator", "approved_by_accountant", "finalized", "paid_to_staff"]),
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -231,13 +235,13 @@ export default function DriverView({ user }: DriverViewProps) {
 
   // Listen for trip history
   useEffect(() => {
-    if (!user?.uid) return;
+    if (!user?.name) return;
     const q = query(
       collection(db, "calls"),
-      where("driverId", "==", user.uid),
+      where("driverName", "==", user.name),
       where("status", "==", "completed"),
       orderBy("timestamp", "desc"),
-      limit(20),
+      limit(50),
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -247,7 +251,7 @@ export default function DriverView({ user }: DriverViewProps) {
     }, (error) => handleFirestoreError(error, OperationType.GET, "calls"));
 
     return () => unsubscribe();
-  }, [user?.uid]);
+  }, [user?.name]);
 
   const [passengerRidesConfirmed, setPassengerRidesConfirmed] = useState<any[]>([]);
   const [passengerRidesTotal, setPassengerRidesTotal] = useState(0);
@@ -256,9 +260,9 @@ export default function DriverView({ user }: DriverViewProps) {
   useEffect(() => {
     if (!user?.name) return;
     const q = query(
-      collection(db, "ride_requests"),
+      collection(db, "calls"),
       where("driverName", "==", user.name),
-      where("status", "in", ["confirmed", "completed"])
+      where("status", "==", "completed")
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -418,16 +422,48 @@ export default function DriverView({ user }: DriverViewProps) {
   // Listen for the active vehicle assignment for this driver
   useEffect(() => {
     if (!user?.name) return;
-    const q = query(
-      collection(db, "drivers"),
-      where("name", "==", user.name),
-      limit(1),
-    );
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      if (!snapshot.empty) {
-        const docRef = snapshot.docs[0];
-        const vehicle = { id: docRef.id, ...docRef.data() };
+
+    // We listen to the entire active drivers collection to find a robust match.
+    // This allows the driver to match even if they have "(Admin)" or case & accent mismatches.
+    const unsubscribe = onSnapshot(collection(db, "drivers"), (snapshot) => {
+      // Clean names helper (removes accents, parenthesis like (Admin), simplifies spaces)
+      const cleanName = (n: string) => {
+        if (!n) return "";
+        return n
+          .toLowerCase()
+          .replace(/\s*\(.*?\)\s*/g, '')
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .replace(/\s+/g, ' ')
+          .trim();
+      };
+
+      const loggedNameClean = cleanName(user.name);
+
+      const matchedDoc = snapshot.docs.find(docSnap => {
+        const d = docSnap.data();
+        const dNameClean = cleanName(d.name || "");
+        return (
+          (d.driverId && user.uid && d.driverId === user.uid) ||
+          (dNameClean !== "" && loggedNameClean !== "" && dNameClean === loggedNameClean) ||
+          (d.name && user.name && d.name.toLowerCase().trim() === user.name.toLowerCase().trim())
+        );
+      });
+
+      if (matchedDoc) {
+        const dData = matchedDoc.data();
+        const vehicle = { id: matchedDoc.id, ...dData };
         setAssignedVehicle(vehicle);
+
+        // Sync shifting state with database status
+        if (dData.status === "disponível" || dData.status === "ocupado") {
+          setIsOnline(true);
+          localStorage.setItem("driver_is_online", "true");
+        } else if (dData.status === "indisponível") {
+          setIsOnline(false);
+          localStorage.removeItem("driver_is_online");
+        }
+
         if (viewContractsDate === new Date().toISOString().split("T")[0]) {
           setViewContractsPrefix(vehicle.prefix);
         }
@@ -439,7 +475,7 @@ export default function DriverView({ user }: DriverViewProps) {
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, "drivers"));
     return () => unsubscribe();
-  }, [user?.name, viewContractsDate, user?.prefix]);
+  }, [user?.name, user?.uid, viewContractsDate, user?.prefix]);
 
   // Synchronize state strictly with the linked vehicle prefix only (no fallbacks or selectors)
   useEffect(() => {
@@ -838,9 +874,22 @@ export default function DriverView({ user }: DriverViewProps) {
         if (currentServiceRef.current?.id && doc.id === currentServiceRef.current.id) return true;
         
         const d = doc.data();
-        const callDriverName = (d.driverName || "").toLowerCase().trim();
-        const loggedDriverName = (user?.name || "").toLowerCase().trim();
-        const isNameMatch = callDriverName !== "" && loggedDriverName !== "" && callDriverName === loggedDriverName;
+        
+        // Clean names helper (removes accents, parenthesis like (Admin), simplifies spaces)
+        const cleanName = (n: string) => {
+          if (!n) return "";
+          return n
+            .toLowerCase()
+            .replace(/\s*\(.*?\)\s*/g, '')
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .replace(/\s+/g, ' ')
+            .trim();
+        };
+
+        const callDriverNameClean = cleanName(d.driverName || "");
+        const loggedDriverNameClean = cleanName(user?.name || "");
+        const isNameMatch = callDriverNameClean !== "" && loggedDriverNameClean !== "" && callDriverNameClean === loggedDriverNameClean;
         
         return (
           isNameMatch ||
@@ -878,7 +927,7 @@ export default function DriverView({ user }: DriverViewProps) {
           setShowNotification(true);
         } else if (callData.status === "active") {
           setCurrentService(callData);
-          setShowNotification(true);
+          setShowNotification(false);
         } else {
           setCurrentService(null);
           setShowNotification(false);
@@ -890,6 +939,13 @@ export default function DriverView({ user }: DriverViewProps) {
             if (docSnap.exists()) {
               const statusStr = docSnap.data().status;
               if (["completed", "cancelled", "rejected", "ignored"].includes(statusStr)) {
+                if (statusStr === "cancelled") {
+                  console.log("Passenger cancelled or ended call, informing driver");
+                  setLastCancelledService({
+                    id: docSnap.id,
+                    ...docSnap.data()
+                  });
+                }
                 setCurrentService(null);
                 setShowNotification(false);
               } else {
@@ -929,7 +985,19 @@ export default function DriverView({ user }: DriverViewProps) {
       const driversList = snapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() }))
         .filter((d: any) => {
-          const isMe = d.driverId === user?.uid || (d.name && user?.name && d.name.toLowerCase() === user.name.toLowerCase());
+          const cleanName = (n: string) => {
+            if (!n) return "";
+            return n
+              .toLowerCase()
+              .replace(/\s*\(.*?\)\s*/g, '')
+              .normalize("NFD")
+              .replace(/[\u0300-\u036f]/g, "")
+              .replace(/\s+/g, ' ')
+              .trim();
+          };
+          const isMe = d.driverId === user?.uid || 
+                       (assignedVehicle?.id && d.id === assignedVehicle.id) ||
+                       (d.name && user?.name && cleanName(d.name) === cleanName(user.name));
           if (isMe) return false;
           
           const status = (d.status || "").toLowerCase();
@@ -1154,6 +1222,7 @@ export default function DriverView({ user }: DriverViewProps) {
         setShowSafetyCheck(true);
       } catch (err) {
         setIsOnline(true);
+        localStorage.setItem("driver_is_online", "true");
         if (assignedVehicle?.id) {
           updateDoc(doc(db, "drivers", assignedVehicle.id), { status: "disponível" }).catch(e => console.warn(e));
         }
@@ -1162,6 +1231,7 @@ export default function DriverView({ user }: DriverViewProps) {
       }
     } else {
       setIsOnline(false);
+      localStorage.removeItem("driver_is_online");
       setCurrentService(null);
       setShowNotification(false);
       if (assignedVehicle?.id) {
@@ -1172,6 +1242,7 @@ export default function DriverView({ user }: DriverViewProps) {
 
   const confirmSafetyAndStart = () => {
     setIsOnline(true);
+    localStorage.setItem("driver_is_online", "true");
     setShowSafetyCheck(false);
     if (assignedVehicle?.id) {
       updateDoc(doc(db, "drivers", assignedVehicle.id), { status: "disponível" }).catch(e => console.warn(e));
@@ -1350,35 +1421,63 @@ export default function DriverView({ user }: DriverViewProps) {
       
       console.log("DEBUG: Final resolvedDriverId being used for call:", resolvedDriverId);
 
-      await addDoc(collection(db, "calls"), {
-        customerPhone: phoneWithPrefix,
-        customerName: transferCustomerName || "Cliente Particular",
-        pickupAddress: transferPickupAddress || "Chamada Direta Recebida por Telemóvel",
-        destinationAddress: "A definir com o cliente",
-        price: 0,
-        timestamp: serverTimestamp(),
-        driverId: resolvedDriverId,
-        driverName: targetDriver.name,
-        driverInfo: {
-          name: targetDriver.name,
-          phone: targetDriver.phone || targetDriver.phoneNumber || '',
-          vehicleModel: targetDriver.vehicleModel || targetDriver.brand || 'Táxi PSM',
-          vehiclePlate: targetDriver.vehiclePlate || targetDriver.licensePlate || ''
-        },
-        status: "pending",
-        type: "direct_referral",
-        isForwarded: true,
-        transferredBy: {
-          id: user?.uid,
-          name: user?.name,
-        }
-      });
-      
-      setTransferCustomerPhone("");
-      setTransferCustomerName("");
-      setTransferPickupAddress("");
-      setIsNewCallTransferModalOpen(false);
-      alert("Contacto de cliente reencaminhado com sucesso para " + targetDriver.name + "!");
+      if (currentService?.id) {
+        // Re-routing/transferring an already active call
+        const callRef = doc(db, "calls", currentService.id);
+        await setDoc(callRef, {
+          driverId: resolvedDriverId,
+          driverName: targetDriver.name,
+          driverPhone: targetDriver.phone || targetDriver.phoneNumber || '',
+          vehiclePlate: targetDriver.vehiclePlate || targetDriver.plate || '',
+          vehicleModel: targetDriver.vehicleModel || targetDriver.model || 'Táxi PSM',
+          status: "pending", // Reset status back to pending so that it pops up for the new target driver!
+          price: null, // Reset previous suggested price
+          isForwarded: true,
+          forwardedBy: {
+            id: user?.uid,
+            name: user?.name,
+          }
+        }, { merge: true });
+
+        setCurrentService(null);
+        setShowNotification(false);
+        setTransferCustomerPhone("");
+        setTransferCustomerName("");
+        setTransferPickupAddress("");
+        setIsNewCallTransferModalOpen(false);
+        alert("Chamada reencaminhada com sucesso para o colega " + targetDriver.name + "!");
+      } else {
+        // Direct call creation
+        await addDoc(collection(db, "calls"), {
+          customerPhone: phoneWithPrefix,
+          customerName: transferCustomerName || "Cliente Particular",
+          pickupAddress: transferPickupAddress || "Chamada Direta Recebida por Telemóvel",
+          destinationAddress: "A definir com o cliente",
+          price: 0,
+          timestamp: serverTimestamp(),
+          driverId: resolvedDriverId,
+          driverName: targetDriver.name,
+          driverInfo: {
+            name: targetDriver.name,
+            phone: targetDriver.phone || targetDriver.phoneNumber || '',
+            vehicleModel: targetDriver.vehicleModel || targetDriver.brand || 'Táxi PSM',
+            vehiclePlate: targetDriver.vehiclePlate || targetDriver.licensePlate || ''
+          },
+          status: "pending",
+          type: "direct_referral",
+          isForwarded: true,
+          transferredBy: {
+            id: user?.uid,
+            name: user?.name,
+          }
+        });
+        
+        setTransferCustomerPhone("");
+        setTransferCustomerName("");
+        setTransferPickupAddress("");
+        setIsNewCallTransferModalOpen(false);
+        alert("Contacto de cliente reencaminhado com sucesso para " + targetDriver.name + "!");
+      }
     } catch (error) {
       handleFirestoreError(error, OperationType.ADD, "calls");
       alert("Erro ao reencaminhar contacto de cliente.");
@@ -1667,14 +1766,53 @@ export default function DriverView({ user }: DriverViewProps) {
                     </p>
                   </div>
 
-                  {/* Interactive GPS Router Map placeholder for Unique Interface */}
-                  <div className="bg-slate-950/60 rounded-3xl overflow-hidden border border-white/5 shadow-inner relative h-36">
-                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-slate-900 to-slate-955" />
+                   {/* Interactive GPS Router Map placeholder for Unique Interface */}
+                  <div className="bg-slate-950/65 rounded-3xl overflow-hidden border border-white/5 shadow-inner relative h-36">
+                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-slate-900 to-slate-950" />
                     <div className="absolute inset-x-0 bottom-2 text-center z-10">
                       <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-2">
                         Rota de Viagem em Direto
                       </p>
                     </div>
+
+                    {/* High Density Grid pattern */}
+                    <div className="absolute inset-0 opacity-10 pointer-events-none">
+                      <svg width="100%" height="100%">
+                        <pattern id="driver-grid-pat" width="15" height="15" patternUnits="userSpaceOnUse">
+                          <path d="M 15 0 L 0 0 0 15" fill="none" stroke="currentColor" strokeWidth="0.5" className="text-blue-500" />
+                        </pattern>
+                        <rect width="100%" height="100%" fill="url(#driver-grid-pat)" />
+                      </svg>
+                    </div>
+
+                    {/* Satellite tracking active status indicator (JIS) */}
+                    <div className="absolute top-2.5 left-2.5 bg-black/85 px-2 py-0.5 rounded border border-white/10 text-[7.5px] font-black text-rose-400 uppercase tracking-widest flex items-center gap-1 animate-pulse z-10">
+                      <div className="w-1 h-1 bg-rose-500 rounded-full animate-ping" />
+                      Live GPS Sincro
+                    </div>
+
+                    {/* Match Passenger Bezier Path and animated car positioner */}
+                    <svg className="absolute inset-0 w-full h-full text-brand-primary pointer-events-none opacity-60" viewBox="0 0 300 200">
+                      <path d="M 50,150 Q 150,50 250,120" fill="none" stroke="#3b82f6" strokeWidth="3" strokeLinecap="round" strokeDasharray="5" />
+                      <circle cx="50" cy="150" r="5" className="text-amber-500 fill-current animate-pulse" />
+                      <circle cx="250" cy="120" r="5" className="text-emerald-500 fill-current" />
+                      
+                      <motion.g
+                        initial={{ x: 50, y: 150 }}
+                        animate={{
+                          x: [50, 110, 150, 200, 250],
+                          y: [150, 90, 75, 95, 120]
+                        }}
+                        transition={{
+                          duration: 12,
+                          repeat: Infinity,
+                          ease: "easeInOut"
+                        }}
+                      >
+                        <circle r="6" className="text-blue-400 fill-current shadow-lg animate-pulse" />
+                        <polygon points="-2,-2 3,0 -2,2" fill="white" />
+                      </motion.g>
+                    </svg>
                   </div>
 
                   {/* Customer Block and Trip Info */}
@@ -3979,10 +4117,9 @@ export default function DriverView({ user }: DriverViewProps) {
         </AnimatePresence>
 
       {/* Bottom Navigation */}
-      {!currentService && (
-        <div className="fixed bottom-0 left-0 w-full bg-white border-t border-slate-200 flex justify-around items-center py-3 z-[100] shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
-          {[
-            { id: 'dashboard', label: 'Painel', icon: Layout },
+      <div className="fixed bottom-0 left-0 w-full bg-white border-t border-slate-200 flex justify-around items-center py-3 z-[100] shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
+        {[
+          { id: 'dashboard', label: 'Painel', icon: Layout },
             { id: 'history', label: 'Viagens', icon: History },
             { id: 'contracts', label: 'Contratos', icon: FileSignature },
             { id: 'rendas', label: 'Rendas', icon: Wallet },
@@ -4000,7 +4137,63 @@ export default function DriverView({ user }: DriverViewProps) {
             </button>
           ))}
         </div>
-      )}
+
+      {/* Passenger Cancellation Alert Popup for Driver */}
+      <AnimatePresence>
+        {lastCancelledService && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setLastCancelledService(null)}
+              className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 20 }}
+              className="relative w-full max-w-md bg-white border border-rose-100 rounded-[2rem] p-6 text-slate-900 shadow-2xl z-10 space-y-5"
+            >
+              <div className="flex items-center gap-3 border-b border-rose-100 pb-3">
+                <div className="w-10 h-10 bg-rose-50 rounded-full flex items-center justify-center text-rose-500 shrink-0">
+                  <AlertTriangle size={20} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-rose-600 uppercase tracking-wider leading-none">Chamada Cancelada</h3>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">O passageiro encerrou a ligação</p>
+                </div>
+              </div>
+
+              <div className="space-y-3 bg-rose-50/30 p-4 rounded-2xl border border-rose-100/40 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-slate-400 font-bold uppercase text-[10px]">Passageiro:</span>
+                  <span className="text-slate-900 font-black">{lastCancelledService.passengerName || "Passageiro de Luena"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400 font-bold uppercase text-[10px]">Contacto:</span>
+                  <span className="text-slate-900 font-black">{lastCancelledService.passengerPhone || "N/A"}</span>
+                </div>
+                <div className="flex justify-between items-center bg-white/50 p-2 rounded-xl border border-rose-100/40">
+                  <span className="text-slate-400 font-bold uppercase text-[9px]">Origem:</span>
+                  <span className="text-slate-900 font-black max-w-[200px] truncate">{lastCancelledService.pickup || "Centro de Luena"}</span>
+                </div>
+                <div className="flex justify-between items-center bg-white/50 p-2 rounded-xl border border-rose-100/40">
+                  <span className="text-slate-400 font-bold uppercase text-[9px]">Destino:</span>
+                  <span className="text-slate-900 font-black max-w-[200px] truncate">{lastCancelledService.destination || "Destino solicitado"}</span>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setLastCancelledService(null)}
+                className="w-full py-4 bg-rose-500 hover:bg-rose-600 text-white font-black text-xs uppercase tracking-widest rounded-2xl shadow-lg transition-all active:scale-95 text-center block"
+              >
+                Confirmar e Fechar
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

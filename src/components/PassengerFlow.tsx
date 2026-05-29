@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { useTheme } from '../context/ThemeContext';
 import { 
   Car, MapPin, Phone, User, Camera, Sun, Moon, Sparkles, ShieldCheck, 
@@ -6,7 +7,7 @@ import {
   Trash2, Landmark, Trophy, Smartphone, AlertCircle, RefreshCw, Lock
 } from 'lucide-react';
 import { db } from '../lib/firebase';
-import { addDoc, collection, getDocs, onSnapshot, query, where, doc, setDoc, getDoc } from 'firebase/firestore';
+import { addDoc, collection, getDocs, onSnapshot, query, where, doc, setDoc, getDoc, updateDoc, arrayUnion } from 'firebase/firestore';
 
 interface VehicleOption {
   id: string;
@@ -101,10 +102,20 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
   // Form Inputs
   const [name, setName] = useState('');
   const [age, setAge] = useState('');
+  const [gender, setGender] = useState('');
   const [backupPhone, setBackupPhone] = useState('');
   const [province, setProvince] = useState('Luena, Moxico');
   const [password, setPassword] = useState('');
-  const [selectedAvatar, setSelectedAvatar] = useState(PRESETS_AVATARS[0]);
+  const [selectedAvatar, setSelectedAvatar] = useState(() => {
+    try {
+      const saved = localStorage.getItem('psm-passenger-profile');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.photoUrl || PRESETS_AVATARS[0];
+      }
+    } catch {}
+    return PRESETS_AVATARS[0];
+  });
   const [isUploading, setIsUploading] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('register');
   const [loginName, setLoginName] = useState('');
@@ -114,6 +125,10 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
   // Active Booking state
   const [isBookModalOpen, setIsBookModalOpen] = useState(false);
   const [isForwardModalOpen, setIsForwardModalOpen] = useState(false);
+  
+  // Terms & Conditions and Safety Policies for Registration (JIS)
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [showTermsModal, setShowTermsModal] = useState(false);
   
   // New States requested by José Iweza Suana (JIS)
   const [showRidesHistoryModal, setShowRidesHistoryModal] = useState(false);
@@ -134,13 +149,83 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
   const [isLoadingFleet, setIsLoadingFleet] = useState(false);
 
   // Call Sequence states
-  // 'idle' | 'calling' | 'connected' | 'pricing' | 'offer_received' | 'ride_confirmed' | 'ride_completed'
-  const [callState, setCallState] = useState<'idle' | 'calling' | 'connected' | 'pricing' | 'offer_received' | 'ride_confirmed' | 'ride_completed'>('idle');
+  // 'idle' | 'calling' | 'connected' | 'pricing' | 'offer_received' | 'ride_confirmed' | 'ride_completed' | 'cancelled_by_driver'
+  const [callState, setCallState] = useState<'idle' | 'calling' | 'connected' | 'pricing' | 'offer_received' | 'ride_confirmed' | 'ride_completed' | 'cancelled_by_driver'>('idle');
   const [negotiatedPrice, setNegotiatedPrice] = useState<number>(0);
+  const [passengerRating, setPassengerRating] = useState<number>(5);
   const [secondsElapsed, setSecondsElapsed] = useState(0);
   const [activeRideRecord, setActiveRideRecord] = useState<any | null>(null);
   const [isRestoringCall, setIsRestoringCall] = useState(true);
   const activeStatusRef = useRef<string | null>(null);
+  const prevStatusRef = useRef<string | null>(null);
+
+  // Real-time synchronization active toast notification
+  const [notificationBanner, setNotificationBanner] = useState<{
+    title: string;
+    message: string;
+    visible: boolean;
+  }>({ title: '', message: '', visible: false });
+
+  // Pure Web Audio API Premium Sound Generators - 100% Reliable Offline Sound Chimes
+  const playNotificationSound = (type: 'ding' | 'success' | 'alert') => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      
+      if (type === 'ding') {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, ctx.currentTime); 
+        osc.frequency.exponentialRampToValueAtTime(1320, ctx.currentTime + 0.12); 
+        gain.gain.setValueAtTime(0.12, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.45);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.45);
+      } else if (type === 'success') {
+        const freqs = [523.25, 659.25, 783.99, 1046.50]; 
+        freqs.forEach((freq, i) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.value = freq;
+          gain.gain.setValueAtTime(0.08, ctx.currentTime + i * 0.08);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35 + i * 0.08);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(ctx.currentTime + i * 0.08);
+          osc.stop(ctx.currentTime + 0.45 + i * 0.08);
+        });
+      } else if (type === 'alert') {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(440, ctx.currentTime);
+        osc.frequency.linearRampToValueAtTime(330, ctx.currentTime + 0.18);
+        gain.gain.setValueAtTime(0.08, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.25);
+      }
+    } catch (err) {
+      console.warn("Could not play notification sound:", err);
+    }
+  };
+
+  // Toast self-cleanup effect
+  useEffect(() => {
+    if (notificationBanner.visible) {
+      const t = setTimeout(() => {
+        setNotificationBanner(prev => ({ ...prev, visible: false }));
+      }, 5000);
+      return () => clearTimeout(t);
+    }
+  }, [notificationBanner.visible]);
 
   // Stats / Confirmed Rides History
   const [myRides, setMyRides] = useState<any[]>([]);
@@ -197,8 +282,18 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
           const docSnap = await getDoc(doc(db, 'calls', savedCallId));
           if (docSnap.exists()) {
             const data = docSnap.data();
-            // Only restore if the call is not ended
-            if (!['completed', 'cancelled', 'rejected', 'ignored'].includes(data.status)) {
+            
+            // Safety guard: if the passenger already started/joined another call during this flight, do not overwrite it
+            if (activeStatusRef.current !== null) {
+              console.log("[PassengerFlow] Stale restore flight aborted because another active ride is already set.");
+              return;
+            }
+
+            // Verify if call passenger matches currently logged-in passenger
+            const isMyCall = !passengerProfile || !passengerProfile.name || (data.passengerName === passengerProfile.name);
+
+            // Only restore if the call is not ended and belongs to current passenger
+            if (isMyCall && !['completed', 'cancelled', 'rejected', 'ignored'].includes(data.status)) {
                console.log("Restoring active call from localStorage:", savedCallId, data);
                activeStatusRef.current = data.status;
                setActiveRideRecord({ id: docSnap.id, ...data });
@@ -217,13 +312,28 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
                 if (data.price) setNegotiatedPrice(data.price);
               }
             } else {
+              console.log("[PassengerFlow] Saved call is already ended/completed in database, clearing.");
               localStorage.removeItem('active_call_id');
+              setPickup('');
+              setDestination('');
+              setNegotiatedPrice(0);
+              setActiveRideRecord(null);
+              activeStatusRef.current = null;
+              setCallState('idle');
             }
           } else {
+            console.log("[PassengerFlow] Saved call ID does not exist, clearing localStorage.");
             localStorage.removeItem('active_call_id');
+            setActiveRideRecord(null);
+            activeStatusRef.current = null;
+            setCallState('idle');
           }
         } catch (err) {
           console.error("Error restoring call:", err);
+          localStorage.removeItem('active_call_id');
+          setActiveRideRecord(null);
+          activeStatusRef.current = null;
+          setCallState('idle');
         } finally {
           setIsRestoringCall(false);
         }
@@ -232,7 +342,7 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
     } else {
       setIsRestoringCall(false);
     }
-  }, []);
+  }, [passengerProfile?.name]);
 
   // Sync active_call_id in localStorage when activeRideRecord id changes (guarded by isRestoringCall)
   useEffect(() => {
@@ -283,12 +393,47 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
           if (!prev) return { id: docSnap.id, ...data };
           return { ...prev, ...data };
         });
+
+        // Trigger real-time sound/visual notification on state change (JIS - Safety Notifications)
+        const prevStatus = prevStatusRef.current;
+        if (prevStatus && prevStatus !== data.status) {
+          if (data.status === 'connected') {
+            playNotificationSound('ding');
+            setNotificationBanner({
+              title: 'Chamada Atendida!',
+              message: 'O motorista está em linha. Fale diretamente no canal de voz segura.',
+              visible: true
+            });
+          } else if (data.status === 'price_sent') {
+            playNotificationSound('ding');
+            setNotificationBanner({
+              title: 'Proposta Recebida!',
+              message: `O motorista propôs o preço de ${data.price?.toLocaleString()} Kz para a sua viagem.`,
+              visible: true
+            });
+          } else if (data.status === 'confirmed' || data.status === 'active') {
+            playNotificationSound('success');
+            setNotificationBanner({
+              title: 'Viagem Ativada!',
+              message: 'A viagem foi confirmada pelo motorista. Desfrute da viagem.',
+              visible: true
+            });
+          } else if (data.status === 'completed') {
+            playNotificationSound('success');
+            setNotificationBanner({
+              title: 'Viagem Fechada!',
+              message: 'O motorista encerrou com sucesso. Obrigado por viajar connosco.',
+              visible: true
+            });
+          }
+        }
+        prevStatusRef.current = data.status;
         
         // Let's change callState based on Firestore status
         console.log("Passenger Flow - Sync active ride. Status:", data.status, "Price:", data.price, "Doc ID:", docSnap.id);
         if (data.status === 'pending' || data.status === 'calling') {
-          // Guard simulated states: do not cycle back to 'calling' if local simulation has progressed
-          setCallState(prev => (prev === 'idle' ? 'calling' : prev));
+          // Strict real alignment to calling status
+          setCallState('calling');
         } else if (data.status === 'connected') {
           setCallState('connected');
         } else if (data.status === 'pricing') {
@@ -301,11 +446,29 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
           if (data.price !== undefined && data.price !== null) setNegotiatedPrice(data.price);
           setCallState('ride_confirmed');
         } else if (data.status === 'completed') {
-          setCallState('idle');
-          setActiveRideRecord(null);
+          console.log("[PassengerFlow] Sync detected ride completed. Showing success receipt screen.");
+          setCallState('ride_completed');
+          // Note: We deliberately do NOT set activeRideRecord to null here so the success/receipt screen 
+          // can display the actual trip details (driverName, vehiclePlate, negotiatedPrice) rather than fallback defaults!
         } else if (data.status === 'cancelled' || data.status === 'rejected' || data.status === 'ignored') {
+          console.log("[PassengerFlow] Sync detected ride cancelled/rejected.");
+          setCallState('cancelled_by_driver');
+          // Note: We deliberately do NOT set activeRideRecord to null here so the cancellation screen can read details.
+        }
+      } else {
+        console.warn("[Passenger Flow] Active call document does not exist in Firestore yet or was removed. ID:", docId);
+        // Only clean up state immediately if the call isn't newly initiated or in progress
+        const isCallInProgress = activeStatusRef.current === 'pending' || 
+                                 activeStatusRef.current === 'calling' || 
+                                 activeStatusRef.current === 'connected' || 
+                                 activeStatusRef.current === 'pricing' || 
+                                 activeStatusRef.current === 'price_sent' || 
+                                 activeStatusRef.current === 'confirmed' || 
+                                 activeStatusRef.current === 'active';
+        if (!isCallInProgress) {
           setCallState('idle');
           setActiveRideRecord(null);
+          activeStatusRef.current = null;
         }
       }
     };
@@ -325,29 +488,32 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
   // Keep activeStatusRef always holding the absolute latest status
   useEffect(() => {
     activeStatusRef.current = activeRideRecord?.status || null;
+    if (activeRideRecord?.status) {
+      prevStatusRef.current = activeRideRecord.status;
+    }
   }, [activeRideRecord?.status]);
 
-    // Self-correcting alignment for callState to prevent any simulator race conditions
-    useEffect(() => {
-      if (!activeRideRecord) return;
-      const dbStatus = activeRideRecord.status;
-      if (dbStatus === 'pending' || dbStatus === 'calling') {
-        // Guard simulated states: do not cycle back to 'calling' if local simulation has progressed
-        setCallState(prev => (prev === 'idle' ? 'calling' : prev));
-      } else if (dbStatus === 'connected') {
-        setCallState('connected');
-      } else if (dbStatus === 'pricing') {
-        setCallState('pricing');
-      } else if (dbStatus === 'price_sent') {
+  // Self-correcting alignment for callState to prevent any simulator race conditions
+  useEffect(() => {
+    if (!activeRideRecord) return;
+    const dbStatus = activeRideRecord.status;
+    if (dbStatus === 'pending' || dbStatus === 'calling') {
+      setCallState('calling');
+    } else if (dbStatus === 'connected') {
+      setCallState('connected');
+    } else if (dbStatus === 'pricing') {
+      setCallState('pricing');
+    } else if (dbStatus === 'price_sent') {
       // Update price even if it's 0
       setNegotiatedPrice(activeRideRecord.price !== undefined && activeRideRecord.price !== null ? activeRideRecord.price : 0);
       setCallState('offer_received');
     } else if (dbStatus === 'confirmed' || dbStatus === 'active') {
       if (activeRideRecord.price !== undefined && activeRideRecord.price !== null) setNegotiatedPrice(activeRideRecord.price);
       setCallState('ride_confirmed');
-    } else if (dbStatus === 'completed' || dbStatus === 'cancelled' || dbStatus === 'rejected' || dbStatus === 'ignored') {
-      setCallState('idle');
-      setActiveRideRecord(null);
+    } else if (dbStatus === 'completed') {
+      setCallState('ride_completed');
+    } else if (dbStatus === 'cancelled' || dbStatus === 'rejected' || dbStatus === 'ignored') {
+      setCallState('cancelled_by_driver');
     }
   }, [activeRideRecord?.status, activeRideRecord?.price]);
 
@@ -364,9 +530,15 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
     return () => clearInterval(interval);
   }, [callState]);
 
-  // Handle Call countdown simulator transitions
+  // Handle local simulator transitions (Only applicable if no real DB record is active. Fallback mock).
   useEffect(() => {
-    // If the database status is already non-pending (e.g. accepted/answered by driver), abort simulated state progression
+    // If we have an active real-time call connected on the network, we NEVER simulate DB states.
+    // The passenger must wait for the actual driver to respond!
+    if (activeRideRecord?.id) {
+      return;
+    }
+
+    // Pure local simulator logic when no database record is set (e.g. running without internet/backend)
     if (activeStatusRef.current && activeStatusRef.current !== 'pending') {
       return;
     }
@@ -376,11 +548,11 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
     } else if (callState === 'connected' && secondsElapsed >= 7) {
       setCallState('pricing');
     }
-  }, [secondsElapsed, callState]);
+  }, [secondsElapsed, callState, activeRideRecord?.id]);
 
   const handleCreateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !age.trim() || !password.trim()) {
+    if (!name.trim() || !age.trim() || !gender.trim() || !password.trim()) {
       alert("Por favor, preencha todos os campos obrigatórios.");
       return;
     }
@@ -388,10 +560,15 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
       alert("Apenas passageiros maiores de 18 anos são elegíveis.");
       return;
     }
+    if (!acceptedTerms) {
+      alert("Por favor, leia e aceite os Termos de Segurança e Políticas de Uso antes de criar o seu perfil.");
+      return;
+    }
 
     const newProfile = {
-      name,
+      name: name.trim(),
       age: Number(age),
+      gender: gender.trim(),
       backupPhone,
       province,
       password,
@@ -399,14 +576,16 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
       createdAt: new Date().toISOString()
     };
 
-    localStorage.setItem('psm-passenger-profile', JSON.stringify(newProfile));
-    setPassengerProfile(newProfile);
-
     // Save to Firestore passengers collection for persistence across devices/logins
     try {
-      await addDoc(collection(db, 'passengers'), newProfile);
-    } catch (e) {
-      console.error("Erro ao persistir passageiro no Firestore:", e);
+      const docRef = await addDoc(collection(db, 'passengers'), newProfile);
+      const profileWithId = { id: docRef.id, ...newProfile };
+      localStorage.setItem('psm-passenger-profile', JSON.stringify(profileWithId));
+      setPassengerProfile(profileWithId);
+    } catch (err) {
+      console.error("Erro ao persistir passageiro no Firestore:", err);
+      localStorage.setItem('psm-passenger-profile', JSON.stringify(newProfile));
+      setPassengerProfile(newProfile);
     }
 
     alert(`Perfil de ${name} criado com sucesso no ecossistema SUPER Taxi!`);
@@ -468,8 +647,14 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
   const handleLogout = () => {
     if (window.confirm("Deseja sair da sua conta de Passageiro?")) {
       localStorage.removeItem('psm-passenger-profile');
+      localStorage.removeItem('active_call_id');
       setPassengerProfile(null);
       setCallState('idle');
+      setActiveRideRecord(null);
+      activeStatusRef.current = null;
+      setPickup('');
+      setDestination('');
+      setNegotiatedPrice(0);
     }
   };
 
@@ -488,9 +673,14 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
       return;
     }
 
+    // Ensure any previous stale connection/ride state is thoroughly reset before starting a fresh call
     setCallState('calling');
     setIsBookModalOpen(false);
     setNegotiatedPrice(0); // Reset the price offer state for a clean new start
+    setSecondsElapsed(0); // Reset simulated seconds ticker
+    localStorage.removeItem('active_call_id'); // Clear any stale id from previous runs
+    setActiveRideRecord(null); // Clear previous record to ensure new subscription starts fresh
+    activeStatusRef.current = 'pending';
 
     // Write preliminary ride to Firestore
     try {
@@ -521,8 +711,8 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
 
       activeStatusRef.current = 'pending';
       setActiveRideRecord({ 
-        id: docRef.id, 
         ...selectedVehicle, 
+        id: docRef.id, 
         status: 'pending', // Explicitly initialize as 'pending' to resolve state conflicts with driver statuses
         price: null,
         pickup, 
@@ -600,8 +790,7 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
       activeStatusRef.current = 'cancelled';
       const rideRef = doc(db, 'calls', activeRideRecord.id);
       await setDoc(rideRef, { status: 'cancelled' }, { merge: true });
-      setCallState('idle');
-      setActiveRideRecord(null);
+      setCallState('cancelled_by_driver');
     } catch (err) {
       console.error(err);
     }
@@ -614,12 +803,35 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
       activeStatusRef.current = 'completed';
       const rideRef = doc(db, 'calls', activeRideRecord.id);
       await setDoc(rideRef, { status: 'completed' }, { merge: true });
-      setCallState('idle');
-      setActiveRideRecord(null);
-      alert("Excelente! A corrida foi concluída com sucesso e a renda foi carregada na central.");
+      setCallState('ride_completed');
     } catch (err) {
       console.error(err);
     }
+  };
+
+  const handleRateRide = async (star: number) => {
+    setPassengerRating(star);
+    if (activeRideRecord?.id) {
+      try {
+        const rideRef = doc(db, 'calls', activeRideRecord.id);
+        await updateDoc(rideRef, { rating: star }).catch(() => {
+          // Fallback with setDoc merge
+          setDoc(rideRef, { rating: star }, { merge: true });
+        });
+      } catch (err) {
+        console.warn("Could not save rating to Firestore:", err);
+      }
+    }
+  };
+
+  const handleDismissCompletedRide = () => {
+    setCallState('idle');
+    setActiveRideRecord(null);
+    activeStatusRef.current = null;
+    setPickup('');
+    setDestination('');
+    setNegotiatedPrice(0);
+    localStorage.removeItem('active_call_id');
   };
 
   const handleForwardCall = async () => {
@@ -751,9 +963,37 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
 
               {/* Action according to call state */}
               {callState === 'calling' && (
-                <div className="flex flex-col items-center py-4 bg-amber-500/10 rounded-xl">
-                  <RefreshCw className="animate-spin text-amber-500 mb-2" size={20} />
-                  <p className="text-[10px] uppercase font-black text-amber-500 tracking-wider">Telemóvel do Motorista a tocar...</p>
+                <div className="flex flex-col items-center py-4 bg-amber-500/10 rounded-xl space-y-3 px-3">
+                  <div className="flex items-center gap-2">
+                    <RefreshCw className="animate-spin text-amber-500" size={16} />
+                    <p className="text-[10px] uppercase font-black text-amber-500 tracking-wider m-0">Telemóvel do Motorista a tocar...</p>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      if (activeRideRecord?.id) {
+                        try {
+                          const rideRef = doc(db, 'calls', activeRideRecord.id);
+                          await setDoc(rideRef, { 
+                            status: 'connected',
+                            responseHistory: arrayUnion({
+                              action: 'attended_manual',
+                              driverId: 'simulated_driver',
+                              driverName: activeRideRecord.driverName || 'Motorista de Teste',
+                              timestamp: new Date().toISOString()
+                            })
+                          }, { merge: true });
+                          setCallState('connected');
+                        } catch (err) {
+                          console.error("Erro ao atender chamada no simulador:", err);
+                        }
+                      } else {
+                        setCallState('connected');
+                      }
+                    }}
+                    className="w-full py-2 bg-[#10b981] text-slate-950 font-black text-[10px] uppercase tracking-wider rounded-lg hover:bg-emerald-600 transition-colors"
+                  >
+                    📞 ATENDER CHAMADA (Simular Condutor)
+                  </button>
                 </div>
               )}
 
@@ -892,6 +1132,26 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
             {/* SCREEN SCROLLABLE AREA */}
             <div className={`flex-1 overflow-y-auto no-scrollbar relative ${isPublicApp ? 'p-6 sm:p-10 max-w-2xl mx-auto w-full' : 'p-5'}`}>
               
+              {/* TOAST NOTIFICATION BANNER SINCRO SUPER TAXI (JIS) */}
+              <AnimatePresence>
+                {notificationBanner.visible && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: -20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -20 }}
+                    className="absolute top-2 left-4 right-4 bg-slate-900 border border-amber-500/35 p-3 rounded-2xl shadow-2xl z-50 flex items-start gap-3 backdrop-blur-md"
+                  >
+                    <div className="p-1.5 bg-amber-500/10 rounded-xl text-amber-500 shrink-0">
+                      <Sparkles size={14} className="animate-pulse" />
+                    </div>
+                    <div className="text-left leading-tight min-w-0">
+                      <h5 className="text-[10px] font-black text-amber-500 uppercase tracking-widest">{notificationBanner.title}</h5>
+                      <p className="text-[9.5px] text-slate-300 font-bold mt-0.5 leading-snug">{notificationBanner.message}</p>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               {!passengerProfile ? (
                 /* PROFILE CREATION OR PORTAL (REGISTER / LOGIN Toggle) */
                 <div className="space-y-4 py-2">
@@ -971,15 +1231,29 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
                           />
                         </div>
                         <div className="space-y-1">
-                          <label className="text-[8.5px] font-black text-slate-500 uppercase tracking-widest ml-1">Província Atual</label>
-                          <input 
-                            type="text" 
-                            placeholder="Moxico" 
-                            value={province}
-                            onChange={e => setProvince(e.target.value)}
-                            className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-xs font-bold outline-none focus:border-white text-white"
-                          />
+                          <label className="text-[8.5px] font-black text-slate-500 uppercase tracking-widest ml-1">Género</label>
+                          <select 
+                            value={gender}
+                            onChange={e => setGender(e.target.value)}
+                            className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-xs font-bold outline-none focus:border-white text-white appearance-none"
+                          >
+                            <option value="" className="bg-slate-800 text-slate-400">Selecione...</option>
+                            <option value="Masculino" className="bg-slate-800 text-white">Masculino</option>
+                            <option value="Feminino" className="bg-slate-800 text-white">Feminino</option>
+                            <option value="Outro" className="bg-slate-800 text-white">Outro / Mais</option>
+                          </select>
                         </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[8.5px] font-black text-slate-500 uppercase tracking-widest ml-1">Província Atual</label>
+                        <input 
+                          type="text" 
+                          placeholder="Moxico" 
+                          value={province}
+                          onChange={e => setProvince(e.target.value)}
+                          className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-xs font-bold outline-none focus:border-white text-white"
+                        />
                       </div>
 
                       <div className="space-y-1">
@@ -1012,6 +1286,28 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
                           onChange={e => setPassword(e.target.value)}
                           className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-xs font-bold outline-none focus:border-white text-white"
                         />
+                      </div>
+
+                      {/* Checkbox de Termos e Politica de Segurança */}
+                      <div className="flex items-start gap-2.5 bg-white/5 border border-white/5 p-3 rounded-xl mt-2">
+                        <input 
+                          type="checkbox" 
+                          id="accept_security_terms"
+                          checked={acceptedTerms}
+                          onChange={(e) => setAcceptedTerms(e.target.checked)}
+                          className="mt-0.5 rounded border-white/10 text-brand-primary accent-slate-800"
+                        />
+                        <label htmlFor="accept_security_terms" className="text-[10px] text-slate-300 font-bold leading-tight cursor-pointer">
+                          Aceito e comprometo-me com os{' '}
+                          <button 
+                            type="button"
+                            onClick={() => setShowTermsModal(true)}
+                            className="text-amber-400 hover:underline font-extrabold cursor-pointer"
+                          >
+                            Termos de Segurança e Políticas de Uso
+                          </button>{' '}
+                          vigentes no ecossistema SUPER Táxi.
+                        </label>
                       </div>
 
                       <button 
@@ -1183,10 +1479,29 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
                         </div>
 
                         {/* Simulated Path Line */}
-                        <svg className="absolute inset-0 w-full h-full text-brand-primary pointer-events-none opacity-45" viewBox="0 0 300 200">
-                          <path d="M 50,150 Q 150,50 250,120" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeDasharray="6" />
-                          <circle cx="50" cy="150" r="6" className="text-amber-500" fill="currentColor" />
-                          <circle cx="250" cy="120" r="6" className="text-emerald-500" fill="currentColor" />
+                        <svg className="absolute inset-0 w-full h-full text-brand-primary pointer-events-none opacity-60" viewBox="0 0 300 200">
+                          <path d="M 50,150 Q 150,50 250,120" fill="none" stroke="#f59e0b" strokeWidth="4" strokeLinecap="round" strokeDasharray="6" />
+                          <circle cx="50" cy="150" r="6" className="text-amber-500 fill-current animate-ping" />
+                          <circle cx="50" cy="150" r="5" className="text-amber-500 fill-current" />
+                          <circle cx="250" cy="120" r="6" className="text-emerald-500 fill-current animate-ping" />
+                          <circle cx="250" cy="120" r="5" className="text-emerald-500 fill-current" />
+                          
+                          {/* Sincro Live Map Vehicle tracking animation across Bézier coordinates */}
+                          <motion.g
+                            initial={{ x: 50, y: 150 }}
+                            animate={{
+                              x: [50, 110, 150, 200, 250],
+                              y: [150, 90, 75, 95, 120]
+                            }}
+                            transition={{
+                              duration: 12,
+                              repeat: Infinity,
+                              ease: "easeInOut"
+                            }}
+                          >
+                            <circle r="7" className="text-blue-400 fill-current shadow-lg animate-pulse" />
+                            <polygon points="-2,-2 3,0 -2,2" fill="white" />
+                          </motion.g>
                         </svg>
 
                         <div className="absolute top-3 left-3 bg-black/75 backdrop-blur px-2 py-1 rounded border border-white/10 text-[8px] font-black text-rose-400 uppercase tracking-widest flex items-center gap-1 animate-pulse">
@@ -1201,16 +1516,18 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
                       </div>
 
                       {/* Main Call Taxi Trigger Element */}
-                      <button 
-                        onClick={() => {
-                          setIsBookModalOpen(true);
-                          loadFleetData();
-                        }}
-                        className={`w-full py-4 rounded-2xl font-black text-sm uppercase tracking-widest transition-all duration-300 transform active:scale-95 flex items-center justify-center gap-2 ${currentTheme.btnClass}`}
-                      >
-                        <Car size={16} />
-                        Pedir Super Táxi
-                      </button>
+                      {callState === 'idle' && (
+                        <button 
+                          onClick={() => {
+                            setIsBookModalOpen(true);
+                            loadFleetData();
+                          }}
+                          className={`w-full py-4 rounded-2xl font-black text-sm uppercase tracking-widest transition-all duration-300 transform active:scale-95 flex items-center justify-center gap-2 ${currentTheme.btnClass}`}
+                        >
+                          <Car size={16} />
+                          Pedir Super Táxi
+                        </button>
+                      )}
 
                       {/* TOKEN DE EMBARQUE dinâmico (Segurança TAXICONTROL) */}
                       {callState === 'ride_confirmed' && activeRideRecord?.boardingToken && (
@@ -1361,121 +1678,279 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
 
             {/* Simulated Phone Call Interface Overlay Popup inside smartphone */}
             {callState !== 'idle' && (
-              <div className="absolute inset-0 bg-slate-950/95 z-50 p-6 flex flex-col justify-between animate-fade-in text-white text-center">
+              <div className="absolute inset-0 bg-slate-950/95 z-50 p-6 flex flex-col justify-between overflow-y-auto no-scrollbar animate-fade-in text-white text-center">
                 
-                {/* Float Minimize Button to go back to menus but keep connection active in background */}
-                <button 
-                  onClick={() => setCallState('idle')}
-                  className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 transition-colors rounded-full text-slate-300 z-50 hover:scale-105 active:scale-95"
-                  title="Minimizar Chamada (Guarda em Background)"
-                >
-                  <X size={16} />
-                </button>
+                {callState === 'ride_completed' ? (
+                  // BEAUTIFUL SUCCESS RECEIPT VIEW
+                  <div className="flex flex-col h-full justify-between py-4 space-y-4">
+                    <div className="space-y-4">
+                      <div className="w-16 h-16 bg-emerald-500/10 rounded-full mx-auto flex items-center justify-center border border-emerald-500/30">
+                        <svg className="w-8 h-8 text-emerald-400 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
+                        </svg>
+                      </div>
+                      
+                      <div className="space-y-1">
+                        <h3 className="text-lg font-black text-emerald-400 uppercase tracking-wide">Viagem Concluída!</h3>
+                        <p className="text-[9px] text-slate-300 font-bold uppercase tracking-widest">Obrigado por Viajar na SUPER Taxi</p>
+                      </div>
 
-                {/* Header Call state */}
-                <div className="pt-10 space-y-2">
-                  <div className="w-16 h-16 bg-white/5 rounded-full mx-auto flex items-center justify-center border border-white/10 relative">
-                    <Phone className="text-amber-500 animate-pulse" size={28} />
-                    <div className="absolute inset-0 border-2 border-amber-500/40 rounded-full animate-ping" />
-                  </div>
-                  
-                  <h3 className="text-sm font-black uppercase tracking-widest text-slate-300">
-                    {callState === 'calling' ? (activeRideRecord?.forwarded ? 'Reencaminhando Chamada...' : 'A Chamar Motorista...') : 
-                     callState === 'connected' ? 'Em Chamada...' : 
-                     callState === 'pricing' ? 'Motorista a Escrever Preço...' : 
-                     callState === 'offer_received' ? 'Preço Proposto!' : 
-                     callState === 'ride_confirmed' ? 'Confirmado! A Caminho' : 'Chamada Concluída!'}
-                  </h3>
+                      {/* Receipt Card */}
+                      <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-left space-y-3 mx-2">
+                        <p className="text-[9px] font-black text-brand-primary uppercase tracking-widest text-center border-b border-white/5 pb-2">PSM COMERCIAL TAXI - TALÃO</p>
+                        
+                        <div className="flex justify-between text-xs">
+                          <span className="text-slate-400 font-bold uppercase">Motorista:</span>
+                          <span className="text-white font-black">{activeRideRecord?.driverName || "Motorista Oficial"}</span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-slate-400 font-bold uppercase">Viatura:</span>
+                          <span className="text-white font-black">{activeRideRecord?.model || "Viatura Toyota"} ({activeRideRecord?.plate || "--"})</span>
+                        </div>
+                        
+                        <div className="h-px bg-white/10 my-1 border-dashed" />
 
-                  {activeRideRecord?.forwarded && (
-                    <div className="bg-amber-500/20 border border-amber-500/40 px-2 py-1 rounded inline-block">
-                      <p className="text-[8px] font-black uppercase text-amber-500 tracking-tighter">Chamada Reencaminhada pela Central</p>
-                    </div>
-                  )}
+                        <div className="flex justify-between text-xs">
+                          <span className="text-slate-400 font-bold uppercase">Origem:</span>
+                          <span className="text-white font-black truncate max-w-[150px]">{activeRideRecord?.pickup || "Luena Centro"}</span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-slate-400 font-bold uppercase">Destino:</span>
+                          <span className="text-white font-black truncate max-w-[150px]">{activeRideRecord?.destination || "Aeroporto do Luena"}</span>
+                        </div>
 
-                  <p className="text-[9px] text-slate-400 font-mono tracking-widest uppercase">
-                    Tempo: {formatTime(secondsElapsed)}
-                  </p>
-                </div>
+                        <div className="h-px bg-white/10 my-1 border-dashed" />
 
-                {/* Call details */}
-                <div className="p-5 bg-white/5 rounded-2xl border border-white/5 space-y-3 mx-4">
-                  <p className="text-[9px] text-slate-400 uppercase tracking-wider leading-none">Viatura Solicitada:</p>
-                  <p className="text-xs font-black uppercase tracking-tight text-white leading-tight">
-                    {activeRideRecord?.model}
-                  </p>
-                  <p className="text-sm font-black tracking-tight text-brand-primary">
-                    {activeRideRecord?.plate}
-                  </p>
+                        <div className="flex justify-between items-center bg-emerald-500/10 p-2.5 rounded-xl border border-emerald-500/10">
+                          <span className="text-[10px] text-emerald-400 font-black uppercase">Preço Pago:</span>
+                          <span className="text-xl font-black text-emerald-400">{(negotiatedPrice || activeRideRecord?.price || 0).toLocaleString()} Kz</span>
+                        </div>
+                      </div>
 
-                  <div className="h-px bg-white/15 my-2" />
-
-                  <p className="text-[9px] text-slate-400 uppercase tracking-wider leading-none">Motorista Associado:</p>
-                  <p className="text-xs font-black uppercase text-white leading-none">
-                    {activeRideRecord?.driverName}
-                  </p>
-                  
-                  {callState === 'offer_received' && (negotiatedPrice > 0 || (activeRideRecord?.price && Number(activeRideRecord.price) > 0)) && (
-                    <div className="mt-4 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl space-y-1">
-                      <p className="text-[8.5px] uppercase font-bold text-slate-400 tracking-widest leading-none">Preço Oferecido pelo Motorista:</p>
-                      <h4 className="text-xl font-black text-emerald-400 tracking-tighter animate-pulse">
-                        {(negotiatedPrice || Number(activeRideRecord?.price || 0)).toLocaleString()} Kz
-                      </h4>
-                    </div>
-                  )}
-                </div>
-
-                {/* Call Controls and Actions */}
-                <div className="pb-8 flex flex-col items-center gap-4">
-                  {callState === 'offer_received' ? (
-                    <div className="w-full space-y-3 px-4">
-                      <p className="text-[8.5px] text-slate-400 uppercase">Deseja confirmar ou rejeitar esta corrida?</p>
-                      <div className="flex gap-3">
-                        <button 
-                          onClick={handlePassengerConfirmRide}
-                          className="flex-1 py-3 bg-[#10b981] hover:bg-emerald-600 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-emerald-500/20"
-                        >
-                          Confirmar
-                        </button>
-                        <button 
-                          onClick={handlePassengerCancelRide}
-                          className="flex-1 py-3 bg-rose-600 hover:bg-rose-700 text-white font-black text-xs uppercase tracking-wider rounded-xl"
-                        >
-                          Cancelar
-                        </button>
+                      {/* Interactive Rating Component */}
+                      <div className="space-y-2 py-2">
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Como avalia o serviço de {activeRideRecord?.driverName || "parceiro"}?</p>
+                        <div className="flex justify-center gap-2">
+                          {[1, 2, 3, 4, 5].map((star) => (
+                            <button
+                              key={star}
+                              onClick={() => handleRateRide(star)}
+                              className="transition-transform active:scale-95 duration-200"
+                            >
+                              <svg
+                                className={`w-8 h-8 ${star <= passengerRating ? 'text-amber-400 fill-current' : 'text-slate-600'}`}
+                                fill="currentColor"
+                                viewBox="0 0 20 20"
+                              >
+                                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                              </svg>
+                            </button>
+                          ))}
+                        </div>
+                        <p className="text-[10px] font-black text-amber-400 uppercase tracking-widest leading-none">
+                          {passengerRating === 5 && "⭐ Excelente Serviço!"}
+                          {passengerRating === 4 && "⭐ Bom Serviço"}
+                          {passengerRating === 3 && "⭐ Serviço Aceitável"}
+                          {passengerRating === 2 && "⭐ Serviço Fraco"}
+                          {passengerRating === 1 && "⭐ Muito Mau"}
+                        </p>
                       </div>
                     </div>
-                  ) : callState === 'ride_confirmed' ? (
-                    <div className="w-full space-y-3 px-4">
-                      <p className="text-[9px] text-emerald-400 uppercase font-black tracking-wide">Pedido Ativado & Monitorizado</p>
-                      <button 
-                        onClick={() => setCallState('idle')}
-                        className="w-full py-3 bg-white/10 hover:bg-white/15 text-white font-black text-xs uppercase tracking-wider rounded-xl border border-white/10"
+
+                    <div className="px-4 pb-2">
+                      <button
+                        onClick={handleDismissCompletedRide}
+                        className="w-full py-4 bg-brand-primary text-slate-950 hover:bg-yellow-500 font-extrabold text-xs uppercase tracking-widest rounded-2xl shadow-xl transition-all"
                       >
-                        Voltar ao Menu
+                        Recomeçar Nova Viagem
                       </button>
                     </div>
-                  ) : (
-                    /* General Terminate Trigger always accessible */
+                  </div>
+                ) : callState === 'cancelled_by_driver' ? (
+                  // BEAUTIFUL REFUSED/CANCELLED OVERLAY
+                  <div className="flex flex-col h-full justify-between py-4 space-y-4">
+                    <div className="space-y-4 my-auto animate-fade-in">
+                      <div className="w-16 h-16 bg-rose-500/10 rounded-full mx-auto flex items-center justify-center border border-rose-500/30">
+                        <X className="w-8 h-8 text-rose-500" />
+                      </div>
+                      
+                      <div className="space-y-1">
+                        <h3 className="text-lg font-black text-rose-500 uppercase tracking-wide">
+                          {activeStatusRef.current === 'cancelled' ? 'Chamada Cancelada' : 'Chamada Não Atendida'}
+                        </h3>
+                        <p className="text-[10px] text-slate-300 font-bold uppercase tracking-widest leading-normal">
+                          {activeStatusRef.current === 'cancelled'
+                            ? `A ligação com a viatura ${activeRideRecord?.plate || "--"} foi cancelada e encerrada.`
+                            : `A ligação com a viatura ${activeRideRecord?.plate || "--"} foi cancelada, rejeitada ou não pôde ser estabelecida.`}
+                        </p>
+                      </div>
+
+                      <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-left space-y-2 mx-2 text-xs">
+                        <div className="flex justify-between">
+                          <span className="text-slate-400 font-bold uppercase">Motorista:</span>
+                          <span className="text-white font-black">{activeRideRecord?.driverName || "oficial"}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400 font-bold uppercase">Estado Terminal:</span>
+                          <span className="text-rose-400 font-black uppercase tracking-wider">{activeRideRecord?.status || "Cancelado/Sem Resposta"}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="px-4 pb-2">
+                      <button
+                        onClick={handleDismissCompletedRide}
+                        className="w-full py-4 bg-slate-900 text-white hover:bg-slate-800 font-extrabold text-xs uppercase tracking-widest rounded-2xl shadow-xl transition-all border border-white/10"
+                      >
+                        Voltar ao Menu Principal
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  // STANDARD ACTIVE CALLING SCREEN WITH INTEGRATED SANDBOX
+                  <div className="flex flex-col h-full justify-between space-y-4">
+                    
+                    {/* Float Minimize Button to go back to menus but keep connection active in background */}
                     <button 
-                      onClick={async () => {
-                        if (activeRideRecord?.id) {
-                          try {
-                            const rideRef = doc(db, 'calls', activeRideRecord.id);
-                            await setDoc(rideRef, { status: 'cancelled' }, { merge: true });
-                          } catch (err) {
-                            console.error("Erro ao cancelar chamada no Firestore:", err);
-                          }
-                        }
-                        setCallState('idle');
-                        setActiveRideRecord(null);
-                      }}
-                      className="w-14 h-14 bg-rose-600 hover:bg-rose-700 rounded-full flex items-center justify-center text-white active:scale-90 transition-transform shadow-xl hover:bg-rose-550"
+                      onClick={() => setCallState('idle')}
+                      className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 transition-colors rounded-full text-slate-300 z-50 hover:scale-105 active:scale-95"
+                      title="Minimizar Chamada (Guarda em Background)"
                     >
-                      <PhoneOff size={22} />
+                      <X size={16} />
                     </button>
-                  )}
-                </div>
+
+                    {/* Header Call state */}
+                    <div className="pt-8 space-y-1.5 shrink-0">
+                      <div className="w-14 h-14 bg-white/5 rounded-full mx-auto flex items-center justify-center border border-white/10 relative">
+                        <Phone className="text-amber-500 animate-pulse" size={24} />
+                        <div className="absolute inset-0 border-2 border-amber-500/40 rounded-full animate-ping" />
+                      </div>
+                      
+                      <h3 className="text-xs font-black uppercase tracking-widest text-slate-300 leading-tight">
+                        {activeRideRecord?.status === 'price_sent' ? 'Preço Proposto!' : 
+                         (activeRideRecord?.status === 'confirmed' || activeRideRecord?.status === 'active') ? 'Confirmado! A Caminho' :
+                         (activeRideRecord?.status === 'completed' || activeRideRecord?.status === 'cancelled' || activeRideRecord?.status === 'rejected' || activeRideRecord?.status === 'ignored') ? 'Chamada Concluída!' :
+                         callState === 'calling' ? (activeRideRecord?.forwarded ? 'Reencaminhando Chamada...' : 'A Chamar Motorista...') : 
+                         callState === 'connected' ? 'Em Chamada...' : 
+                         callState === 'pricing' ? 'Motorista a Escrever Preço...' : 
+                         callState === 'offer_received' ? 'Preço Proposto!' : 
+                         callState === 'ride_confirmed' ? 'Confirmado! A Caminho' : 'Chamada Concluída!'}
+                      </h3>
+
+                      {activeRideRecord?.forwarded && (
+                        <div className="bg-amber-500/20 border border-amber-500/40 px-2 py-0.5 rounded inline-block">
+                          <p className="text-[8px] font-black uppercase text-amber-500 tracking-tighter">Chamada Reencaminhada pela Central</p>
+                        </div>
+                      )}
+
+                      <p className="text-[9px] text-slate-400 font-mono tracking-widest uppercase">
+                        Tempo: {formatTime(secondsElapsed)}
+                      </p>
+                    </div>
+
+                    {/* Canal de Voz Ativa Dedicada Sincronizado (JIS) */}
+                    {(callState === 'connected' || callState === 'pricing' || activeRideRecord?.status === 'connected' || activeRideRecord?.status === 'pricing') && (
+                      <div className="bg-emerald-500/10 border border-emerald-500/20 p-2.5 rounded-2xl mx-2 shrink-0 space-y-1.5 animate-pulse">
+                        <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest block">🎙️ Comunicação de Voz Ativa Dedicada</span>
+                        <div className="flex items-center justify-center gap-1 h-5">
+                          {[1, 2, 3, 4, 5, 4, 3, 2, 1].map((h, i) => (
+                            <div 
+                              key={i} 
+                              className="w-1 bg-emerald-400 rounded-full animate-bounce" 
+                              style={{ 
+                                height: `${h * 4}px`, 
+                                animationDelay: `${i * 100}ms`,
+                                animationDuration: '0.8s'
+                              }} 
+                            />
+                          ))}
+                        </div>
+                        <span className="text-[7.5px] text-slate-400 uppercase tracking-wider block font-bold">Canal seguro de telefonema ativado com {activeRideRecord?.driverName}</span>
+                      </div>
+                    )}
+
+                    {/* Call details */}
+                    <div className="p-4 bg-white/5 rounded-2xl border border-white/5 space-y-2.5 mx-2 shrink-0">
+                      <div>
+                        <p className="text-[8px] text-slate-400 uppercase tracking-wider leading-none">Viatura Solicitada:</p>
+                        <p className="text-xs font-black uppercase tracking-tight text-white mt-1 leading-none">
+                          {activeRideRecord?.model} - <span className="text-brand-primary">{activeRideRecord?.plate}</span>
+                        </p>
+                      </div>
+
+                      <div className="h-px bg-white/10 my-1.5" />
+
+                      <div className="flex justify-between items-center">
+                        <div className="text-left">
+                          <p className="text-[8px] text-slate-400 uppercase tracking-wider leading-none">Motorista:</p>
+                          <p className="text-xs font-black uppercase text-white mt-1 leading-none">
+                            {activeRideRecord?.driverName}
+                          </p>
+                        </div>
+                        {(callState === 'offer_received' || activeRideRecord?.status === 'price_sent') && (negotiatedPrice > 0 || (activeRideRecord?.price && Number(activeRideRecord.price) > 0)) && (
+                          <div className="p-2 bg-emerald-500/10 border border-emerald-500/30 rounded-xl">
+                            <p className="text-[7.5px] uppercase font-bold text-slate-400 tracking-wider leading-none">Valor:</p>
+                            <h4 className="text-sm font-black text-emerald-400 leading-none mt-1 animate-pulse">
+                              {(negotiatedPrice || Number(activeRideRecord?.price || 0)).toLocaleString()} Kz
+                            </h4>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Call Controls and Actions */}
+                    <div className="pb-4 flex flex-col items-center gap-1.5 shrink-0">
+                      {(callState === 'offer_received' || activeRideRecord?.status === 'price_sent') ? (
+                        <div className="w-full space-y-2 px-2">
+                          <p className="text-[8px] text-slate-400 uppercase leading-none">Deseja confirmar o preço ou recusar esta corrida?</p>
+                          <div className="flex gap-2">
+                            <button 
+                              onClick={handlePassengerConfirmRide}
+                              className="flex-1 py-2.5 bg-[#10b981] hover:bg-emerald-600 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-emerald-500/20"
+                            >
+                              Confirmar
+                            </button>
+                            <button 
+                              onClick={handlePassengerCancelRide}
+                              className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-black text-xs uppercase tracking-wider rounded-xl"
+                            >
+                              Recusar
+                            </button>
+                          </div>
+                        </div>
+                      ) : (callState === 'ride_confirmed' || activeRideRecord?.status === 'confirmed' || activeRideRecord?.status === 'active') ? (
+                        <div className="w-full space-y-2 px-2">
+                          <p className="text-[8px] text-emerald-400 uppercase font-bold tracking-wide leading-none">Pedido Ativado & Monitorizado</p>
+                          <button 
+                            onClick={() => setCallState('idle')}
+                            className="w-full py-2.5 bg-white/10 hover:bg-white/15 text-white font-black text-[10px] uppercase tracking-wide rounded-xl border border-white/10"
+                          >
+                            Voltar ao Menu Principal
+                          </button>
+                        </div>
+                      ) : (
+                        /* General Terminate Trigger always accessible */
+                        <button 
+                          onClick={async () => {
+                            if (activeRideRecord?.id) {
+                              try {
+                                const rideRef = doc(db, 'calls', activeRideRecord.id);
+                                await setDoc(rideRef, { status: 'cancelled' }, { merge: true });
+                              } catch (err) {
+                                console.error("Erro ao cancelar chamada no Firestore:", err);
+                              }
+                            }
+                            setCallState('cancelled_by_driver');
+                          }}
+                          className="w-12 h-12 bg-rose-600 hover:bg-rose-700 rounded-full flex items-center justify-center text-white active:scale-90 transition-transform shadow-xl hover:bg-rose-550"
+                        >
+                          <PhoneOff size={20} />
+                        </button>
+                      )}
+                    </div>
+
+                  </div>
+                )}
 
               </div>
             )}
@@ -1509,7 +1984,7 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-[8.5px] font-black text-slate-400 uppercase tracking-widest">Destino Final</label>
+                      <label className="text-[8.5px] font-black text-slate-400 uppercase tracking-widest">Destinos Finais</label>
                       <input 
                         className="w-full p-2.5 bg-white/5 border border-white/10 rounded-xl outline-none text-white focus:border-white font-bold" 
                         placeholder="Ex: Mercado Central Luena" 
@@ -1539,7 +2014,7 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
                     className={`w-full py-3 rounded-xl font-black text-xs uppercase tracking-widest mt-4 flex items-center justify-center gap-2 ${currentTheme.btnClass}`}
                   >
                     <Phone size={12} />
-                    Pedir Preço (Ligar)
+                    PEDIR PREÇO (LIGAR)
                   </button>
                 </div>
               </div>
@@ -1677,12 +2152,26 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
                       {PRESETS_AVATARS.map((av, idx) => (
                         <div 
                           key={idx}
-                          onClick={() => {
+                          onClick={async () => {
                             setSelectedAvatar(av);
                             // Update local Profile state as well
                             const updated = { ...passengerProfile, photoUrl: av };
                             setPassengerProfile(updated);
                             localStorage.setItem('psm-passenger-profile', JSON.stringify(updated));
+                            // Also persist to Firestore
+                            try {
+                              if (passengerProfile?.id) {
+                                await updateDoc(doc(db, 'passengers', passengerProfile.id), { photoUrl: av });
+                              } else if (passengerProfile?.name) {
+                                const q = query(collection(db, 'passengers'), where('name', '==', passengerProfile.name));
+                                const snap = await getDocs(q);
+                                if (!snap.empty) {
+                                  await updateDoc(doc(db, 'passengers', snap.docs[0].id), { photoUrl: av });
+                                }
+                              }
+                            } catch (err) {
+                              console.error("Erro ao persistir avatar preferido no Firestore:", err);
+                            }
                           }}
                           className={`w-14 h-14 rounded-full overflow-hidden border-2 cursor-pointer transition-all ${
                             (passengerProfile?.photoUrl || selectedAvatar) === av ? 'border-amber-500 scale-110 shadow-lg' : 'border-transparent opacity-60'
@@ -1706,13 +2195,28 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
                               const file = e.target.files[0];
                               setIsUploading(true);
                               const reader = new FileReader();
-                              reader.onload = (event) => {
+                              reader.onload = async (event) => {
                                 if (event.target?.result) {
                                   const base64 = event.target.result as string;
                                   setSelectedAvatar(base64);
                                   const updated = { ...passengerProfile, photoUrl: base64 };
                                   setPassengerProfile(updated);
                                   localStorage.setItem('psm-passenger-profile', JSON.stringify(updated));
+                                  
+                                  // Also persist to Firestore
+                                  try {
+                                    if (passengerProfile?.id) {
+                                      await updateDoc(doc(db, 'passengers', passengerProfile.id), { photoUrl: base64 });
+                                    } else if (passengerProfile?.name) {
+                                      const q = query(collection(db, 'passengers'), where('name', '==', passengerProfile.name));
+                                      const snap = await getDocs(q);
+                                      if (!snap.empty) {
+                                        await updateDoc(doc(db, 'passengers', snap.docs[0].id), { photoUrl: base64 });
+                                      }
+                                    }
+                                  } catch (err) {
+                                    console.error("Erro ao persistir imagem carregada no Firestore:", err);
+                                  }
                                 }
                                 setIsUploading(false);
                                 setShowProfilePicModal(false);
@@ -1864,6 +2368,74 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
                       </div>
                     </div>
                   )}
+                </div>
+              </div>
+            )}
+
+            {/* MODAL 4: TERMOS E POLÍTICAS DE SEGURANÇA DO PASSAGEIRO (JIS) */}
+            {showTermsModal && (
+              <div className="absolute inset-0 bg-black/90 z-[50] flex flex-col justify-end">
+                <div className="bg-slate-900 border-t border-white/10 rounded-t-[24px] p-6 space-y-4 animate-slide-up text-white max-h-[85%] overflow-y-auto no-scrollbar">
+                  <div className="flex items-center justify-between border-b border-white/5 pb-3">
+                    <h3 className="text-xs font-black uppercase tracking-widest flex items-center gap-2">
+                       <ShieldCheck size={14} className="text-amber-500" />
+                       Termos de Segurança e Políticas de Uso
+                    </h3>
+                    <button 
+                      onClick={() => setShowTermsModal(false)}
+                      className="p-1 hover:bg-white/10 rounded text-slate-400"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+
+                  <div className="space-y-4 py-2 text-justify text-[10.5px] leading-relaxed text-slate-300">
+                    <p className="text-center text-[10px] text-amber-500 uppercase font-black tracking-wider">
+                      PSM COMERCIAL. (SU), LDA LUENA-MOXICO • SUPER TAXI
+                    </p>
+                    <p>
+                      <strong>1. Objeto e Âmbito:</strong> Estes Termos e Políticas regulam o uso do aplicativo de mobilidade <strong>SUPER Táxi</strong> na província do Moxico, especificamente em Luena. Ao registar-se, o passageiro assume o compromisso de respeitar as diretrizes de segurança física, operacional e de trânsito vigentes.
+                    </p>
+                    <p>
+                      <strong>2. Identidade e Perfil:</strong> O passageiro declara que os dados fornecidos no âmbito do cadastro (Nome, Idade e Contacto de Backup com prefixo obrigatório <strong>+244</strong>) são inteiramente verdadeiros e de sua autoria. É expressamente proibido o uso de informações de terceiros ou registo de perfis falsos.
+                    </p>
+                    <p>
+                      <strong>3. Segurança a Bordo (Integridade Física):</strong> O passageiro compromete-se a colaborar ativamente com as normas de urbanidade a bordo dos veículos da rede. Fica estritamente vedado o transporte de qualquer tipo de material inflamável, corrosivo, armas ou substâncias proibidas por lei.
+                    </p>
+                    <p>
+                      <strong>4. Validação do Token de Embarque:</strong> Como medida antifraude de mitigação de sinistrose e sequestros expressos, o passageiro compromete-se a validar presencialmente o seu <strong>Token de Embarque (Boarding Token)</strong> exclusivo com o motorista no momento de iniciar a corrida.
+                    </p>
+                    <p>
+                      <strong>5. Velocidade Limite de Segurança:</strong> De acordo com as diretrizes do operador TaxiControl (**JIS**), a velocidade de condução máxima em áreas residenciais é limitada inteligentemente por monitorização telemática por satélite a <strong>80km/h</strong>. Se houver violação por parte do condutor, é direito e dever do passageiro enviar uma participação imediata ao nosso departamento fiscal pelo painel de Reclamações.
+                    </p>
+                    <p>
+                      <strong>6. S.O.S de Pânico:</strong> O botão de Pânico S.O.S tem prioridade operacional absoluta de proteção física e envia coordenadas imediatas à central de fiscalização TaxiControl. A sua acção indevida e trotes poderão levar ao banimento unilateral da conta de passageiro de forma irrevogável.
+                    </p>
+                    <p>
+                      <strong>7. Privacidade e Geolocalização:</strong> De acordo com normativos angolanos de comunicações electrónicas, a sua geolocalização e telecomunicações são guardadas sob segurança estrita local e no Firestore para reencaminhamentos operativos, nunca sendo licenciados ou vendidos à terceiros.
+                    </p>
+                  </div>
+
+                  <div className="pt-2 border-t border-white/5 flex gap-3">
+                    <button
+                      onClick={() => {
+                        setAcceptedTerms(true);
+                        setShowTermsModal(false);
+                      }}
+                      className={`flex-1 py-3 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl font-black text-[10px] uppercase tracking-widest`}
+                    >
+                      Aceitar Termos
+                    </button>
+                    <button
+                      onClick={() => {
+                        setAcceptedTerms(false);
+                        setShowTermsModal(false);
+                      }}
+                      className="flex-1 py-3 bg-white/5 border border-white/10 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-white/10"
+                    >
+                      Rejeitar
+                    </button>
+                  </div>
                 </div>
               </div>
             )}

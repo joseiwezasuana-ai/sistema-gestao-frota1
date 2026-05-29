@@ -200,6 +200,7 @@ async function startServer() {
     text: string;
   }
   const aiCache = new Map<string, CacheEntry>();
+  let apiQuotaExhaustedUntil = 0;
 
   async function generateContentWithFallbackAndCache(
     cacheKey: string,
@@ -217,6 +218,12 @@ async function startServer() {
       return fallbackFn();
     }
 
+    // If we detected a recent Quota Exceeded error, bypass the API and return fallback instantly
+    if (Date.now() < apiQuotaExhaustedUntil) {
+      console.log(`[Gemini API] Quota currently marked as exhausted. Bypassing API to return high-fidelity fallback.`);
+      return fallbackFn();
+    }
+
     const ai = new GoogleGenAI({ 
       apiKey: key,
       httpOptions: {
@@ -226,25 +233,13 @@ async function startServer() {
       }
     });
 
-    // Tier 1: Try gemini-flash-latest (Mapping to the latest Gemini 1.5 Flash for better free tier quota)
-    try {
-      const response = await ai.models.generateContent({
-        model: "gemini-flash-latest",
-        contents: prompt
-      });
-
-      const resultText = response.text;
-      if (resultText) {
-        aiCache.set(cacheKey, { expiresAt: Date.now() + ttlMs, text: resultText });
-        return resultText;
-      }
-    } catch (error: any) {
-      console.warn(`[Gemini API Proxy / gemini-flash-latest Failed] Trying 3.1-flash-lite as fallback. Error:`, error?.message || error);
-      
-      // Tier 2: Try gemini-3.1-flash-lite (larger free tier quota limits)
+    // Tiered Check: Try gemini-3.5-flash (premium flagship), gemini-3.1-flash-lite, and gemini-flash-latest
+    const modelsToTry = ["gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"];
+    
+    for (const model of modelsToTry) {
       try {
         const response = await ai.models.generateContent({
-          model: "gemini-3.1-flash-lite",
+          model: model,
           contents: prompt
         });
 
@@ -253,12 +248,23 @@ async function startServer() {
           aiCache.set(cacheKey, { expiresAt: Date.now() + ttlMs, text: resultText });
           return resultText;
         }
-      } catch (liteError: any) {
-        console.warn(`[Gemini API Proxy / 1.5-flash-8b Failed] Returning hardcoded fallback. Error:`, liteError?.message || liteError);
+      } catch (error: any) {
+        const errMsg = error?.message || String(error);
+        const isQuotaExceeded = errMsg.includes("429") || errMsg.includes("RESOURCE_EXHAUSTED") || error?.status === "RESOURCE_EXHAUSTED" || error?.code === 429;
+        
+        if (isQuotaExceeded) {
+          console.warn(`[Gemini API / ${model} Failed (429 - Quota Exceeded)] Marking Gemini API as exhausted for the next 5 minutes.`);
+          // Lock API usage for 5 minutes
+          apiQuotaExhaustedUntil = Date.now() + 5 * 60 * 1000;
+          // Break the loop immediately - do not waste other retries
+          break;
+        } else {
+          console.warn(`[Gemini API Proxy / ${model} Failed]`, errMsg);
+        }
       }
     }
 
-    // Tier 3: Return beautiful operational hardcoded fallback
+    // Default: Return beautiful operational hardcoded fallback
     return fallbackFn();
   }
 
@@ -875,7 +881,7 @@ async function startServer() {
                 const key = process.env.GEMINI_API_KEY;
                 const hasGemini = key && key !== "undefined" && !key.includes("...");
 
-                if (hasGemini) {
+                if (hasGemini && Date.now() > apiQuotaExhaustedUntil) {
                   addBaileysLog("[Meta AI Dispatcher] Classificando pedido de corrida com Gemini 1.5 Flash...");
                   try {
                     const ai = new GoogleGenAI({ 
@@ -910,23 +916,35 @@ async function startServer() {
                     `;
 
                     let response;
-                    try {
-                      response = await ai.models.generateContent({
-                        model: "gemini-flash-latest",
-                        contents: prompt,
-                        config: {
-                          responseMimeType: "application/json"
+                    const modelsToTry = ["gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"];
+                    let success = false;
+                    for (const model of modelsToTry) {
+                      try {
+                        response = await ai.models.generateContent({
+                          model: model,
+                          contents: prompt,
+                          config: {
+                            responseMimeType: "application/json"
+                          }
+                        });
+                        if (response?.text) {
+                          success = true;
+                          break;
                         }
-                      });
-                    } catch (gLatestErr) {
-                      addBaileysLog(`[Meta AI Dispatcher Warning] gemini-flash-latest failed, trying 3.1-flash-lite...`);
-                      response = await ai.models.generateContent({
-                        model: "gemini-3.1-flash-lite",
-                        contents: prompt,
-                        config: {
-                          responseMimeType: "application/json"
+                      } catch (err: any) {
+                        const errMsg = err?.message || String(err);
+                        const isQuotaExceeded = errMsg.includes("429") || errMsg.includes("RESOURCE_EXHAUSTED") || err?.status === "RESOURCE_EXHAUSTED" || err?.code === 429;
+                        if (isQuotaExceeded) {
+                          apiQuotaExhaustedUntil = Date.now() + 5 * 60 * 1000;
+                          addBaileysLog(`[Meta AI Dispatcher 429] Quota Excedida. Ativando lock de 5 mins.`);
+                          break;
                         }
-                      });
+                        addBaileysLog(`[Meta AI Dispatcher Warning] Model ${model} failed: ${errMsg}`);
+                      }
+                    }
+
+                    if (!success || !response) {
+                      throw new Error("Todos os modelos cognitivos do Gemini falharam ou estão indisponíveis momentaneamente.");
                     }
 
                     const textOutput = response.text || "";
@@ -1388,7 +1406,7 @@ async function startServer() {
         const key = process.env.GEMINI_API_KEY;
         const hasGemini = key && key !== "undefined" && !key.includes("...");
 
-        if (hasGemini) {
+        if (hasGemini && Date.now() > apiQuotaExhaustedUntil) {
           addBaileysLog("[AI DISPATCHER] Analisando mensagem com inteligência artificial Gemini 1.5 Flash...");
           try {
             const ai = new GoogleGenAI({ 
@@ -1430,15 +1448,30 @@ async function startServer() {
                     responseMimeType: "application/json"
                   }
                 });
-              } catch (gLatestErr) {
+              } catch (gLatestErr: any) {
+                const latestMsg = gLatestErr?.message || String(gLatestErr);
+                if (latestMsg.includes("429") || latestMsg.includes("RESOURCE_EXHAUSTED")) {
+                  apiQuotaExhaustedUntil = Date.now() + 5 * 60 * 1000;
+                  addBaileysLog(`[AI DISPATCHER 429] Quota Excedida no primeiro modelo. Ativando lock.`);
+                  throw gLatestErr;
+                }
+                
                 addBaileysLog(`[AI DISPATCHER Warning] gemini-flash-latest failed, trying 3.1-flash-lite...`);
-                response = await ai.models.generateContent({
-                  model: "gemini-3.1-flash-lite",
-                  contents: prompt,
-                  config: {
-                    responseMimeType: "application/json"
+                try {
+                  response = await ai.models.generateContent({
+                    model: "gemini-3.1-flash-lite",
+                    contents: prompt,
+                    config: {
+                      responseMimeType: "application/json"
+                    }
+                  });
+                } catch (liteErr: any) {
+                  const liteMsg = liteErr?.message || String(liteErr);
+                  if (liteMsg.includes("429") || liteMsg.includes("RESOURCE_EXHAUSTED")) {
+                    apiQuotaExhaustedUntil = Date.now() + 5 * 60 * 1000;
                   }
-                });
+                  throw liteErr;
+                }
               }
 
             const textOutput = response.text || "";

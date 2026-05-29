@@ -106,6 +106,10 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    match /complaints/{complaintId} {
+      allow read, write: if true;
+    }
+
     match /whatsapp_messages/{msgId} {
       allow read, write: if isSignedIn();
     }
