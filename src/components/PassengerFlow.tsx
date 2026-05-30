@@ -418,6 +418,13 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
               message: 'A viagem foi confirmada pelo motorista. Desfrute da viagem.',
               visible: true
             });
+          } else if (data.status === 'arrived') {
+            playNotificationSound('ding');
+            setNotificationBanner({
+              title: 'Motorista Chegou!',
+              message: 'O seu motorista já está no ponto de recolha.',
+              visible: true
+            });
           } else if (data.status === 'completed') {
             playNotificationSound('success');
             setNotificationBanner({
@@ -507,7 +514,7 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
       // Update price even if it's 0
       setNegotiatedPrice(activeRideRecord.price !== undefined && activeRideRecord.price !== null ? activeRideRecord.price : 0);
       setCallState('offer_received');
-    } else if (dbStatus === 'confirmed' || dbStatus === 'active') {
+    } else if (dbStatus === 'confirmed' || dbStatus === 'active' || dbStatus === 'arrived') {
       if (activeRideRecord.price !== undefined && activeRideRecord.price !== null) setNegotiatedPrice(activeRideRecord.price);
       setCallState('ride_confirmed');
     } else if (dbStatus === 'completed') {

@@ -1315,6 +1315,18 @@ export default function DriverView({ user }: DriverViewProps) {
     }
   };
 
+  const handleDriverArrived = async () => {
+    if (!currentService?.id) return;
+    try {
+      const callRef = doc(db, "calls", currentService.id);
+      await updateDoc(callRef, { status: "arrived" });
+      alert("Passageiro notificado da sua chegada!");
+    } catch (err) {
+      console.error(err);
+      alert("Erro ao notificar chegada.");
+    }
+  };
+
   const finishService = async () => {
     if (!currentService) return;
 
@@ -1973,6 +1985,13 @@ export default function DriverView({ user }: DriverViewProps) {
                           <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest animate-pulse">VIAGEM DE SUPER TÁXI ATIVA</p>
                           <p className="text-[9px] text-slate-400 uppercase mt-0.5 font-bold">Conduza com segurança pelas estradas do Luena-Moxico.</p>
                         </div>
+                        <button
+                          onClick={handleDriverArrived}
+                          className="w-full py-4 bg-amber-500 hover:bg-amber-600 transition-all text-slate-950 font-black text-xs uppercase tracking-widest rounded-2xl flex items-center justify-center gap-2 shadow-xl shadow-amber-500/20 active:scale-95"
+                        >
+                          <MapPin size={14} />
+                          Cheguei ao Ponto de Recolha
+                        </button>
                         <button
                           onClick={finishService}
                           className="w-full py-4 bg-emerald-500 hover:bg-[#059669] transition-all text-slate-950 font-black text-xs uppercase tracking-widest rounded-2xl flex items-center justify-center gap-2 shadow-xl shadow-emerald-500/30 active:scale-95 animate-pulse"
