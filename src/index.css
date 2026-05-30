@@ -81,3 +81,21 @@
     }
   }
 }
+
+/* 
+  Melhoria de Legibilidade - Fontes e Letras Maiores para Telemóvel e Tablet (JIS)
+  Garante que nenhuma classe de texto minúscula fique ilegível em ecrãs pequenos.
+*/
+@media (max-width: 1024px) {
+  .text-\[7\.5px\] { font-size: 10.5px !important; }
+  .text-\[8px\] { font-size: 11px !important; }
+  .text-\[8\.5px\] { font-size: 11.5px !important; }
+  .text-\[9px\] { font-size: 12px !important; }
+  .text-\[9\.5px\] { font-size: 12.5px !important; }
+  .text-\[10px\] { font-size: 13px !important; }
+  .text-\[11px\] { font-size: 13.5px !important; }
+  .text-xs { font-size: 14px !important; }
+  .text-sm { font-size: 15px !important; }
+  .text-base { font-size: 16.5px !important; }
+}
+

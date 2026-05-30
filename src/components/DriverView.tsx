@@ -81,6 +81,27 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
+function parseDateSafely(val: any): Date {
+  if (!val) return new Date();
+  if (typeof val.toDate === "function") {
+    try {
+      return val.toDate();
+    } catch (e) {
+      console.warn("toDate failed:", e);
+    }
+  }
+  if (val.seconds !== undefined && val.seconds !== null) {
+    return new Date(Number(val.seconds) * 1000);
+  }
+  try {
+    const d = new Date(val);
+    if (!isNaN(d.getTime())) return d;
+  } catch (e) {
+    console.warn("new Date parsing failed:", e);
+  }
+  return new Date();
+}
+
 function MapUpdater({ center }: { center: [number, number] }) {
   const map = useMap();
   useEffect(() => {
@@ -233,21 +254,21 @@ export default function DriverView({ user }: DriverViewProps) {
     return () => unsubscribe();
   }, [user?.uid]);
 
-  // Listen for trip history
+  // Listen for trip history (including pending, active, and completed)
   useEffect(() => {
     if (!user?.name) return;
     const q = query(
       collection(db, "calls"),
       where("driverName", "==", user.name),
-      where("status", "==", "completed"),
-      orderBy("timestamp", "desc"),
-      limit(50),
+      where("status", "in", ["completed", "pending", "connected", "price_sent", "confirmed", "arrived", "active"]),
+      limit(100),
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      setTripHistory(
-        snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })),
-      );
+      const sorted = snapshot.docs
+        .map((doc) => ({ id: doc.id, ...doc.data() }))
+        .sort((a: any, b: any) => parseDateSafely(b.timestamp).getTime() - parseDateSafely(a.timestamp).getTime());
+      setTripHistory(sorted);
     }, (error) => handleFirestoreError(error, OperationType.GET, "calls"));
 
     return () => unsubscribe();
@@ -1314,6 +1335,18 @@ export default function DriverView({ user }: DriverViewProps) {
     }
   };
 
+  const forceUnlockScreen = async () => {
+    if (!window.confirm("Deseja forçar a saída desta tela de interação? O serviço atual será fechado no seu visor local de motorista, mas continuará arquivado no servidor.")) return;
+    try {
+      if (assignedVehicle?.id) {
+        await updateDoc(doc(db, "drivers", assignedVehicle.id), { status: "disponível" });
+      }
+    } catch (e) {
+      console.warn("Could not set driver back to disponível:", e);
+    }
+    setCurrentService(null);
+  };
+
   const handleDriverArrived = async () => {
     if (!currentService?.id) return;
     try {
@@ -1738,20 +1771,32 @@ export default function DriverView({ user }: DriverViewProps) {
                         SISTEMA OPERACIONAL PSM
                       </span>
                     </div>
-                    <span className={cn(
-                      "px-3 py-1 font-black text-[9.5px] rounded-full uppercase tracking-widest text-center",
-                      currentService.status === "pending" && "bg-amber-500 text-slate-950 animate-pulse",
-                      currentService.status === "connected" && "bg-amber-400 text-slate-950 animate-pulse",
-                      currentService.status === "price_sent" && "bg-blue-500 text-white",
-                      currentService.status === "confirmed" && "bg-emerald-500 text-white",
-                      currentService.status === "active" && "bg-emerald-500 text-white"
-                    )}>
-                      {currentService.status === "pending" && "📞 CHAMADA PENDENTE"}
-                      {currentService.status === "connected" && "🎙️ VOZ ESTABELECIDA"}
-                      {currentService.status === "price_sent" && "💬 PROPOSTA ENVIADA"}
-                      {currentService.status === "confirmed" && "✨ PREÇO CONFIRMADO"}
-                      {currentService.status === "active" && "🚀 VIAGEM EM CURSO"}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className={cn(
+                        "px-3 py-1 font-black text-[9.5px] rounded-full uppercase tracking-widest text-center",
+                        currentService.status === "pending" && "bg-amber-500 text-slate-950 animate-pulse",
+                        currentService.status === "connected" && "bg-amber-400 text-slate-950 animate-pulse",
+                        currentService.status === "price_sent" && "bg-blue-500 text-white",
+                        currentService.status === "confirmed" && "bg-emerald-500 text-white",
+                        currentService.status === "active" && "bg-emerald-500 text-white"
+                      )}>
+                        {currentService.status === "pending" && "📞 CHAMADA PENDENTE"}
+                        {currentService.status === "connected" && "🎙️ VOZ ESTABELECIDA"}
+                        {currentService.status === "price_sent" && "💬 PROPOSTA ENVIADA"}
+                        {currentService.status === "confirmed" && "✨ PREÇO CONFIRMADO"}
+                        {currentService.status === "active" && "🚀 VIAGEM EM CURSO"}
+                      </span>
+
+                      {/* BOTAO CHAVE DE ESCAPE Sair / Desbloquear (JIS) */}
+                      <button
+                        onClick={forceUnlockScreen}
+                        className="px-2.5 py-1 bg-rose-500/10 hover:bg-rose-600 transition-all text-[8.5px] text-rose-400 hover:text-white rounded-lg border border-rose-500/20 font-black uppercase tracking-wider flex items-center gap-1 active:scale-95"
+                        title="Caso a chamada fique bloqueada, clique para voltar ao menu principal"
+                      >
+                        <X size={10} />
+                        Sair (Desbloquear)
+                      </button>
+                    </div>
                   </div>
 
                   {/* Operational Status Display indicator */}
@@ -2040,30 +2085,6 @@ export default function DriverView({ user }: DriverViewProps) {
                       "e remove os botoes (Ligar Cliente Chat (APP)) esses botoes so aparece se o cliente sair da linha/offline." */}
                   <div className="pt-4 border-t border-dashed border-white/10 space-y-3 relative z-10">
                     
-                    {/* Simulator switch to mock offline passenger for easy verification */}
-                    <div className="flex items-center justify-between bg-white/5 p-3 rounded-2xl border border-white/5">
-                      <div className="text-left">
-                        <p className="text-[9px] font-black text-slate-300 uppercase tracking-wide">
-                          Simulador de Estado (Linha Web-Call)
-                        </p>
-                        <p className="text-[8px] text-slate-400 uppercase font-black">
-                          { (currentService.status === "active" || localPassengerOffline || currentService.passengerOffline) 
-                            ? "🔴 Passageiro saiu da linha / offline" 
-                            : "🟢 Passageiro na linha / online"
-                          }
-                        </p>
-                      </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input 
-                          type="checkbox" 
-                          checked={localPassengerOffline}
-                          onChange={(e) => setLocalPassengerOffline(e.target.checked)}
-                          className="sr-only peer" 
-                        />
-                        <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:width-5 after:transition-all peer-checked:bg-emerald-500"></div>
-                      </label>
-                    </div>
-
                     {(currentService.status === "active" || localPassengerOffline || currentService.passengerOffline) ? (
                       <div className="space-y-2.5 animate-fade-in">
                         <div className="bg-rose-500/10 border border-rose-500/20 p-3.5 rounded-2xl text-center">
@@ -2775,33 +2796,63 @@ export default function DriverView({ user }: DriverViewProps) {
                 </div>
                 <div className="space-y-3 pb-20">
                   {tripHistory.length > 0 ? (
-                    tripHistory.map((trip) => (
-                      <div
-                        key={trip.id}
-                        className="bg-white p-4 rounded-2xl border border-slate-100 flex items-center justify-between shadow-sm hover:border-brand-primary/20 transition-all group"
-                      >
-                        <div className="flex-1 min-w-0 pr-4">
-                          <p className="text-[11px] font-black text-slate-800 uppercase truncate">
-                            {trip.pickupAddress?.split(",")[0]} →{" "}
-                            {trip.destinationAddress?.split(",")[0]}
-                          </p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">
-                              {trip.completedAt
-                                ? format(new Date(trip.completedAt), "HH:mm")
-                                : "Hoje"}
-                            </span>
-                            <span className="w-1 h-1 bg-slate-200 rounded-full" />
-                            <p className="text-[10px] text-emerald-600 font-black italic">
-                              {(trip.price || 0).toLocaleString()} Kz
-                            </p>
+                    tripHistory.map((trip) => {
+                      const isCompleted = trip.status === "completed" || !trip.status;
+                      const isActive = trip.status === "active";
+                      const isPending = ["pending", "connected", "price_sent"].includes(trip.status);
+                      const isWaitingApproval = ["confirmed", "arrived"].includes(trip.status);
+
+                      return (
+                        <div
+                          key={trip.id}
+                          className={cn(
+                            "bg-white p-4 rounded-2xl border flex items-center justify-between shadow-sm transition-all group",
+                            isCompleted ? "border-slate-100 hover:border-brand-primary/20" : "border-amber-500/40 bg-amber-50/10 shadow-md shadow-amber-500/5 animate-pulse"
+                          )}
+                        >
+                          <div className="flex-1 min-w-0 pr-4">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <p className="text-[11px] font-black text-slate-800 uppercase truncate">
+                                {(trip.pickupAddress || trip.pickup || "Origem").split(",")[0]} →{" "}
+                                {(trip.destinationAddress || trip.destination || "Destino").split(",")[0]}
+                              </p>
+                              {!isCompleted && (
+                                <span className={cn(
+                                  "text-[7px] font-extrabold px-1.5 py-0.2 rounded uppercase tracking-widest",
+                                  isActive && "bg-amber-500 text-slate-950",
+                                  isPending && "bg-blue-500 text-white",
+                                  isWaitingApproval && "bg-emerald-500 text-white"
+                                )}>
+                                  {isActive && "Em Curso"}
+                                  {isPending && "Pendente / Chamando"}
+                                  {isWaitingApproval && "Confirmado / Chegou"}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 mt-1">
+                              <span className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">
+                                {trip.completedAt || trip.timestamp
+                                  ? format(parseDateSafely(trip.completedAt || trip.timestamp), "HH:mm")
+                                  : "Hoje"}
+                              </span>
+                              <span className="w-1 h-1 bg-slate-200 rounded-full" />
+                              <p className="text-[10px] text-emerald-600 font-black italic">
+                                {(trip.price || 0).toLocaleString()} Kz
+                              </p>
+                            </div>
+                          </div>
+                          <div className={cn(
+                            "p-1.5 rounded-lg transition-all",
+                            isCompleted && "bg-emerald-50 text-emerald-500 group-hover:bg-emerald-500 group-hover:text-white",
+                            isActive && "bg-amber-500 text-slate-950 font-black",
+                            isPending && "bg-blue-100 text-blue-600",
+                            isWaitingApproval && "bg-emerald-100 text-emerald-600"
+                          )}>
+                            {isCompleted ? <CheckCircle2 size={16} /> : (isActive ? <Zap size={14} className="animate-bounce" /> : <Clock size={14} />)}
                           </div>
                         </div>
-                        <div className="p-1.5 bg-emerald-50 text-emerald-500 rounded-lg group-hover:bg-emerald-500 group-hover:text-white transition-all">
-                          <CheckCircle2 size={16} />
-                        </div>
-                      </div>
-                    ))
+                      );
+                    })
                   ) : (
                     <div className="py-12 text-center opacity-40">
                       <History
@@ -3446,7 +3497,7 @@ export default function DriverView({ user }: DriverViewProps) {
                       <p className="text-xs font-black text-white leading-relaxed">
                         "{activePanicAlert.dispatchMessage}"
                       </p>
-                      <p className="text-[9px] text-slate-400">Enviada às: {activePanicAlert.dispatchedAt ? format(new Date(activePanicAlert.dispatchedAt), 'HH:mm') : 'Agora'}</p>
+                      <p className="text-[9px] text-slate-400">Enviada às: {activePanicAlert.dispatchedAt ? format(parseDateSafely(activePanicAlert.dispatchedAt), 'HH:mm') : 'Agora'}</p>
                     </div>
                   ) : (
                     <div className="bg-slate-950/50 p-4 rounded-2xl border border-slate-850 text-center">

@@ -152,6 +152,7 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
   // Call Sequence states
   // 'idle' | 'calling' | 'connected' | 'pricing' | 'offer_received' | 'ride_confirmed' | 'ride_completed' | 'cancelled_by_driver'
   const [callState, setCallState] = useState<'idle' | 'calling' | 'connected' | 'pricing' | 'offer_received' | 'ride_confirmed' | 'ride_completed' | 'cancelled_by_driver'>('idle');
+  const [isCallMinimized, setIsCallMinimized] = useState<boolean>(false);
   const [negotiatedPrice, setNegotiatedPrice] = useState<number>(0);
   const [passengerRating, setPassengerRating] = useState<number>(5);
   const [secondsElapsed, setSecondsElapsed] = useState(0);
@@ -168,50 +169,79 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
   }>({ title: '', message: '', visible: false });
 
   // Pure Web Audio API Premium Sound Generators - 100% Reliable Offline Sound Chimes
-  const playNotificationSound = (type: 'ding' | 'success' | 'alert') => {
+  const playNotificationSound = (type: 'ding' | 'success' | 'alert', extTitle?: string, extBody?: string) => {
     try {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       if (!AudioCtx) return;
       const ctx = new AudioCtx();
       
       if (type === 'ding') {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(880, ctx.currentTime); 
-        osc.frequency.exponentialRampToValueAtTime(1320, ctx.currentTime + 0.12); 
-        gain.gain.setValueAtTime(0.12, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.45);
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.45);
+        const playDing = (delay: number) => {
+          const oscNode = ctx.createOscillator();
+          const gainNode = ctx.createGain();
+          oscNode.type = 'sine';
+          oscNode.frequency.setValueAtTime(987.77, ctx.currentTime + delay); // B5 note
+          oscNode.frequency.exponentialRampToValueAtTime(1318.51, ctx.currentTime + delay + 0.15); // E6 note
+          
+          gainNode.gain.setValueAtTime(0.25, ctx.currentTime + delay);
+          gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 0.55);
+          oscNode.connect(gainNode);
+          gainNode.connect(ctx.destination);
+          oscNode.start(ctx.currentTime + delay);
+          oscNode.stop(ctx.currentTime + delay + 0.6);
+        };
+        
+        playDing(0);
+        playDing(0.22); // play double-chime to awaken passenger actively
       } else if (type === 'success') {
         const freqs = [523.25, 659.25, 783.99, 1046.50]; 
         freqs.forEach((freq, i) => {
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.type = 'triangle';
-          osc.frequency.value = freq;
-          gain.gain.setValueAtTime(0.08, ctx.currentTime + i * 0.08);
-          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35 + i * 0.08);
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-          osc.start(ctx.currentTime + i * 0.08);
-          osc.stop(ctx.currentTime + 0.45 + i * 0.08);
+          const oscNode = ctx.createOscillator();
+          const gainNode = ctx.createGain();
+          oscNode.type = 'triangle';
+          oscNode.frequency.value = freq;
+          gainNode.gain.setValueAtTime(0.18, ctx.currentTime + i * 0.08); // elevated volume level
+          gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4 + i * 0.08);
+          oscNode.connect(gainNode);
+          gainNode.connect(ctx.destination);
+          oscNode.start(ctx.currentTime + i * 0.08);
+          oscNode.stop(ctx.currentTime + 0.5 + i * 0.08);
         });
       } else if (type === 'alert') {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(440, ctx.currentTime);
-        osc.frequency.linearRampToValueAtTime(330, ctx.currentTime + 0.18);
-        gain.gain.setValueAtTime(0.08, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.25);
+        const oscNode = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+        oscNode.type = 'sawtooth';
+        oscNode.frequency.setValueAtTime(440, ctx.currentTime);
+        oscNode.frequency.linearRampToValueAtTime(330, ctx.currentTime + 0.18);
+        gainNode.gain.setValueAtTime(0.15, ctx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+        oscNode.connect(gainNode);
+        gainNode.connect(ctx.destination);
+        oscNode.start();
+        oscNode.stop(ctx.currentTime + 0.3);
+      }
+
+      // External native device push notifications for when tab is minimized or in background (JIS - Despertar Passageiro)
+      if (extTitle && extBody && 'Notification' in window) {
+        if (Notification.permission === 'granted') {
+          try {
+            new Notification(`🚕 TAXICONTROL: ${extTitle}`, {
+              body: extBody,
+              icon: '/favicon.ico',
+              tag: 'super-taxi-passenger',
+              requireInteraction: true
+            });
+          } catch (e) {
+            console.warn("Standard notification failed, trying backup ServiceWorker notification:", e);
+            navigator.serviceWorker?.ready.then(registration => {
+              registration.showNotification(`🚕 TAXICONTROL: ${extTitle}`, {
+                body: extBody,
+                icon: '/favicon.ico',
+                tag: 'super-taxi-passenger'
+              });
+            });
+          }
+        }
       }
     } catch (err) {
       console.warn("Could not play notification sound:", err);
@@ -272,6 +302,14 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
 
   useEffect(() => {
     loadFleetData();
+    // Request notification permission to actively wake up passenger when backgrounded (JIS)
+    if ('Notification' in window && Notification.permission === 'default') {
+      try {
+        Notification.requestPermission();
+      } catch (err) {
+        console.warn("Notification.requestPermission is not supported here:", err);
+      }
+    }
   }, []);
 
   // Load saved active call on mount to prevent state drop upon unmounting / tab switching
@@ -399,41 +437,44 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
         const prevStatus = prevStatusRef.current;
         if (prevStatus && prevStatus !== data.status) {
           if (data.status === 'connected') {
-            playNotificationSound('ding');
+            playNotificationSound('ding', 'Chamada Atendida!', 'O motorista está em linha. Fale diretamente no canal de voz segura.');
             setNotificationBanner({
               title: 'Chamada Atendida!',
               message: 'O motorista está em linha. Fale diretamente no canal de voz segura.',
               visible: true
             });
           } else if (data.status === 'price_sent') {
-            playNotificationSound('ding');
+            playNotificationSound('ding', 'Proposta Recebida!', `O motorista propôs o preço de ${data.price?.toLocaleString()} Kz para a sua viagem.`);
             setNotificationBanner({
               title: 'Proposta Recebida!',
               message: `O motorista propôs o preço de ${data.price?.toLocaleString()} Kz para a sua viagem.`,
               visible: true
             });
           } else if (data.status === 'confirmed' || data.status === 'active') {
-            playNotificationSound('success');
+            playNotificationSound('success', 'Viagem Ativada!', 'A viagem foi confirmada pelo motorista. Desfrute da viagem.');
             setNotificationBanner({
               title: 'Viagem Ativada!',
               message: 'A viagem foi confirmada pelo motorista. Desfrute da viagem.',
               visible: true
             });
           } else if (data.status === 'arrived') {
-            playNotificationSound('ding');
+            playNotificationSound('ding', 'Motorista Chegou!', 'O seu motorista já está no ponto de recolha esperando por si.');
             setNotificationBanner({
               title: 'Motorista Chegou!',
               message: 'O seu motorista já está no ponto de recolha.',
               visible: true
             });
           } else if (data.status === 'completed') {
-            playNotificationSound('success');
+            playNotificationSound('success', 'Viagem Fechada!', 'O motorista encerrou com sucesso. Obrigado por viajar connosco.');
             setNotificationBanner({
               title: 'Viagem Fechada!',
               message: 'O motorista encerrou com sucesso. Obrigado por viajar connosco.',
               visible: true
             });
           }
+        }
+        if (data.status !== prevStatusRef.current && prevStatusRef.current !== undefined && prevStatusRef.current !== null) {
+          setIsCallMinimized(false);
         }
         prevStatusRef.current = data.status;
         
@@ -1126,20 +1167,20 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
                 initial={{ opacity: 0, y: -20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
-                className="absolute top-4 left-4 right-4 bg-slate-950/95 border border-amber-500/50 p-3 rounded-2xl shadow-xl z-[100] flex items-start gap-3 backdrop-blur-md"
+                className="absolute top-4 left-4 right-4 bg-slate-900 border-2 border-amber-500 p-4.5 sm:p-5 rounded-2xl shadow-2xl z-[100] flex items-start gap-4 backdrop-blur-md animate-pulse"
               >
-                <div className="p-1.5 bg-amber-500/10 rounded-xl text-amber-400 shrink-0">
-                  <Sparkles size={14} className="animate-pulse" />
+                <div className="p-2.5 bg-amber-500/20 rounded-xl text-amber-400 shrink-0 shadow-inner">
+                  <Sparkles size={20} className="animate-ping" />
                 </div>
                 <div className="text-left leading-tight min-w-0 flex-1">
-                  <h5 className="text-[10px] font-black text-amber-500 uppercase tracking-widest">{notificationBanner.title}</h5>
-                  <p className="text-[9.5px] text-slate-200 mt-0.5 leading-snug font-bold">{notificationBanner.message}</p>
+                  <h5 className="text-xs sm:text-sm font-black text-amber-500 uppercase tracking-widest">{notificationBanner.title}</h5>
+                  <p className="text-xs sm:text-sm text-slate-100 mt-1 leading-snug font-bold">{notificationBanner.message}</p>
                 </div>
                 <button 
                   onClick={() => setNotificationBanner(prev => ({ ...prev, visible: false }))}
-                  className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors shrink-0"
+                  className="p-1.5 text-slate-400 hover:text-white rounded-xl hover:bg-white/10 transition-colors shrink-0 active:scale-95"
                 >
-                  <X size={12} />
+                  <X size={16} />
                 </button>
               </motion.div>
             )}
@@ -1478,6 +1519,7 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
                                                activeRideRecord.status === 'pricing' ? 'pricing' :
                                                activeRideRecord.status === 'connected' ? 'connected' : 'calling';
                               setCallState(nextState);
+                              setIsCallMinimized(false);
                             }}
                             className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 transition-colors text-slate-950 font-black text-[9.5px] uppercase tracking-wider rounded-lg shrink-0"
                           >
@@ -1552,7 +1594,7 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
                       )}
 
                       {/* TOKEN DE EMBARQUE dinâmico (Segurança TAXICONTROL) */}
-                      {callState === 'ride_confirmed' && activeRideRecord?.boardingToken && (
+                      {(callState === 'ride_confirmed' || (activeRideRecord && ['confirmed', 'active', 'arrived'].includes(activeRideRecord.status))) && activeRideRecord?.boardingToken && (
                         <div className="bg-emerald-500/10 border border-emerald-500/30 p-5 rounded-2xl space-y-2 text-center shadow-lg shadow-emerald-500/5">
                           <div className="flex items-center justify-center gap-2">
                             <div className="w-2 h-2 bg-emerald-500 rounded-full animate-ping" />
@@ -1699,7 +1741,7 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
             </div>
 
             {/* Simulated Phone Call Interface Overlay Popup inside smartphone */}
-            {callState !== 'idle' && (
+            {callState !== 'idle' && !isCallMinimized && (
               <div className="absolute inset-0 bg-slate-950/95 z-50 p-6 flex flex-col justify-between overflow-y-auto no-scrollbar animate-fade-in text-white text-center">
                 
                 {callState === 'ride_completed' ? (
@@ -1840,7 +1882,7 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
                     
                     {/* Float Minimize Button to go back to menus but keep connection active in background */}
                     <button 
-                      onClick={() => setCallState('idle')}
+                      onClick={() => setIsCallMinimized(true)}
                       className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 transition-colors rounded-full text-slate-300 z-50 hover:scale-105 active:scale-95"
                       title="Minimizar Chamada (Guarda em Background)"
                     >
@@ -1956,13 +1998,26 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
                           </div>
                         </div>
                       ) : (callState === 'ride_confirmed' || activeRideRecord?.status === 'confirmed' || activeRideRecord?.status === 'active') ? (
-                        <div className="w-full space-y-2 px-2">
-                          <p className="text-[8px] text-emerald-400 uppercase font-bold tracking-wide leading-none">Pedido Ativado & Monitorizado</p>
+                        <div className="w-full space-y-3 px-2">
+                          <p className="text-xs text-emerald-400 uppercase font-black tracking-widest leading-none">Pedido Ativo & Confirmado</p>
+                          
+                          {activeRideRecord?.boardingToken && (
+                            <div className="bg-emerald-500/10 border border-emerald-500/30 p-4 rounded-2xl text-center space-y-2 my-2 shadow-lg shadow-emerald-500/5 animate-pulse">
+                              <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest block">Código de Validação / Token</span>
+                              <div className="text-4xl font-black text-white tracking-[0.2em] font-mono leading-none py-1">
+                                {activeRideRecord.boardingToken}
+                              </div>
+                              <p className="text-[9.5px] text-slate-300 font-bold uppercase tracking-tight">
+                                Mostre este código ao motorista para carregar/validar o seu embarque!
+                              </p>
+                            </div>
+                          )}
+
                           <button 
-                            onClick={() => setCallState('idle')}
-                            className="w-full py-2.5 bg-white/10 hover:bg-white/15 text-white font-black text-[10px] uppercase tracking-wide rounded-xl border border-white/10"
+                            onClick={() => setIsCallMinimized(true)}
+                            className="w-full py-3 bg-white/10 hover:bg-white/15 text-white font-black text-xs uppercase tracking-wide rounded-xl border border-white/10 active:scale-95 transition-transform"
                           >
-                            Voltar ao Menu Principal
+                            Minimizar & Voltar ao Menu
                           </button>
                         </div>
                       ) : (

@@ -587,6 +587,254 @@ export default function AccountingManager({ user }: { user?: any }) {
     }
   };
 
+  const generateWeeklyConsolidatedPDF = () => {
+    try {
+      const doc = new jsPDF();
+      
+      // Get current week Monday and Sunday
+      const today = new Date();
+      const day = today.getDay();
+      const mondayOffset = day === 0 ? -6 : 1 - day;
+      
+      const monday = new Date(today);
+      monday.setDate(today.getDate() + mondayOffset);
+      monday.setHours(0, 0, 0, 0);
+      
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+      sunday.setHours(23, 59, 59, 999);
+
+      const formatDatePT = (d: Date) => {
+        return d.toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      };
+
+      const dateRangeStr = `Período: ${formatDatePT(monday)} a ${formatDatePT(sunday)}`;
+
+      // Filter revenues for the current week
+      const weeklyRevenues = finalizedRevenues.filter((rev: any) => {
+        if (!rev.date && !rev.timestamp) return false;
+        let itemDate: Date;
+        if (rev.date) {
+          itemDate = new Date(rev.date);
+          if (isNaN(itemDate.getTime()) && rev.timestamp) {
+            itemDate = rev.timestamp.seconds ? new Date(rev.timestamp.seconds * 1000) : new Date(rev.timestamp);
+          }
+        } else {
+          itemDate = rev.timestamp.seconds ? new Date(rev.timestamp.seconds * 1000) : new Date(rev.timestamp);
+        }
+        return itemDate >= monday && itemDate <= sunday;
+      });
+
+      // Calculate aggregates
+      let totalBruto = 0;
+      let totalDinheiro = 0;
+      let totalTransferencias = 0;
+      let totalTPA = 0;
+      let totalDespesas = 0;
+      let totalLiquidoPSM = 0;
+
+      weeklyRevenues.forEach((rev: any) => {
+        const cashValue = Number(rev.breakdown?.cash || 0);
+        const transValue = Number(rev.breakdown?.transfer || 0);
+        const tpaValue = Number(rev.breakdown?.tpa || 0);
+        const expenseValue = Number(rev.breakdown?.expenses || 0);
+
+        totalDinheiro += cashValue;
+        totalTransferencias += transValue;
+        totalTPA += tpaValue;
+        totalDespesas += expenseValue;
+        totalBruto += (cashValue + transValue + tpaValue);
+        totalLiquidoPSM += Number(rev.amount || 0);
+      });
+
+      // Cover / Header Info
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(18);
+      doc.setTextColor(15, 23, 42); // slate-900
+      doc.text("PSM COMERCIAL. (SU), LDA LUENA-MOXICO", 105, 20, { align: "center" });
+      
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.setTextColor(100, 116, 139); // slate-500
+      doc.text("SISTEMA TAXICONTROL - HUB DE CONTABILIDADE E AUDITORIA", 105, 26, { align: "center" });
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(12);
+      doc.setTextColor(220, 100, 20); // highlight/brand color
+      doc.text("RESUMO CONSOLIDADO DE RECEITA DE RENDAS (SEMANA ATUAL)", 105, 34, { align: "center" });
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(15, 23, 42);
+      doc.text(dateRangeStr, 105, 41, { align: "center" });
+
+      doc.setDrawColor(226, 232, 240); // slate-200
+      doc.line(15, 46, 195, 46);
+
+      // Add small summary boxes (styled visually)
+      doc.setFillColor(248, 250, 252); // slate-50 background shadow
+      doc.rect(15, 50, 180, 28, "F");
+      doc.setDrawColor(226, 232, 240);
+      doc.rect(15, 50, 180, 28, "S");
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.setTextColor(71, 85, 105);
+      doc.text("RENDIMENTO BRUTO DA SEMANA:", 20, 56);
+      doc.setFont("helvetica", "normal");
+      doc.text(`Dinheiro: ${totalDinheiro.toLocaleString()} Kz`, 20, 62);
+      doc.text(`Transferências: ${totalTransferencias.toLocaleString()} Kz`, 20, 68);
+      doc.text(`TPA: ${totalTPA.toLocaleString()} Kz`, 20, 74);
+
+      doc.setFont("helvetica", "bold");
+      doc.text("DEDUÇÕES & CUSTOS:", 95, 56);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(225, 29, 72); // rose-600
+      doc.text(`Despesas Oficinas/Outras: -${totalDespesas.toLocaleString()} Kz`, 95, 62);
+
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(15, 23, 42);
+      doc.text("FALHAMENTOS & AJUSTES:", 95, 68);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(71, 85, 105);
+      doc.text("Zero pendentes ou desvios", 95, 74);
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(5, 150, 105); // emerald-600
+      doc.text("TOTAL LÍQUIDO PSM:", 152, 58);
+      doc.setFontSize(13);
+      doc.text(`${totalLiquidoPSM.toLocaleString()} Kz`, 152, 67);
+      
+      doc.setFontSize(6.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text("100% Auditado", 152, 73);
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(15, 23, 42);
+      doc.text(`Lista de Recebimentos Realizados (Qtd: ${weeklyRevenues.length} fechos de caixa):`, 15, 87);
+
+      // Table data
+      const tableRows = weeklyRevenues.map((rev: any) => {
+        const cashValue = Number(rev.breakdown?.cash || 0);
+        const transValue = Number(rev.breakdown?.transfer || 0);
+        const tpaValue = Number(rev.breakdown?.tpa || 0);
+        const expenseValue = Number(rev.breakdown?.expenses || 0);
+        const totalNetRow = Number(rev.amount || 0);
+
+        return [
+          rev.prefix || rev.vehiclePlate || "N/A",
+          rev.driverName || "Motorista Oficial",
+          rev.date || "N/A",
+          `${cashValue.toLocaleString()} Kz`,
+          `${transValue.toLocaleString()} Kz`,
+          `${tpaValue.toLocaleString()} Kz`,
+          `-${expenseValue.toLocaleString()} Kz`,
+          `${totalNetRow.toLocaleString()} Kz`
+        ];
+      });
+
+      // Add a final total row
+      tableRows.push([
+        "TOTAIS",
+        "",
+        "",
+        `${totalDinheiro.toLocaleString()} Kz`,
+        `${totalTransferencias.toLocaleString()} Kz`,
+        `${totalTPA.toLocaleString()} Kz`,
+        `-${totalDespesas.toLocaleString()} Kz`,
+        `${totalLiquidoPSM.toLocaleString()} Kz`
+      ]);
+
+      autoTable(doc, {
+        startY: 92,
+        head: [["Pref.", "Motorista", "Data Fecho", "Dinheiro", "Transf.", "TPA", "Desp. / Ofic.", "Líq. PSM"]],
+        body: tableRows,
+        theme: "striped",
+        headStyles: { fillColor: [15, 23, 42], fontSize: 8.5 },
+        columnStyles: {
+          0: { cellWidth: 12 },
+          1: { cellWidth: 32 },
+          2: { cellWidth: 19 },
+          3: { cellWidth: 23 },
+          4: { cellWidth: 23 },
+          5: { cellWidth: 20 },
+          6: { cellWidth: 23 },
+          7: { cellWidth: 26 },
+        },
+        styles: { fontSize: 8, cellPadding: 2.5 },
+        didParseCell: (data) => {
+          // highlight totals row at the bottom
+          if (data.row.index === tableRows.length - 1) {
+            data.cell.styles.fontStyle = 'bold';
+            data.cell.styles.fillColor = [241, 245, 249];
+            if (data.column.index === 7) {
+              data.cell.styles.textColor = [5, 150, 105]; // Emerald
+            }
+          }
+        }
+      });
+
+      // Signatures at the bottom
+      const finalY = (doc as any).lastAutoTable.finalY || 120;
+      
+      if (finalY + 45 > 280) {
+        doc.addPage();
+        // and draw lines relative to top of new page
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(9);
+        doc.setTextColor(15, 23, 42);
+        
+        doc.line(20, 50, 85, 50);
+        doc.text("O Contabilista Oficial", 52, 55, { align: "center" });
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8);
+        doc.text("Assinatura e Carimbo", 52, 60, { align: "center" });
+
+        doc.line(125, 50, 190, 50);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(9);
+        doc.text("José Iweza Suana", 157, 55, { align: "center" });
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8);
+        doc.text("Administrador Geral / Fleet Operator", 157, 60, { align: "center" });
+      } else {
+        doc.line(20, finalY + 28, 85, finalY + 28);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(9);
+        doc.text("O Contabilista Oficial", 52, finalY + 33, { align: "center" });
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8);
+        doc.text("Assinatura e Carimbo", 52, finalY + 38, { align: "center" });
+
+        doc.line(125, finalY + 28, 190, finalY + 28);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(9);
+        doc.text("José Iweza Suana", 157, finalY + 33, { align: "center" });
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8);
+        doc.text("Administrador Geral / Fleet Operator", 157, finalY + 38, { align: "center" });
+      }
+
+      // Footer
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184); // slate-400
+      doc.text(
+        `Documento oficial consolidado e assinado digitalmente pelo TaxiControl em ${new Date().toLocaleString()}`,
+        105,
+        288,
+        { align: "center" },
+      );
+
+      doc.save(`PSM_Consolidado_Rendas_Semana_${formatDatePT(monday)}.pdf`);
+    } catch (err) {
+      console.error("Erro ao gerar PDF Consolidado:", err);
+      alert("Erro ao carregar renderizador PDF ou processar dados de receita.");
+    }
+  };
+
   const handleResetAccountingCycle = async () => {
     if (!isAdmin) return;
     if (
@@ -1007,12 +1255,21 @@ export default function AccountingManager({ user }: { user?: any }) {
               <FileText size={14} />
               Redactor Faturas
             </button>
-            {isAdmin && (
-              <div className="flex items-center gap-2 ml-auto pl-2">
+            <div className="flex items-center gap-2 ml-auto pl-2">
+              <button
+                onClick={generateWeeklyConsolidatedPDF}
+                className="px-4 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest bg-emerald-50 hover:bg-emerald-100 text-emerald-700 transition-all flex items-center gap-2 border border-emerald-150 shadow-sm active:scale-95"
+                title="Descarregar PDF consolidado com o total de rendas fechadas na semana atual"
+              >
+                <Download size={11} />
+                Resumo Semanal (PDF)
+              </button>
+
+              {isAdmin && (
                 <button
                   onClick={handleResetAccountingCycle}
                   disabled={isProcessing}
-                  className="px-4 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest bg-rose-50 text-rose-600 hover:bg-rose-100 transition-all flex items-center gap-2 border border-rose-100"
+                  className="px-4 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest bg-rose-50 text-rose-600 hover:bg-rose-100 transition-all flex items-center gap-2 border border-rose-100 active:scale-95"
                 >
                   {isProcessing ? (
                     <Loader2 size={12} className="animate-spin" />
@@ -1021,8 +1278,8 @@ export default function AccountingManager({ user }: { user?: any }) {
                   )}
                   Zerar Hub
                 </button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
       </div>
