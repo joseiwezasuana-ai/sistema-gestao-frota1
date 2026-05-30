@@ -794,7 +794,7 @@ export default function DriverView({ user }: DriverViewProps) {
     const cash = Number(revenueDetails.cash) || 0;
     const transfer = Number(revenueDetails.transfer) || 0;
     const expenses = Number(revenueDetails.expenses) || 0;
-    const total = tpa + cash + transfer + passengerRidesTotal - expenses;
+    const total = tpa + cash + transfer - expenses;
 
     if (total <= 0 && expenses === 0) {
       alert("Por favor, insira um valor de renda ou uma despesa.");
@@ -821,7 +821,7 @@ export default function DriverView({ user }: DriverViewProps) {
           cash,
           transfer,
           expenses,
-          appRides: passengerRidesTotal,
+          appRides: 0,
         },
         description: revenueDetails.description,
         date: editingRevenueId 
@@ -859,110 +859,72 @@ export default function DriverView({ user }: DriverViewProps) {
   useEffect(() => {
     if (!user?.uid) return;
 
-    // Simplificar a query para evitar problemas de índices compostos (FAILED_PRECONDITION)
+    // Listen to active and terminal statuses to handle cancellations and completions in real-time
     const q = query(
       collection(db, "calls"),
-      where("status", "in", ["pending", "connected", "price_sent", "confirmed", "active"])
+      where("status", "in", ["pending", "connected", "price_sent", "confirmed", "arrived", "active", "completed", "cancelled", "rejected", "ignored"])
     );
 
     const handleSync = (snapshot: any) => {
-      // Filtrar chamadas atribuídas a este motorista localmente para evitar erros de índice do Firestore
-      const activeDocs = snapshot.docs.filter((doc: any) => {
-        if (hiddenCallIdsRef.current.includes(doc.id)) return false;
-        
-        // Se já é o serviço atual ativo sendo monitorado, mantemos na lista para evitar quedas por re-render/resubscribe
-        if (currentServiceRef.current?.id && doc.id === currentServiceRef.current.id) return true;
-        
+      const cleanName = (n: string) => {
+        if (!n) return "";
+        return n
+          .toLowerCase()
+          .replace(/\s*\(.*?\)\s*/g, '')
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .replace(/\s+/g, ' ')
+          .trim();
+      };
+
+      // Try tracking current active service first or locate newest valid pending service
+      const ourMatchedDoc = snapshot.docs.find((doc: any) => {
+        if (currentServiceRef.current?.id && doc.id === currentServiceRef.current.id) {
+          return true;
+        }
+
         const d = doc.data();
-        
-        // Clean names helper (removes accents, parenthesis like (Admin), simplifies spaces)
-        const cleanName = (n: string) => {
-          if (!n) return "";
-          return n
-            .toLowerCase()
-            .replace(/\s*\(.*?\)\s*/g, '')
-            .normalize("NFD")
-            .replace(/[\u0300-\u036f]/g, "")
-            .replace(/\s+/g, ' ')
-            .trim();
-        };
+        if (["completed", "cancelled", "rejected", "ignored"].includes(d.status)) return false;
+        if (hiddenCallIdsRef.current.includes(doc.id)) return false;
 
         const callDriverNameClean = cleanName(d.driverName || "");
         const loggedDriverNameClean = cleanName(user?.name || "");
         const isNameMatch = callDriverNameClean !== "" && loggedDriverNameClean !== "" && callDriverNameClean === loggedDriverNameClean;
-        
+
         return (
           isNameMatch ||
-          (d.driverId && user?.uid && d.driverId === user.uid) ||
+          (d.driverId && d.driverId === user?.uid) ||
           (assignedVehicle?.id && d.driverId === assignedVehicle.id) ||
           (assignedVehicle?.driverId && d.driverId === assignedVehicle.driverId)
         );
       });
-      
-      // Ordenar por timestamp desc localmente
-      activeDocs.sort((a: any, b: any) => {
-        const tA = a.data().timestamp || "";
-        const tB = b.data().timestamp || "";
-        return tB.localeCompare(tA);
-      });
 
-      if (activeDocs.length > 0) {
-        const callDoc = activeDocs[0];
-        const callData = { id: callDoc.id, ...callDoc.data() };
-        if (callData.status === "pending") {
-          console.log("Serviço pendente detectado:", callData);
-          setCurrentService(callData);
-          setShowNotification(true);
-        } else if (callData.status === "connected") {
-          console.log("Serviço conectado detectado:", callData);
-          setCurrentService(callData);
-          setShowNotification(true);
-        } else if (callData.status === "price_sent") {
-          console.log("Proposta de preço enviada, a aguardar passageiro:", callData);
-          setCurrentService(callData);
-          setShowNotification(true);
-        } else if (callData.status === "confirmed") {
-          console.log("Corrida confirmada pelo passageiro:", callData);
-          setCurrentService(callData);
-          setShowNotification(true);
-        } else if (callData.status === "active") {
-          setCurrentService(callData);
-          setShowNotification(false);
-        } else {
+      if (ourMatchedDoc) {
+        const callData = { id: ourMatchedDoc.id, ...ourMatchedDoc.data() };
+        
+        if (["completed", "cancelled", "rejected", "ignored"].includes(callData.status)) {
+          // Clean up state on cancellation or completion
+          if (callData.status === "cancelled") {
+            console.log("Passenger cancelled or ended call, informing driver");
+            setLastCancelledService(callData);
+          }
           setCurrentService(null);
           setShowNotification(false);
+        } else {
+          // Sync current active service state
+          console.log("Serviço sincronizado:", callData);
+          setCurrentService(callData);
+          
+          if (["pending", "connected", "price_sent", "confirmed"].includes(callData.status)) {
+            setShowNotification(true);
+          } else {
+            setShowNotification(false);
+          }
         }
       } else {
-        // Para evitar race conditions e desconexões prematuras ao limpar o estado
-        if (currentServiceRef.current?.id) {
-          getDoc(doc(db, "calls", currentServiceRef.current.id)).then((docSnap) => {
-            if (docSnap.exists()) {
-              const statusStr = docSnap.data().status;
-              if (["completed", "cancelled", "rejected", "ignored"].includes(statusStr)) {
-                if (statusStr === "cancelled") {
-                  console.log("Passenger cancelled or ended call, informing driver");
-                  setLastCancelledService({
-                    id: docSnap.id,
-                    ...docSnap.data()
-                  });
-                }
-                setCurrentService(null);
-                setShowNotification(false);
-              } else {
-                console.log("A chamada ainda está ativa no banco de dados, mantendo visual em cache para resre-alinhamento.");
-              }
-            } else {
-              setCurrentService(null);
-              setShowNotification(false);
-            }
-          }).catch(() => {
-            setCurrentService(null);
-            setShowNotification(false);
-          });
-        } else {
-          setCurrentService(null);
-          setShowNotification(false);
-        }
+        // Clear if not found
+        setCurrentService(null);
+        setShowNotification(false);
       }
     };
 
@@ -1311,6 +1273,43 @@ export default function DriverView({ user }: DriverViewProps) {
       }
     } catch (error: any) {
       alert("Erro ao recusar chamada no sistema: " + (error?.message || String(error)));
+      console.error(error);
+    }
+  };
+
+  const cancelService = async () => {
+    if (!currentService) return;
+    if (!window.confirm("Deseja mesmo cancelar esta corrida? O passageiro será notificado e a corrida será cancelada no sistema.")) return;
+
+    try {
+      // Unblock UI immediately
+      setShowNotification(false);
+      const serviceId = currentService.id;
+      if (serviceId) {
+        hiddenCallIdsRef.current.push(serviceId);
+      }
+      setCurrentService(null);
+
+      if (serviceId) {
+        const callRef = doc(db, "calls", serviceId);
+        await updateDoc(callRef, {
+          status: "cancelled",
+          cancelledAt: serverTimestamp(),
+          responseHistory: arrayUnion({
+            action: "cancelled_by_driver",
+            timestamp: new Date().toISOString(),
+            driverId: user?.uid || "unknown",
+            driverName: user?.name || "Driver",
+          }),
+        });
+      }
+
+      if (assignedVehicle?.id) {
+        await updateDoc(doc(db, "drivers", assignedVehicle.id), { status: "disponível" });
+      }
+      alert("Corrida cancelada com sucesso!");
+    } catch (error: any) {
+      alert("Erro ao cancelar corrida: " + (error?.message || String(error)));
       console.error(error);
     }
   };
@@ -1961,12 +1960,39 @@ export default function DriverView({ user }: DriverViewProps) {
 
                     {currentService.status === "confirmed" && (
                       <div className="space-y-4">
-                        <div className="bg-emerald-500/10 border border-[#10b981]/30 p-4 rounded-2xl text-center space-y-1">
-                          <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">
-                            PREÇO ACORDADO E APENAS FALTA EMBARCAR!
+                        <div className="bg-blue-500/10 border border-blue-500/20 p-4 rounded-2xl text-center space-y-1">
+                          <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest">
+                            A CAMINHO DO PASSAGEIRO
                           </p>
                           <p className="text-[9px] text-slate-400 uppercase font-bold">
-                            Carregue no botão para dar início à viagem no Luena.
+                            Desloque-se ao ponto de encontro acordado no Luena.
+                          </p>
+                        </div>
+                        <button
+                          onClick={handleDriverArrived}
+                          className="w-full py-4 bg-amber-500 hover:bg-amber-600 transition-all text-slate-950 font-black text-xs uppercase tracking-widest rounded-2xl flex items-center justify-center gap-2 shadow-xl shadow-amber-500/20 active:scale-95"
+                        >
+                          <MapPin size={14} />
+                          Cheguei ao Ponto de Recolha
+                        </button>
+                        <button
+                          onClick={cancelService}
+                          className="w-full py-3 bg-rose-600/15 hover:bg-rose-600 hover:text-white border border-rose-500/20 rounded-2xl text-xs uppercase font-black tracking-widest transition-colors flex items-center justify-center gap-1.5"
+                        >
+                          <XCircle size={14} />
+                          Cancelar Serviço
+                        </button>
+                      </div>
+                    )}
+
+                    {currentService.status === "arrived" && (
+                      <div className="space-y-4">
+                        <div className="bg-emerald-500/10 border border-[#10b981]/30 p-4 rounded-2xl text-center space-y-1">
+                          <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">
+                            MOTORISTA NO LOCAL
+                          </p>
+                          <p className="text-[9px] text-slate-400 uppercase font-bold">
+                            Passageiro notificado! Inicie a viagem quando ele embarcar.
                           </p>
                         </div>
                         <button
@@ -1975,6 +2001,13 @@ export default function DriverView({ user }: DriverViewProps) {
                         >
                           <PhoneCall size={14} />
                           INICIAR CORRIDA ACORDADA ({currentService.price?.toLocaleString()} Kz)
+                        </button>
+                        <button
+                          onClick={cancelService}
+                          className="w-full py-3 bg-rose-600/15 hover:bg-rose-600 hover:text-white border border-rose-500/20 rounded-2xl text-xs uppercase font-black tracking-widest transition-colors flex items-center justify-center gap-1.5"
+                        >
+                          <XCircle size={14} />
+                          Cancelar Serviço
                         </button>
                       </div>
                     )}
@@ -1986,18 +2019,18 @@ export default function DriverView({ user }: DriverViewProps) {
                           <p className="text-[9px] text-slate-400 uppercase mt-0.5 font-bold">Conduza com segurança pelas estradas do Luena-Moxico.</p>
                         </div>
                         <button
-                          onClick={handleDriverArrived}
-                          className="w-full py-4 bg-amber-500 hover:bg-amber-600 transition-all text-slate-950 font-black text-xs uppercase tracking-widest rounded-2xl flex items-center justify-center gap-2 shadow-xl shadow-amber-500/20 active:scale-95"
-                        >
-                          <MapPin size={14} />
-                          Cheguei ao Ponto de Recolha
-                        </button>
-                        <button
                           onClick={finishService}
                           className="w-full py-4 bg-emerald-500 hover:bg-[#059669] transition-all text-slate-950 font-black text-xs uppercase tracking-widest rounded-2xl flex items-center justify-center gap-2 shadow-xl shadow-emerald-500/30 active:scale-95 animate-pulse"
                         >
                           <CheckCircle2 size={14} />
                           Encerrar Viagem & Carregar Renda ({currentService.price?.toLocaleString()} Kz)
+                        </button>
+                        <button
+                          onClick={cancelService}
+                          className="w-full py-3 bg-rose-600/15 hover:bg-rose-600 hover:text-white border border-rose-500/20 rounded-2xl text-xs uppercase font-black tracking-widest transition-colors flex items-center justify-center gap-1.5"
+                        >
+                          <XCircle size={14} />
+                          Cancelar Serviço
                         </button>
                       </div>
                     )}
@@ -2596,16 +2629,44 @@ export default function DriverView({ user }: DriverViewProps) {
                               </div>
                             )}
 
-                            {/* CONFIRMED state: Passenger approved the offered price */}
+                            {/* CONFIRMED state: Driver heading to pickup */}
                             {currentService.status === "confirmed" && (
+                              <div className="space-y-3">
+                                <div className="bg-blue-500/10 border border-blue-500/20 p-4 rounded-xl flex flex-col items-center text-center gap-1">
+                                  <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest">
+                                    A CAMINHO DO PASSAGEIRO
+                                  </p>
+                                  <p className="text-[8.5px] text-slate-400 uppercase">
+                                    Desloque-se ao ponto de encontro acordado no Luena.
+                                  </p>
+                                </div>
+                                <button
+                                  onClick={handleDriverArrived}
+                                  className="w-full py-4 bg-amber-500 hover:bg-amber-600 transition-all text-slate-950 font-black text-[11px] uppercase tracking-widest rounded-xl flex items-center justify-center gap-1.5 shadow-lg shadow-amber-500/20 active:scale-95"
+                                >
+                                  <MapPin size={12} />
+                                  Cheguei ao Ponto de Recolha
+                                </button>
+                                <button
+                                  onClick={cancelService}
+                                  className="w-full py-2.5 bg-rose-600/15 hover:bg-rose-600 text-white border border-rose-500/20 rounded-xl text-[10px] uppercase font-black tracking-widest transition-colors flex items-center justify-center gap-1"
+                                >
+                                  <XCircle size={12} />
+                                  Cancelar Serviço
+                                </button>
+                              </div>
+                            )}
+
+                            {/* ARRIVED state: Driver at pickup waiting for passenger */}
+                            {currentService.status === "arrived" && (
                               <div className="space-y-3">
                                 <div className="bg-emerald-500/10 border border-[#10b981]/30 p-4 rounded-xl flex flex-col items-center text-center gap-1">
                                   <div className="w-1.5 h-1.5 bg-[#10b981] rounded-full animate-ping" />
                                   <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">
-                                    Corrida Confirmada pelo Passageiro!
+                                    MOTORISTA NO LOCAL
                                   </p>
                                   <p className="text-[8.5px] text-slate-400 uppercase">
-                                    O preço de {currentService.price?.toLocaleString()} Kz foi acordado e validado de forma segura!
+                                    O preço de {currentService.price?.toLocaleString()} Kz foi acordado. Inicie a viagem quando o passageiro embarcar.
                                   </p>
                                 </div>
                                 <button
@@ -2614,6 +2675,13 @@ export default function DriverView({ user }: DriverViewProps) {
                                 >
                                   <PhoneCall size={12} />
                                   INICIAR CORRIDA ACORDADA ({currentService.price?.toLocaleString()} Kz)
+                                </button>
+                                <button
+                                  onClick={cancelService}
+                                  className="w-full py-2.5 bg-rose-600/15 hover:bg-rose-600 text-white border border-rose-500/20 rounded-xl text-[10px] uppercase font-black tracking-widest transition-colors flex items-center justify-center gap-1"
+                                >
+                                  <XCircle size={12} />
+                                  Cancelar Serviço
                                 </button>
                               </div>
                             )}
@@ -2643,6 +2711,14 @@ export default function DriverView({ user }: DriverViewProps) {
                                 >
                                   <Users size={12} className="text-slate-500" />
                                   DELEGAR / ESCALAR MOTORISTA
+                                </button>
+
+                                <button
+                                  onClick={cancelService}
+                                  className="w-full py-2.5 bg-rose-600/15 hover:bg-rose-600 text-white border border-rose-500/20 rounded-xl text-[10px] uppercase font-black tracking-widest transition-colors flex items-center justify-center gap-1"
+                                >
+                                  <XCircle size={12} />
+                                  Cancelar Serviço
                                 </button>
                               </div>
                             )}
@@ -3085,45 +3161,7 @@ export default function DriverView({ user }: DriverViewProps) {
                     </div>
                   </div>
 
-                  {/* Always show the uneditable Passenger rides total field */}
-                  <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-2xl space-y-3">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[9.5px] font-black text-emerald-800 uppercase tracking-widest">
-                        💾 Corridas do Aplicativo (Sucesso Automático)
-                      </label>
-                      <span className="text-[8px] bg-emerald-500/10 text-emerald-600 px-2 py-0.5 rounded-full font-black uppercase tracking-wider">
-                        Não Editável
-                      </span>
-                    </div>
-                    
-                    <input
-                      type="text"
-                      readOnly
-                      disabled
-                      value={`${(passengerRidesTotal || 0).toLocaleString()} Kz`}
-                      className="w-full px-4 py-3 bg-emerald-50/50 border border-emerald-100 rounded-xl text-xs font-black text-emerald-800 focus:outline-none font-mono"
-                    />
 
-                    {passengerRidesConfirmed.length > 0 && (
-                      <div className="space-y-1.5 max-h-32 overflow-y-auto pr-1 mt-1 custom-scrollbar">
-                        {passengerRidesConfirmed.map((ride, idx) => (
-                          <div key={idx} className="bg-white/80 border border-emerald-500/10 p-2 rounded-xl flex items-center justify-between">
-                            <div className="min-w-0 flex-1">
-                              <p className="text-[9px] font-black text-slate-800 uppercase truncate">{ride.passengerName}</p>
-                              <p className="text-[8px] text-slate-500 font-bold uppercase truncate">{ride.pickup} ➔ {ride.destination}</p>
-                            </div>
-                            <span className="text-[10px] font-black text-emerald-600 shrink-0 font-mono">
-                              {(Number(ride.price) || 0).toLocaleString()} Kz
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    <p className="text-[8px] text-emerald-600 font-bold uppercase">
-                      Este total é sincronizado automaticamente e integrado na sua prestação de contas de hoje.
-                    </p>
-                  </div>
 
                   {pendingRevenues.length > 0 && !editingRevenueId ? (
                     <div className="bg-amber-50 border border-amber-200 p-5 rounded-2xl flex flex-col items-center text-center space-y-3">
@@ -3262,8 +3300,7 @@ export default function DriverView({ user }: DriverViewProps) {
                               {(
                                 (Number(revenueDetails?.tpa) || 0) +
                                 (Number(revenueDetails?.cash) || 0) +
-                                (Number(revenueDetails?.transfer) || 0) +
-                                passengerRidesTotal -
+                                (Number(revenueDetails?.transfer) || 0) -
                                 (Number(revenueDetails?.expenses) || 0)
                               ).toLocaleString()}{" "}
                               Kz
@@ -4005,6 +4042,16 @@ export default function DriverView({ user }: DriverViewProps) {
                       </span>
                       <span className="text-[11px] font-black text-slate-800 tracking-wider">
                         {currentService.customerPhone || currentService.passengerPhone}
+                      </span>
+                    </div>
+                  )}
+                  {currentService?.passengerCount !== undefined && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                        Passageiros
+                      </span>
+                      <span className="text-[11px] font-black text-slate-800 font-mono">
+                        {currentService.passengerCount} {currentService.passengerCount === 1 ? "Passageiro" : "Passageiros"}
                       </span>
                     </div>
                   )}

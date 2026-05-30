@@ -145,6 +145,7 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
   const [pickup, setPickup] = useState('');
   const [destination, setDestination] = useState('');
   const [selectedVehicleId, setSelectedVehicleId] = useState('');
+  const [passengerCount, setPassengerCount] = useState<number>(1);
   const [availableVehicles, setAvailableVehicles] = useState<VehicleOption[]>([]);
   const [isLoadingFleet, setIsLoadingFleet] = useState(false);
 
@@ -449,7 +450,7 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
           // Update price even if it's 0 to reflect the state accurately
           setNegotiatedPrice(data.price || 0); 
           setCallState('offer_received');
-        } else if (data.status === 'confirmed' || data.status === 'active') {
+        } else if (data.status === 'confirmed' || data.status === 'arrived' || data.status === 'active') {
           if (data.price !== undefined && data.price !== null) setNegotiatedPrice(data.price);
           setCallState('ride_confirmed');
         } else if (data.status === 'completed') {
@@ -700,6 +701,7 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
         passengerProvince: passengerProfile ? passengerProfile.province : 'Luena, Moxico',
         pickup,
         destination,
+        passengerCount,
         customerName: passengerProfile ? passengerProfile.name : 'Passageiro de Teste',
         customerPhone: passengerProfile?.backupPhone || passengerProfile?.phone || '+244 9XX XXX XXX',
         pickupAddress: pickup,
@@ -724,6 +726,7 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
         price: null,
         pickup, 
         destination, 
+        passengerCount,
         boardingToken,
         customerName: passengerProfile ? passengerProfile.name : 'Passageiro de Teste',
         customerPhone: passengerProfile?.backupPhone || passengerProfile?.phone || '+244 9XX XXX XXX',
@@ -960,6 +963,12 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
                   <span className="text-slate-500 uppercase font-black text-[9px]">Destino Final:</span>
                   <span className="text-slate-900 dark:text-white font-black truncate max-w-[200px]">{activeRideRecord.destination}</span>
                 </div>
+                {activeRideRecord.passengerCount !== undefined && (
+                  <div className="flex justify-between border-b border-amber-500/15 pb-1">
+                    <span className="text-slate-500 uppercase font-black text-[9px]">Qtd. Passageiros:</span>
+                    <span className="text-slate-900 dark:text-white font-black font-mono">{activeRideRecord.passengerCount} {activeRideRecord.passengerCount === 1 ? 'Passageiro' : 'Passageiros'}</span>
+                  </div>
+                )}
                 {activeRideRecord.boardingToken && (
                   <div className="flex justify-between bg-emerald-500/10 p-2 rounded border border-emerald-500/20">
                     <span className="text-emerald-500 uppercase font-black text-[9px]">Token p/ Validar:</span>
@@ -1110,6 +1119,32 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
           : `w-full rounded-3xl overflow-hidden relative flex flex-col shadow-2xl ${currentTheme.bgClass} transition-colors duration-300`
         }>
           
+          {/* TOAST NOTIFICATION BANNER SINCRO SUPER TAXI (JIS) - FLUTUANTE COM Z-INDEX IMPEDIDOR DE OVERLAY COVERING */}
+          <AnimatePresence>
+            {notificationBanner.visible && (
+              <motion.div 
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="absolute top-4 left-4 right-4 bg-slate-950/95 border border-amber-500/50 p-3 rounded-2xl shadow-xl z-[100] flex items-start gap-3 backdrop-blur-md"
+              >
+                <div className="p-1.5 bg-amber-500/10 rounded-xl text-amber-400 shrink-0">
+                  <Sparkles size={14} className="animate-pulse" />
+                </div>
+                <div className="text-left leading-tight min-w-0 flex-1">
+                  <h5 className="text-[10px] font-black text-amber-500 uppercase tracking-widest">{notificationBanner.title}</h5>
+                  <p className="text-[9.5px] text-slate-200 mt-0.5 leading-snug font-bold">{notificationBanner.message}</p>
+                </div>
+                <button 
+                  onClick={() => setNotificationBanner(prev => ({ ...prev, visible: false }))}
+                  className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors shrink-0"
+                >
+                  <X size={12} />
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+          
           {/* Passenger App Interactive Header */}
           <header className="p-4 border-b border-white/5 flex items-center justify-between bg-black/20 shrink-0">
               <div className="flex items-center gap-2">
@@ -1139,26 +1174,6 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
             {/* SCREEN SCROLLABLE AREA */}
             <div className={`flex-1 overflow-y-auto no-scrollbar relative ${isPublicApp ? 'p-6 sm:p-10 max-w-2xl mx-auto w-full' : 'p-5'}`}>
               
-              {/* TOAST NOTIFICATION BANNER SINCRO SUPER TAXI (JIS) */}
-              <AnimatePresence>
-                {notificationBanner.visible && (
-                  <motion.div 
-                    initial={{ opacity: 0, y: -20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -20 }}
-                    className="absolute top-2 left-4 right-4 bg-slate-900 border border-amber-500/35 p-3 rounded-2xl shadow-2xl z-50 flex items-start gap-3 backdrop-blur-md"
-                  >
-                    <div className="p-1.5 bg-amber-500/10 rounded-xl text-amber-500 shrink-0">
-                      <Sparkles size={14} className="animate-pulse" />
-                    </div>
-                    <div className="text-left leading-tight min-w-0">
-                      <h5 className="text-[10px] font-black text-amber-500 uppercase tracking-widest">{notificationBanner.title}</h5>
-                      <p className="text-[9.5px] text-slate-300 font-bold mt-0.5 leading-snug">{notificationBanner.message}</p>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
               {!passengerProfile ? (
                 /* PROFILE CREATION OR PORTAL (REGISTER / LOGIN Toggle) */
                 <div className="space-y-4 py-2">
@@ -1725,6 +1740,12 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
                           <span className="text-slate-400 font-bold uppercase">Destino:</span>
                           <span className="text-white font-black truncate max-w-[150px]">{activeRideRecord?.destination || "Aeroporto do Luena"}</span>
                         </div>
+                        {activeRideRecord?.passengerCount !== undefined && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-slate-400 font-bold uppercase">Passageiros:</span>
+                            <span className="text-white font-black font-mono">{activeRideRecord?.passengerCount}</span>
+                          </div>
+                        )}
 
                         <div className="h-px bg-white/10 my-1 border-dashed" />
 
@@ -1835,6 +1856,7 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
                       
                       <h3 className="text-xs font-black uppercase tracking-widest text-slate-300 leading-tight">
                         {activeRideRecord?.status === 'price_sent' ? 'Preço Proposto!' : 
+                         activeRideRecord?.status === 'arrived' ? '✨ O MOTORISTA CHEGOU!' :
                          (activeRideRecord?.status === 'confirmed' || activeRideRecord?.status === 'active') ? 'Confirmado! A Caminho' :
                          (activeRideRecord?.status === 'completed' || activeRideRecord?.status === 'cancelled' || activeRideRecord?.status === 'rejected' || activeRideRecord?.status === 'ignored') ? 'Chamada Concluída!' :
                          callState === 'calling' ? (activeRideRecord?.forwarded ? 'Reencaminhando Chamada...' : 'A Chamar Motorista...') : 
@@ -1894,6 +1916,14 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
                             {activeRideRecord?.driverName}
                           </p>
                         </div>
+                        {activeRideRecord?.passengerCount !== undefined && (
+                          <div className="text-right">
+                            <p className="text-[8px] text-slate-400 uppercase tracking-wider leading-none">Qtd. Passageiros:</p>
+                            <p className="text-xs font-black uppercase text-slate-200 mt-1 leading-none font-mono">
+                              {activeRideRecord?.passengerCount} {activeRideRecord?.passengerCount === 1 ? 'Pass' : 'Pass'}
+                            </p>
+                          </div>
+                        )}
                         {(callState === 'offer_received' || activeRideRecord?.status === 'price_sent') && (negotiatedPrice > 0 || (activeRideRecord?.price && Number(activeRideRecord.price) > 0)) && (
                           <div className="p-2 bg-emerald-500/10 border border-emerald-500/30 rounded-xl">
                             <p className="text-[7.5px] uppercase font-bold text-slate-400 tracking-wider leading-none">Valor:</p>
@@ -1998,6 +2028,29 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
                         value={destination}
                         onChange={e => setDestination(e.target.value)}
                       />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[8.5px] font-black text-slate-400 uppercase tracking-widest">Número de Passageiros</label>
+                      <div className="flex items-center gap-3">
+                        <button 
+                          type="button"
+                          onClick={() => setPassengerCount(prev => Math.max(1, prev - 1))}
+                          className="w-10 h-10 bg-white/5 border border-white/10 hover:bg-white/10 transition-colors text-white font-black rounded-xl text-sm flex items-center justify-center active:scale-95"
+                        >
+                          -
+                        </button>
+                        <div className="flex-1 bg-white/5 border border-white/10 rounded-xl py-2.5 text-center font-black text-sm text-white font-mono">
+                          {passengerCount} {passengerCount === 1 ? 'Passageiro' : 'Passageiros'}
+                        </div>
+                        <button 
+                          type="button"
+                          onClick={() => setPassengerCount(prev => Math.min(6, prev + 1))}
+                          className="w-10 h-10 bg-white/5 border border-white/10 hover:bg-white/10 transition-colors text-white font-black rounded-xl text-sm flex items-center justify-center active:scale-95"
+                        >
+                          +
+                        </button>
+                      </div>
                     </div>
 
                     <div className="space-y-1">
