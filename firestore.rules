@@ -17,7 +17,7 @@ service cloud.firestore {
              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == role;
     }
 
-    function isAdmin() { return (isSignedIn() && authEmail() == "joseiwezasuana@gmail.com") || hasRole("admin"); }
+    function isAdmin() { return (isSignedIn() && authEmail() == "joseiwezasuana@gmail.com") || hasRole("admin") || hasRole("gerente"); }
     
     match /passengers/{passengerId} {
       allow read, write: if true; // Relaxed for prototype
@@ -39,7 +39,7 @@ service cloud.firestore {
              data.uid == request.auth.uid &&
              data.email is string && data.email.size() <= 100 &&
              data.name is string && data.name.size() <= 100 &&
-             data.role in ['driver', 'operator', 'contabilista', 'mecanico', 'admin'] &&
+             data.role in ['driver', 'operator', 'contabilista', 'mecanico', 'admin', 'gerente'] &&
              (data.createdAt is string || data.createdAt is timestamp);
     }
 

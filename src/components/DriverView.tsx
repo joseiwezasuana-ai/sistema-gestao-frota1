@@ -202,6 +202,7 @@ export default function DriverView({ user }: DriverViewProps) {
     setShowNotification(false);
   };
   const [tripHistory, setTripHistory] = useState<any[]>([]);
+  const [showEndShiftModal, setShowEndShiftModal] = useState(false);
 
   const [aiAdvice, setAiAdvice] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
@@ -1196,6 +1197,17 @@ export default function DriverView({ user }: DriverViewProps) {
     }
   };
 
+  const confirmEndShift = () => {
+    setIsOnline(false);
+    localStorage.removeItem("driver_is_online");
+    setCurrentService(null);
+    setShowNotification(false);
+    if (assignedVehicle?.id) {
+      updateDoc(doc(db, "drivers", assignedVehicle.id), { status: "indisponível" }).catch(e => console.warn(e));
+    }
+    setShowEndShiftModal(false);
+  };
+
   const handleStartShift = async () => {
     if (!isOnline) {
       setAiLoading(true);
@@ -1213,13 +1225,7 @@ export default function DriverView({ user }: DriverViewProps) {
         setAiLoading(false);
       }
     } else {
-      setIsOnline(false);
-      localStorage.removeItem("driver_is_online");
-      setCurrentService(null);
-      setShowNotification(false);
-      if (assignedVehicle?.id) {
-        updateDoc(doc(db, "drivers", assignedVehicle.id), { status: "indisponível" }).catch(e => console.warn(e));
-      }
+      setShowEndShiftModal(true);
     }
   };
 
@@ -1752,6 +1758,80 @@ export default function DriverView({ user }: DriverViewProps) {
                     Cancelar
                   </button>
                 </motion.div>
+              )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+              {showEndShiftModal && (
+                <div className="fixed inset-0 z-55 flex items-center justify-center p-4">
+                  <motion.div 
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    onClick={() => setShowEndShiftModal(false)}
+                    className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm"
+                  />
+                  
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                    className="relative w-full max-w-md bg-white rounded-[2rem] border border-slate-100 p-6 shadow-2xl z-[60] text-center"
+                  >
+                    <div className="w-14 h-14 bg-red-50 text-red-650 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-red-100 shadow-sm">
+                      <Power size={24} />
+                    </div>
+                    
+                    <h3 className="text-base font-black text-slate-900 uppercase tracking-tight italic mb-1">
+                      Encerramento de Turno
+                    </h3>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-4">
+                      {user?.name || "Motorista"} • SUPER TÁXI
+                    </p>
+
+                    <p className="text-[11px] text-slate-500 leading-relaxed mb-5">
+                      Confirme o resumo das suas operações de hoje antes de terminar a sua atividade na plataforma.
+                    </p>
+
+                    {/* Resumo da Renda */}
+                    <div className="grid grid-cols-2 gap-3 mb-6">
+                      <div className="bg-slate-50 border border-slate-100 p-4 rounded-2xl text-left">
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Viagens Realizadas</span>
+                        <span className="text-lg font-black text-slate-800">{todayCompletedTrips.length}</span>
+                        <span className="text-[8px] text-emerald-650 font-bold block mt-0.5">Completadas hoje</span>
+                      </div>
+                      <div className="bg-slate-50 border border-slate-100 p-4 rounded-2xl text-left">
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Renda do Dia</span>
+                        <span className="text-lg font-black text-emerald-650 italic">
+                          {todayTotalRevenue.toLocaleString()} <span className="text-xs">Kz</span>
+                        </span>
+                        <span className="text-[8px] text-slate-400 font-bold block mt-0.5">Faturação total</span>
+                      </div>
+                    </div>
+
+                    <div className="bg-amber-50 border border-amber-200/50 p-3 rounded-xl mb-6 text-left">
+                      <p className="text-[9.5px] text-amber-800 leading-normal font-medium">
+                        Ao pressionar o encerramento, o seu estado passará para <b className="text-rose-600">INDISPONÍVEL</b> na rota ativa do Luena e o seu veículo será libertado na central de escalas.
+                      </p>
+                    </div>
+
+                    <div className="space-y-2.5">
+                      <button 
+                        onClick={confirmEndShift}
+                        className="w-full bg-rose-600 hover:bg-rose-700 text-white py-3.5 rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-lg shadow-rose-650/10 active:scale-95 transition-all flex items-center justify-center gap-2"
+                      >
+                        <Power size={12} /> Confirmar & Terminar Turno
+                      </button>
+                      
+                      <button 
+                        onClick={() => setShowEndShiftModal(false)}
+                        className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all"
+                      >
+                        Voltar para o Turno
+                      </button>
+                    </div>
+                  </motion.div>
+                </div>
               )}
             </AnimatePresence>
 

@@ -41,7 +41,7 @@ export default function ProfileSetup({ user, onComplete }: ProfileSetupProps) {
       try {
         let results: { id: string, name: string }[] = [];
 
-        if (validationRole === 'admin' || validationRole === 'operator' || validationRole === 'contabilista' || validationRole === 'mecanico') {
+        if (validationRole === 'admin' || validationRole === 'gerente' || validationRole === 'operator' || validationRole === 'contabilista' || validationRole === 'mecanico') {
           const staffQuery = query(
             collection(db, 'administrative_staff'), 
             where('status', '==', 'Ativo')

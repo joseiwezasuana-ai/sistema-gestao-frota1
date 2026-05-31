@@ -80,7 +80,7 @@ export default function RealTimeMonitor({ user }: RealTimeMonitorProps) {
   const [sendingDispatch, setSendingDispatch] = useState(false);
   const [simulationLoading, setSimulationLoading] = useState(false);
 
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = user?.role === 'admin' || user?.role === 'gerente';
 
   // Set first permissible subtab based on user's role
   useEffect(() => {

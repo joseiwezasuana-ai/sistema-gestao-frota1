@@ -77,7 +77,7 @@ export default function ShiftScheduler({ user }: { user: UserProfile }) {
     status: 'Ativo' as 'Ativo' | 'Folga' | 'Suspenso'
   });
 
-  const canManage = user.role === 'admin' || user.role === 'operator';
+  const canManage = user.role === 'admin' || user.role === 'gerente' || user.role === 'operator';
 
   useEffect(() => {
     const unsubShifts = onSnapshot(query(collection(db, 'driver_scales'), orderBy('date', 'desc')), (snapshot) => {

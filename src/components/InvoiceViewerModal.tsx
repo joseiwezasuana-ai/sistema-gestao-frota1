@@ -276,7 +276,7 @@ export const InvoiceViewerModal: React.FC<InvoiceViewerModalProps> = ({ isOpen, 
 
           <div className="px-8 py-3 bg-slate-50 border-t border-slate-200 text-center">
              <p className="text-[10px] text-slate-400 font-bold italic">
-               ZDI3-Processado por programa validado N.152/AGT/2019 • PSMOREIRA COMERCIAL (SU), LDA
+               Documento Proforma • PSMOREIRA COMERCIAL (SU), LDA
              </p>
           </div>
         </motion.div>

@@ -44,7 +44,7 @@ export default function RentACar({ user }: { user?: any }) {
     neighborhood: ''
   });
 
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = user?.role === 'admin' || user?.role === 'gerente';
   const canManage = isAdmin || user?.role === 'operator';
 
   useEffect(() => {

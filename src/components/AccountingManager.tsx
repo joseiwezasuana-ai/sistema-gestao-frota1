@@ -88,7 +88,7 @@ export default function AccountingManager({ user }: { user?: any }) {
   const [selectedInvoiceData, setSelectedInvoiceData] = useState<any>(null);
 
   const isAdmin =
-    user?.email === "joseiwezasuana@gmail.com" || user?.role === "admin";
+    user?.email === "joseiwezasuana@gmail.com" || user?.role === "admin" || user?.role === "gerente";
   const isAccountant = user?.role === "contabilista";
 
   const exportToPDF = (type: "salary" | "report" | "balance", data: any) => {
@@ -2510,7 +2510,7 @@ export default function AccountingManager({ user }: { user?: any }) {
           isOpen={isInvoiceViewerOpen}
           onClose={() => setIsInvoiceViewerOpen(false)}
           data={selectedInvoiceData}
-          documentNumber={'FR WT2025/' + (selectedInvoiceData.id?.slice(-4).toUpperCase() || '0000')}
+          documentNumber={'FP WT2025/' + (selectedInvoiceData.id?.slice(-4).toUpperCase() || '0000')}
         />
       )}
     </div>

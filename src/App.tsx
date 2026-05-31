@@ -315,7 +315,7 @@ export default function App() {
   }
 
   const isMasterAdmin = user?.email?.toLowerCase() === 'joseiwezasuana@gmail.com';
-  const isAdmin = isMasterAdmin || userProfile?.role === 'admin';
+  const isAdmin = isMasterAdmin || userProfile?.role === 'admin' || userProfile?.role === 'gerente';
   const isDriver = userProfile?.role === 'driver';
   const isMecanico = userProfile?.role === 'mecanico';
   const isContabilista = userProfile?.role === 'contabilista';

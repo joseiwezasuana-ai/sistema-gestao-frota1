@@ -69,7 +69,7 @@ export default function RevenueManagement({ user }: { user: any }) {
   const [calls, setCalls] = useState<any[]>([]);
   const [smsLogs, setSmsLogs] = useState<any[]>([]);
 
-  const isAdmin = user?.role === 'admin' || user?.email === 'joseiwezasuana@gmail.com';
+  const isAdmin = user?.role === 'admin' || user?.role === 'gerente' || user?.email === 'joseiwezasuana@gmail.com';
   const isContabilista = user?.role === 'contabilista';
   const isOperator = user?.role === 'operator' || isAdmin;
   const isContabRole = isContabilista || isAdmin;

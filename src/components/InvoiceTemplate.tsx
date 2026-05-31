@@ -67,7 +67,7 @@ export const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ data, document
         </div>
 
         <div className="text-right">
-          <h2 className="text-3xl font-serif italic mb-2 tracking-tight">Factura Recibo</h2>
+          <h2 className="text-3xl font-serif italic mb-2 tracking-tight">Factura Proforma</h2>
           <div className="flex flex-col items-end">
             {/* Mock Barcode */}
             <div className="w-48 h-8 flex gap-px bg-white mb-1">
@@ -253,7 +253,7 @@ export const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ data, document
 
       <div className="mt-8 pt-4 border-t border-slate-200">
          <div className="flex justify-between items-end text-[9px] font-bold text-slate-400 italic">
-            <p>ZDI3-Processado por programa validado N.152/AGT/2019</p>
+            <p>Documento Proforma para efeitos informais</p>
             <div className="text-right">
               <div className="w-32 h-1 bg-blue-600 mb-1"></div>
               <p className="uppercase font-black text-slate-900 not-italic">PSMOREIRA COMERCIAL (SU), LDA</p>

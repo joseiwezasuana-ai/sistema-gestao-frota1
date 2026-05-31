@@ -1,13 +1,13 @@
 // @ts-nocheck
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import GoogleMap from 'google-maps-react-markers';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap, Polyline, CircleMarker } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { renderToString } from 'react-dom/server';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, onSnapshot, query, limit } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { Truck, Crosshair, Map as MapIcon, Globe, AlertCircle, Zap, User, Phone } from 'lucide-react';
+import { Truck, Crosshair, Map as MapIcon, Globe, AlertCircle, Zap, User, Phone, Route, MapPin } from 'lucide-react';
 import { animate } from 'motion/react';
 
 // Fix for Leaflet default icon issues in React/Webpack/Vite
@@ -223,6 +223,47 @@ class MapErrorBoundary extends React.Component<{ onError: (error: Error) => void
   }
 }
 
+const LUENA_HOTSPOTS: Record<string, [number, number]> = {
+  "Aeroporto": [-11.7850, 19.8970],
+  "Aeroporto do Luena": [-11.7850, 19.8970],
+  "Hospital Geral": [-11.7890, 19.9120],
+  "Hospital Geral do Moxico": [-11.7890, 19.9120],
+  "Mercado Municipal": [-11.7810, 19.9180],
+  "Mercado Central": [-11.7810, 19.9180],
+  "Estação de Comboio": [-11.7760, 19.9140],
+  "Estação do Luena": [-11.7760, 19.9140],
+  "Bairro Sangondo": [-11.7950, 19.9250],
+  "Bairro Lwini": [-11.8020, 19.9050],
+  "Bairro Luzi": [-11.7720, 19.9280],
+  "Ponte": [-11.7780, 19.9010],
+  "Governo do Moxico": [-11.7865, 19.9145],
+  "Parque Central": [-11.7855, 19.9150],
+  "Camarada": [-11.7910, 19.9180],
+  "Senzala": [-11.7890, 19.9320],
+  "Kandembe": [-11.8050, 19.9210],
+};
+
+const getCoordinatesForAddress = (address: string, idx: number = 0): [number, number] => {
+  if (!address) return [-11.7833, 19.9167];
+  
+  const normalized = address.toLowerCase();
+  for (const [key, coords] of Object.entries(LUENA_HOTSPOTS)) {
+    if (normalized.includes(key.toLowerCase())) {
+      // Add a tiny reproducible offset so they don't overlay exactly
+      const jitterLat = (Math.sin(idx + 1) * 0.001);
+      const jitterLng = (Math.cos(idx + 1) * 0.001);
+      return [coords[0] + jitterLat, coords[1] + jitterLng];
+    }
+  }
+  
+  // Return random-ish but stable coordinate within Luena area if not matched
+  const baseLat = -11.7833;
+  const baseLng = 19.9167;
+  const devLat = (Math.sin(idx + 13) * 0.015);
+  const devLng = (Math.cos(idx + 17) * 0.015);
+  return [baseLat + devLat, baseLng + devLng];
+};
+
 const getGoogleCoords = (coords: any): { lat: number, lng: number } => {
   if (Array.isArray(coords)) {
     return { lat: Number(coords[0] || -11.7833), lng: Number(coords[1] || 19.9167) };
@@ -238,6 +279,17 @@ export default function RealTimeMap() {
   const [googleMapsApiKey, setGoogleMapsApiKey] = useState<string | null>(null);
   const [googleMapsError, setGoogleMapsError] = useState<string | null>(null);
   const [drivers, setDrivers] = useState<any[]>([]);
+  const [showPassengerPaths, setShowPassengerPaths] = useState(true);
+  const [calls, setCalls] = useState<any[]>([]);
+
+  // Real-time listener for passenger calls to draw trajectories
+  useEffect(() => {
+    const qCalls = query(collection(db, 'calls'), limit(40));
+    const unsubCalls = onSnapshot(qCalls, (snapshot) => {
+      setCalls(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => console.warn("Error loading calls for trajectories:", error));
+    return () => unsubCalls();
+  }, []);
 
   const handleGoogleMapCrash = useCallback((error: Error) => {
     console.error("Local Google Maps error caught:", error);
@@ -370,6 +422,21 @@ export default function RealTimeMap() {
               </button>
             ))}
           </div>
+
+          <div className="h-6 w-px bg-slate-200 hidden md:block" />
+
+          <button
+            onClick={() => setShowPassengerPaths(!showPassengerPaths)}
+            className={`flex items-center gap-1.5 px-3 py-1 border rounded text-[10px] font-black uppercase transition-all tracking-wider ${
+              showPassengerPaths 
+                ? 'bg-emerald-500 text-white border-emerald-500 shadow-sm shadow-emerald-500/10' 
+                : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+            }`}
+            title="Exibir trajetos e pontos dos passageiros no mapa"
+          >
+            <Route size={12} className={showPassengerPaths ? "animate-pulse" : ""} />
+            {showPassengerPaths ? 'Ver Trajetos: ON' : 'Ver Trajetos: OFF'}
+          </button>
         </div>
       </div>
 
@@ -479,6 +546,92 @@ export default function RealTimeMap() {
                   attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                   url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 />
+                
+                {/* Dynamically Saved Trajectories & Historic Passenger Points (Requested by JIS) */}
+                {showPassengerPaths && calls.map((call, idx) => {
+                  const pickupAddress = call.pickup || call.pickupAddress;
+                  const destinationAddress = call.destination || call.destinationAddress;
+                  if (!pickupAddress || !destinationAddress) return null;
+                  
+                  const startCoords = getCoordinatesForAddress(pickupAddress, idx * 2);
+                  const endCoords = getCoordinatesForAddress(destinationAddress, idx * 2 + 1);
+                  const isCompleted = call.status === 'completed';
+                  const isActive = call.status === 'active' || call.status === 'confirmed';
+                  
+                  // Color code paths: active is sky-blue, completed is emerald green, pending/other is amber
+                  const strokeColor = isActive ? '#06b6d4' : isCompleted ? '#10b981' : '#f59e0b';
+                  
+                  return (
+                    <React.Fragment key={`path-${call.id || idx}`}>
+                      {/* Intermediary route line between pickup and destination hotspots */}
+                      <Polyline 
+                        positions={[startCoords, endCoords]} 
+                        pathOptions={{ 
+                          color: strokeColor, 
+                          weight: isActive ? 4 : 2.5, 
+                          dashArray: isCompleted ? undefined : '5, 10', 
+                          opacity: isActive ? 0.95 : 0.65 
+                        }}
+                      >
+                        <Popup>
+                          <div className="p-2 min-w-[160px] font-sans">
+                            <span className="text-[9px] px-1.5 py-0.5 bg-slate-100 rounded text-slate-500 font-extrabold uppercase mr-1.5">
+                              Trajeto Guardado
+                            </span>
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded font-black uppercase text-white ${
+                              isCompleted ? 'bg-emerald-500' : isActive ? 'bg-cyan-500' : 'bg-amber-500'
+                            }`}>
+                              {call.status === 'completed' ? 'CONCLUÍDO' : call.status === 'active' ? 'EM CURSO' : 'PENDENTE'}
+                            </span>
+                            <p className="font-extrabold text-[11px] text-slate-900 mt-2">
+                              {call.clientName || call.passengerName || 'Contacto Directo'}
+                            </p>
+                            <p className="text-[10px] text-slate-600 leading-tight font-bold mt-1">
+                              <strong>De:</strong> {pickupAddress}
+                            </p>
+                            <p className="text-[10px] text-slate-600 leading-tight font-bold">
+                              <strong>Para:</strong> {destinationAddress}
+                            </p>
+                            {(call.price || call.finalPrice) && (
+                              <p className="text-[11px] text-emerald-600 font-black italic mt-1.5">
+                                Faturação: {Number(call.price || call.finalPrice).toLocaleString('pt-PT')} Kz
+                              </p>
+                            )}
+                          </div>
+                        </Popup>
+                      </Polyline>
+
+                      {/* Pickup Marker (Ponto de Recolha) */}
+                      <CircleMarker 
+                        center={startCoords} 
+                        radius={5}
+                        pathOptions={{ fillColor: '#ef4444', color: '#ffffff', weight: 1.5, fillOpacity: 0.95 }}
+                      >
+                        <Popup>
+                          <div className="p-1.5 text-center">
+                            <p className="text-[9px] font-black text-rose-500 uppercase leading-none mb-0.5">Recolha de Passageiro</p>
+                            <p className="text-[10px] font-bold text-slate-800">{pickupAddress}</p>
+                          </div>
+                        </Popup>
+                      </CircleMarker>
+
+                      {/* Destination Marker (Ponto de Entrega) */}
+                      <CircleMarker 
+                        center={endCoords} 
+                        radius={5}
+                        pathOptions={{ fillColor: strokeColor, color: '#ffffff', weight: 1.5, fillOpacity: 0.95 }}
+                      >
+                        <Popup>
+                          <div className="p-1.5 text-center">
+                            <p className="text-[9px] font-black text-emerald-600 uppercase leading-none mb-0.5">Destino de Entrega</p>
+                            <p className="text-[10px] font-bold text-slate-800">{destinationAddress}</p>
+                          </div>
+                        </Popup>
+                      </CircleMarker>
+                    </React.Fragment>
+                  );
+                })}
+
                 {filteredDrivers.map(driver => (
                   <MovingTaxiMarker 
                     key={driver.id} 

@@ -4,7 +4,7 @@ import { useTheme } from '../context/ThemeContext';
 import { 
   Car, MapPin, Phone, User, Camera, Sun, Moon, Sparkles, ShieldCheck, 
   MapPinCheck, Navigation, PhoneCall, PhoneOff, Check, X, CheckCircle, 
-  Trash2, Landmark, Trophy, Smartphone, AlertCircle, RefreshCw, Lock
+  Trash2, Landmark, Trophy, Smartphone, AlertCircle, RefreshCw, Lock, AlertOctagon
 } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { addDoc, collection, getDocs, onSnapshot, query, where, doc, setDoc, getDoc, updateDoc, arrayUnion } from 'firebase/firestore';
@@ -253,10 +253,26 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
     if (notificationBanner.visible) {
       const t = setTimeout(() => {
         setNotificationBanner(prev => ({ ...prev, visible: false }));
-      }, 5000);
+      }, 25000);
       return () => clearTimeout(t);
     }
   }, [notificationBanner.visible]);
+
+  // Real-time listener for passenger profile status (banned check requested by JIS)
+  useEffect(() => {
+    if (!passengerProfile?.id) return;
+    const unsub = onSnapshot(doc(db, 'passengers', passengerProfile.id), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data.banned !== passengerProfile.banned) {
+          const updated = { ...passengerProfile, ...data, id: snap.id };
+          localStorage.setItem('psm-passenger-profile', JSON.stringify(updated));
+          setPassengerProfile(updated);
+        }
+      }
+    }, (err) => console.warn("Error listening to passenger ban status:", err));
+    return () => unsub();
+  }, [passengerProfile?.id]);
 
   // Stats / Confirmed Rides History
   const [myRides, setMyRides] = useState<any[]>([]);
@@ -649,29 +665,54 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
 
     setIsLoggingIn(true);
     try {
-      const q = query(
+      const trimmedLogin = loginName.trim();
+      const pwd = loginPassword.trim();
+
+      // Query direct matches on Name or backupPhone with Password
+      const qName = query(
         collection(db, 'passengers'),
-        where('name', '==', loginName.trim()),
-        where('password', '==', loginPassword.trim())
+        where('name', '==', trimmedLogin),
+        where('password', '==', pwd)
       );
-      const querySnapshot = await getDocs(q);
-      
+      const qPhone = query(
+        collection(db, 'passengers'),
+        where('backupPhone', '==', trimmedLogin),
+        where('password', '==', pwd)
+      );
+
+      const [snapName, snapPhone] = await Promise.all([
+        getDocs(qName),
+        getDocs(qPhone)
+      ]);
+
       let profile: any = null;
-      if (!querySnapshot.empty) {
-        const userData = querySnapshot.docs[0].data();
-        profile = { id: querySnapshot.docs[0].id, ...userData };
+      if (!snapName.empty) {
+        const userData = snapName.docs[0].data();
+        profile = { id: snapName.docs[0].id, ...userData };
+      } else if (!snapPhone.empty) {
+        const userData = snapPhone.docs[0].data();
+        profile = { id: snapPhone.docs[0].id, ...userData };
       } else {
-        // Fallback for case-insensitive and auto-space matching
+        // Fallback for case-insensitive, space matching or prefix variations (like +244 and without +244)
         const allPassengersSnap = await getDocs(collection(db, 'passengers'));
-        const normalizedInputName = loginName.trim().toLowerCase();
-        const normalizedInputPass = loginPassword.trim();
-        
+        const normalizedInputName = trimmedLogin.toLowerCase().replace(/\s+/g, '');
+        // Strip out country code or leading zeros or spaces for relaxed phone comparison
+        const cleanedInputPhone = trimmedLogin.replace(/[\s\-\+]/g, '');
+        const normalizedInputPass = pwd;
+
         allPassengersSnap.forEach((docSnap) => {
           const data = docSnap.data();
-          if (data.name && data.password) {
-            const savedName = String(data.name).trim().toLowerCase();
-            const savedPass = String(data.password).trim();
-            if (savedName === normalizedInputName && savedPass === normalizedInputPass) {
+          if (data.password && String(data.password).trim() === normalizedInputPass) {
+            const savedName = data.name ? String(data.name).trim().toLowerCase().replace(/\s+/g, '') : '';
+            const savedBackupPhone = data.backupPhone ? String(data.backupPhone).replace(/[\s\-\+]/g, '') : '';
+            const savedPhone = data.phone ? String(data.phone).replace(/[\s\-\+]/g, '') : '';
+
+            const isNameMatch = savedName && savedName === normalizedInputName;
+            const isPhoneMatch = (savedBackupPhone && savedBackupPhone.endsWith(cleanedInputPhone)) || 
+                                 (savedPhone && savedPhone.endsWith(cleanedInputPhone)) ||
+                                 (cleanedInputPhone && (savedBackupPhone.includes(cleanedInputPhone) || cleanedInputPhone.includes(savedBackupPhone)));
+
+            if (isNameMatch || isPhoneMatch) {
               profile = { id: docSnap.id, ...data };
             }
           }
@@ -683,7 +724,7 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
         setPassengerProfile(profile);
         alert(`Bem-vindo de volta, ${profile.name}!`);
       } else {
-        alert("Credenciais inválidas. Verifique o seu nome e palavra-passe.");
+        alert("Credenciais inválidas. Verifique o seu nome/telefone e palavra-passe.");
       }
     } catch (e) {
       console.error("Erro ao fazer login:", e);
@@ -1383,12 +1424,12 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
                   ) : (
                     <form onSubmit={handleLogin} className="space-y-4 pt-4">
                       <div className="space-y-1">
-                        <label className="text-[8.5px] font-black text-slate-500 uppercase tracking-widest ml-1">Nome de Utilizador</label>
+                        <label className="text-[8.5px] font-black text-slate-500 uppercase tracking-widest ml-1">Nome de Utilizador ou Nº de Telefone</label>
                         <div className="relative">
                           <User size={12} className="absolute left-3.5 top-3.5 text-slate-500" />
                           <input 
                             type="text" 
-                            placeholder="O seu nome registado" 
+                            placeholder="Nome de utilizador ou Telefone (+244...)" 
                             value={loginName}
                             onChange={e => setLoginName(e.target.value)}
                             className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-xs font-bold outline-none focus:border-white text-white"
@@ -1419,6 +1460,47 @@ export default function PassengerFlow({ isPublicApp = false }: { isPublicApp?: b
                       </button>
                     </form>
                   )}
+                </div>
+              ) : passengerProfile.banned ? (
+                /* RESTRICTED/BANNED VIEW (Requested by JIS) */
+                <div className="bg-red-950/45 border border-red-500/25 p-8 rounded-[2rem] text-center space-y-6 shadow-2xl relative overflow-hidden backdrop-blur-md text-white">
+                  <div className="absolute -top-12 -left-12 w-40 h-40 bg-red-500/10 rounded-full blur-3xl pointer-events-none" />
+                  <div className="absolute -bottom-12 -right-12 w-40 h-40 bg-red-500/10 rounded-full blur-3xl pointer-events-none" />
+                  
+                  <div className="w-16 h-16 bg-red-500/15 border border-red-500/35 text-red-400 rounded-3xl flex items-center justify-center mx-auto shadow-inner">
+                    <AlertOctagon size={32} className="animate-bounce" />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <span className="text-[9px] font-black tracking-widest text-red-400 bg-red-500/15 border border-red-500/25 px-3 py-1 rounded-full uppercase">
+                      Acesso Bloqueado / Restringido
+                    </span>
+                    <h2 className="text-xl font-black text-rose-100 tracking-tight pt-1">
+                      CONTA BLOQUEADA PERMANENTEMENTE
+                    </h2>
+                    <p className="text-[10px] text-slate-450 font-bold uppercase tracking-widest leading-none">
+                      TAXICONTROL • OPERADOR PSM COMERCIAL
+                    </p>
+                  </div>
+                  
+                  <div className="bg-slate-950 text-slate-300 p-4 border border-white/5 rounded-2xl text-left text-xs leading-relaxed font-semibold">
+                    <p className="mb-2 text-rose-450 font-black uppercase text-[10px] tracking-wider">Motivo de Segurança Centralizada:</p>
+                    A administração central baniu este utilizador do ecossistema por violação grave de integridade nos nossos serviços de transporte de Luena, Moxico.
+                  </div>
+                  
+                  <p className="text-[11px] text-slate-400 leading-relaxed font-bold">
+                    Se julga tratar-se de um mal-entendido ou necessita de assistência de desbloqueio, por favor contacte o suporte oficial de imediato.
+                  </p>
+                  
+                  <button 
+                    onClick={() => {
+                        localStorage.removeItem('psm-passenger-profile');
+                        setPassengerProfile(null);
+                    }}
+                    className="w-full bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all cursor-pointer border border-white/5"
+                  >
+                    Sair da Conta / Registar Outro
+                  </button>
                 </div>
               ) : (
                 /* IN-APP LOGGED-IN PASSENGER HOME VIEW */

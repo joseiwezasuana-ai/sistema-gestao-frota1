@@ -54,7 +54,7 @@ export default function Layout({ children, user, globalSettings, activeTab, onTa
 
   useEffect(() => {
     const isMasterAdmin = user?.email?.toLowerCase() === 'joseiwezasuana@gmail.com';
-    const isStaff = isMasterAdmin || ['admin', 'operator', 'operador', 'contabilista', 'mecanico'].includes(user?.role);
+    const isStaff = isMasterAdmin || ['admin', 'gerente', 'operator', 'operador', 'contabilista', 'mecanico'].includes(user?.role);
     
     if (!isStaff) return;
 
@@ -86,7 +86,7 @@ export default function Layout({ children, user, globalSettings, activeTab, onTa
   const filteredMenuItems = menuItems.filter(item => {
     if (!item.roles) return true;
     const isMasterAdmin = user?.email?.toLowerCase() === 'joseiwezasuana@gmail.com';
-    if (isMasterAdmin) return true;
+    if (isMasterAdmin || user?.role === 'admin' || user?.role === 'gerente') return true;
     return item.roles.includes(user?.role);
   });
 

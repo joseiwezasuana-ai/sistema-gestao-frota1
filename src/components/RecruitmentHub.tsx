@@ -49,6 +49,7 @@ import {
 } from 'firebase/firestore';
 
 const ROLES = [
+  { id: 'gerente', label: 'Gerente', icon: ShieldCheck, color: 'text-rose-500', bg: 'bg-rose-50' },
   { id: 'operator', label: 'Operador', icon: ShieldCheck, color: 'text-blue-500', bg: 'bg-blue-50' },
   { id: 'contabilista', label: 'Contabilista', icon: Briefcase, color: 'text-purple-500', bg: 'bg-purple-50' },
   { id: 'mecanico', label: 'Mecânico', icon: ShieldCheck, color: 'text-orange-500', bg: 'bg-orange-50' },
@@ -143,10 +144,11 @@ export default function RecruitmentHub({ user }: { user?: any }) {
       { id: 'warehouse', roles: ['admin', 'operator', 'mecanico'] },
     ];
     const isMasterAdmin = user?.email?.toLowerCase() === 'joseiwezasuana@gmail.com';
-    const hasPermission = isMasterAdmin || subTabsList.find(t => t.id === activeSubTab)?.roles.includes(user?.role);
+    const isFullAdmin = isMasterAdmin || user?.role === 'admin' || user?.role === 'gerente';
+    const hasPermission = isFullAdmin || subTabsList.find(t => t.id === activeSubTab)?.roles.includes(user?.role);
     if (!hasPermission) {
       const allowed = subTabsList.filter(tab => {
-        if (isMasterAdmin) return true;
+        if (isFullAdmin) return true;
         return tab.roles.includes(user?.role);
       });
       if (allowed.length > 0) {
@@ -420,7 +422,7 @@ export default function RecruitmentHub({ user }: { user?: any }) {
         .filter(tab => {
           if (!tab.roles) return true;
           const isMasterAdmin = user?.email?.toLowerCase() === 'joseiwezasuana@gmail.com';
-          if (isMasterAdmin) return true;
+          if (isMasterAdmin || user?.role === 'admin' || user?.role === 'gerente') return true;
           return tab.roles.includes(user?.role);
         })
         .map((tab) => (

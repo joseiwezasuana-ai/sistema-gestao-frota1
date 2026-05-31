@@ -250,7 +250,7 @@ export default function StaffMobileView({ user, onLogout, onExitMobile }: StaffM
       const docRef = doc(db, 'revenue_logs', revenue.id);
       
       let newStatus = 'approved_by_operator';
-      if (user.role === 'admin') {
+      if (user.role === 'admin' || user.role === 'gerente') {
         newStatus = 'approved_by_accountant';
       } else if (user.role === 'contabilista') {
         newStatus = 'finalized';
@@ -547,7 +547,7 @@ export default function StaffMobileView({ user, onLogout, onExitMobile }: StaffM
     { icon: CalendarIcon, label: 'Escalas & Turnos', onClick: () => { setActiveTab('fleet'); setFleetSubTab('scales'); } },
     { icon: Wallet, label: 'Financeiro', onClick: () => setActiveTab('wallet') },
     ...(onExitMobile ? [{ icon: Monitor, label: 'Restaurar Painel Full', onClick: onExitMobile, color: 'text-brand-primary' }] : []),
-    ...((user?.role === 'admin' || user?.role === 'operator') ? [{ icon: SettingsIcon, label: 'Definições', onClick: () => setIsSettingsOpen(true) }] : []),
+    ...((user?.role === 'admin' || user?.role === 'gerente' || user?.role === 'operator') ? [{ icon: SettingsIcon, label: 'Definições', onClick: () => setIsSettingsOpen(true) }] : []),
     { icon: FileText, label: 'Documentação', onClick: () => setIsManualOpen(true) },
     { icon: MessageSquare, label: 'Comunicações', onClick: () => {} },
     { icon: LogOut, label: 'Terminar Sessão', onClick: onLogout, color: 'text-red-500' },
@@ -614,7 +614,7 @@ export default function StaffMobileView({ user, onLogout, onExitMobile }: StaffM
               </div>
             </div>
             <p className="text-[10px] sm:text-xs font-black text-white uppercase tracking-tight italic truncate">
-              {user.role === 'admin' ? 'Administrador Geral' : user.role === 'contabilista' ? 'Hub Contabilidade' : 'Operador de Campo'}
+              {(user.role === 'admin' || user.role === 'gerente') ? 'Administrador Geral' : user.role === 'contabilista' ? 'Hub Contabilidade' : 'Operador de Campo'}
             </p>
           </div>
         </div>
@@ -1373,7 +1373,7 @@ export default function StaffMobileView({ user, onLogout, onExitMobile }: StaffM
                               log.status === 'approved_by_operator' ? 'Pendente Admin' : 'Pendente Operador'}
                            </span>
                            {((user.role === 'operator' && log.status === 'pending_approval') ||
-                             (user.role === 'admin' && (log.status === 'pending_approval' || log.status === 'approved_by_operator' || log.status === 'approved_by_accountant')) ||
+                             ((user.role === 'admin' || user.role === 'gerente') && (log.status === 'pending_approval' || log.status === 'approved_by_operator' || log.status === 'approved_by_accountant')) ||
                              (user.role === 'contabilista' && log.status === 'approved_by_accountant')) && (
                              <button
                                onClick={() => handleApproveRevenue(log)}
@@ -1647,7 +1647,7 @@ export default function StaffMobileView({ user, onLogout, onExitMobile }: StaffM
                       const driverDetail = driversMaster.find(d => d.id === scaleFormData.driverId);
                       const vehicleDetail = vehiclesMaster.find(v => v.prefix === scaleFormData.prefix);
                       
-                      const isAdminOrOperator = user?.role === 'admin' || user?.role === 'operator';
+                      const isAdminOrOperator = user?.role === 'admin' || user?.role === 'gerente' || user?.role === 'operator';
                       if (isAdminOrOperator) {
                         await addDoc(collection(db, 'drivers'), {
                           name: driverDetail?.name || scaleFormData.driverName || '',

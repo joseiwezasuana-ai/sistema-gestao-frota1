@@ -53,7 +53,7 @@ export default function MaintenanceRegistry({ user }: { user?: any }) {
 
   const [searchTerm, setSearchTerm] = useState('');
 
-  const isAdmin = user?.role === 'admin' || user?.email === 'joseiwezasuana@gmail.com';
+  const isAdmin = user?.role === 'admin' || user?.role === 'gerente' || user?.email === 'joseiwezasuana@gmail.com';
   const isContabilista = user?.role === 'contabilista';
 
   const [formData, setFormData] = useState({
